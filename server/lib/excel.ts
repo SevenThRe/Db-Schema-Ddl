@@ -8,60 +8,97 @@ export function getSheetNames(filePath: string): string[] {
   return workbook.SheetNames;
 }
 
-export function parseTableDefinition(filePath: string, sheetName: string): TableInfo {
-  const fileBuffer = fs.readFileSync(filePath);
-  const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-  const worksheet = workbook.Sheets[sheetName];
-  if (!worksheet) {
-    throw new Error(`Sheet ${sheetName} not found`);
+function* findTablesInSheet(data: any[][]): Generator<TableInfo> {
+  const totalRows = data.length;
+  let cursor = 0;
+
+  while (cursor < totalRows) {
+    const tableStartIndex = findCellRow(data, cursor, '論理テーブル名');
+    if (tableStartIndex === -1) break;
+
+    const logicalTableName = getCellValue(data, tableStartIndex, '論理テーブル名');
+    const physicalTableNameRow = findCellRow(data, tableStartIndex, '物理テーブル名');
+    const physicalTableName = physicalTableNameRow !== -1
+      ? getCellValue(data, physicalTableNameRow, '物理テーブル名')
+      : logicalTableName;
+
+    const headerRowIndex = findHeaderRow(data, tableStartIndex + 1);
+    if (headerRowIndex === -1) {
+      cursor = tableStartIndex + 1;
+      continue;
+    }
+
+    const headerRow = data[headerRowIndex];
+    const colMap = buildColumnMap(headerRow);
+
+    const nextTableStart = findCellRow(data, headerRowIndex + 1, '論理テーブル名');
+    const boundary = nextTableStart !== -1 ? nextTableStart : totalRows;
+
+    const columns = parseColumns(data, headerRowIndex + 1, boundary, colMap);
+
+    yield {
+      logicalTableName: String(logicalTableName || ''),
+      physicalTableName: String(physicalTableName || ''),
+      columns,
+    };
+
+    cursor = boundary;
   }
+}
 
-  // Convert to array of arrays to inspect layout
-  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-
-  // Helper to safely get value
-  const getVal = (row: number, col: number): any => {
-    if (row >= data.length || !data[row]) return null;
-    return data[row][col];
-  };
-
-  // Extract Table Names
-  // Row 4 (index 3): Logical Name at index 2
-  // Row 5 (index 4): Physical Name at index 2
-  console.log('Row 3:', data[3]);
-  console.log('Row 4:', data[4]);
-  const logicalTableName = getVal(3, 2) || sheetName;
-  const physicalTableName = getVal(4, 2) || sheetName;
-
-  // Find Header Row (Look for "No", "論理名", "物理名")
-  // Search first 20 rows
-  let headerRowIndex = -1;
-  for (let i = 0; i < 20; i++) {
+function findCellRow(data: any[][], startRow: number, label: string): number {
+  for (let i = startRow; i < data.length; i++) {
     const row = data[i];
-    if (row && row.includes('No') && row.includes('論理名') && row.includes('物理名')) {
-      headerRowIndex = i;
-      break;
+    if (!row) continue;
+    for (let j = 0; j < row.length; j++) {
+      if (String(row[j]).trim() === label) {
+        return i;
+      }
     }
   }
+  return -1;
+}
 
-  if (headerRowIndex === -1) {
-    // If not found, return empty or try default structure
-    return {
-      logicalTableName: String(logicalTableName),
-      physicalTableName: String(physicalTableName),
-      columns: []
-    };
+function getCellValue(data: any[][], rowIndex: number, label: string): string {
+  const row = data[rowIndex];
+  if (!row) return '';
+  for (let j = 0; j < row.length; j++) {
+    if (String(row[j]).trim() === label) {
+      for (let k = j + 1; k < row.length; k++) {
+        const val = row[k];
+        if (val !== null && val !== undefined && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
   }
+  return '';
+}
 
-  // Get Column Indices from Header Row
-  const headerRow = data[headerRowIndex];
+function findHeaderRow(data: any[][], startRow: number): number {
+  const requiredHeaders = ['No', '論理名', '物理名', 'データ型'];
+  for (let i = startRow; i < Math.min(startRow + 30, data.length); i++) {
+    const row = data[i];
+    if (!row) continue;
+    const rowVals = row.map((v: any) => String(v).trim());
+    if (requiredHeaders.every(h => rowVals.includes(h))) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function buildColumnMap(headerRow: any[]): Record<string, number> {
   const colMap: Record<string, number> = {};
   headerRow.forEach((val: any, idx: number) => {
-    if (typeof val === 'string') {
-      colMap[val] = idx;
+    if (val !== null && val !== undefined) {
+      colMap[String(val).trim()] = idx;
     }
   });
+  return colMap;
+}
 
+function parseColumns(data: any[][], startRow: number, endRow: number, colMap: Record<string, number>): ColumnInfo[] {
   const idxNo = colMap['No'];
   const idxLogical = colMap['論理名'];
   const idxPhysical = colMap['物理名'];
@@ -72,33 +109,52 @@ export function parseTableDefinition(filePath: string, sheetName: string): Table
   const idxComment = colMap['備考'];
 
   const columns: ColumnInfo[] = [];
-  
-  // Data starts after header row
-  for (let i = headerRowIndex + 1; i < data.length; i++) {
-    const row = data[i];
-    if (!row || row.length === 0) continue; // Skip empty rows
 
-    // Stop if "No" column is empty or not a number (end of table usually)
-    // Actually some formats have footer text.
-    // Check if we have a valid No or Physical Name
-    if (!row[idxPhysical]) continue;
+  for (let i = startRow; i < endRow; i++) {
+    const row = data[i];
+    if (!row || row.length === 0) break;
+
+    const physicalName = row[idxPhysical];
+    if (!physicalName || String(physicalName).trim() === '') break;
 
     const col: ColumnInfo = {
-      no: Number(row[idxNo]),
-      logicalName: row[idxLogical],
-      physicalName: row[idxPhysical],
-      dataType: row[idxType],
-      size: row[idxSize] ? String(row[idxSize]) : undefined,
-      notNull: String(row[idxNotNull]).toLowerCase().includes('not null'),
-      isPk: String(row[idxPk]) === '〇',
-      comment: row[idxComment],
+      no: row[idxNo] != null ? Number(row[idxNo]) : undefined,
+      logicalName: row[idxLogical] ? String(row[idxLogical]).trim() : undefined,
+      physicalName: String(physicalName).trim(),
+      dataType: row[idxType] ? String(row[idxType]).trim() : undefined,
+      size: row[idxSize] != null && String(row[idxSize]).trim() !== '' ? String(row[idxSize]).trim() : undefined,
+      notNull: String(row[idxNotNull] || '').toLowerCase().includes('not null'),
+      isPk: String(row[idxPk] || '') === '〇',
+      comment: row[idxComment] ? String(row[idxComment]).trim() : undefined,
     };
     columns.push(col);
   }
 
-  return {
-    logicalTableName: String(logicalTableName),
-    physicalTableName: String(physicalTableName),
-    columns
-  };
+  return columns;
+}
+
+export function parseTableDefinitions(filePath: string, sheetName: string): TableInfo[] {
+  const fileBuffer = fs.readFileSync(filePath);
+  const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+  const worksheet = workbook.Sheets[sheetName];
+  if (!worksheet) {
+    throw new Error(`Sheet ${sheetName} not found`);
+  }
+
+  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  const tables: TableInfo[] = [];
+
+  for (const table of findTablesInSheet(data)) {
+    tables.push(table);
+  }
+
+  return tables;
+}
+
+export function parseTableDefinition(filePath: string, sheetName: string): TableInfo {
+  const tables = parseTableDefinitions(filePath, sheetName);
+  if (tables.length === 0) {
+    return { logicalTableName: sheetName, physicalTableName: sheetName, columns: [] };
+  }
+  return tables[0];
 }

@@ -32,7 +32,7 @@ export const tableInfoSchema = z.object({
 });
 
 export const generateDdlRequestSchema = z.object({
-  tableInfo: tableInfoSchema,
+  tables: z.array(tableInfoSchema),
   dialect: z.enum(["mysql", "oracle"]),
 });
 

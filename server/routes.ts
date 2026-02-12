@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { getSheetNames, parseTableDefinition } from "./lib/excel";
+import { getSheetNames, parseTableDefinitions } from "./lib/excel";
 import { generateDDL } from "./lib/ddl";
 import { z } from "zod";
 
@@ -66,8 +66,8 @@ export async function registerRoutes(
     }
 
     try {
-      const tableInfo = parseTableDefinition(file.filePath, sheetName);
-      res.json(tableInfo);
+      const tables = parseTableDefinitions(file.filePath, sheetName);
+      res.json(tables);
     } catch (err) {
       res.status(400).json({ message: `Failed to parse sheet: ${(err as Error).message}` });
     }

@@ -31,7 +31,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/files/:id/sheets/:sheetName' as const,
       responses: {
-        200: tableInfoSchema,
+        200: z.array(tableInfoSchema),
         404: z.object({ message: z.string() }),
         400: z.object({ message: z.string() }),
       },
