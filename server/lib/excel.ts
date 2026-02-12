@@ -64,11 +64,17 @@ function getCellValue(data: any[][], rowIndex: number, label: string): string {
   if (!row) return '';
   for (let j = 0; j < row.length; j++) {
     if (String(row[j]).trim() === label) {
+      // First check the same row, columns to the right
       for (let k = j + 1; k < row.length; k++) {
         const val = row[k];
         if (val !== null && val !== undefined && String(val).trim() !== '') {
           return String(val).trim();
         }
+      }
+      // If not found in the same row, check the row below at the same column index
+      const nextRow = data[rowIndex + 1];
+      if (nextRow && nextRow[j] !== null && nextRow[j] !== undefined && String(nextRow[j]).trim() !== '') {
+        return String(nextRow[j]).trim();
       }
     }
   }
