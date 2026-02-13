@@ -81,7 +81,7 @@ The application expects Excel files with the following Japanese labels:
   - `PK` - Primary key (marked with `〇`)
   - `備考` - Comments/Remarks
 
-See the sample file in `attached_assets/` for reference.
+See `attached_assets/README.md` for detailed format requirements and examples.
 
 ## Scripts
 
@@ -104,7 +104,7 @@ npm run db:push  # Sync database schema
 │   └── routes.ts    # API endpoints
 ├── shared/          # Shared types and schemas
 ├── script/          # Build and utility scripts
-└── attached_assets/ # Sample Excel files
+└── attached_assets/ # Place your test Excel files here (git-ignored)
 ```
 
 ## License
