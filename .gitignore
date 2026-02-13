@@ -9,6 +9,8 @@ vite.config.ts.*
 uploads/
 .local/
 .config/
+attached_assets/*
+!attached_assets/README.md
 
 # Environment files
 .env
