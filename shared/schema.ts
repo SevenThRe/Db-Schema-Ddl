@@ -6,6 +6,8 @@ export const uploadedFiles = pgTable("uploaded_files", {
   id: serial("id").primaryKey(),
   filePath: text("file_path").notNull(),
   originalName: text("original_name").notNull(),
+  fileHash: text("file_hash").notNull(),
+  fileSize: serial("file_size").notNull(),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
 });
 
