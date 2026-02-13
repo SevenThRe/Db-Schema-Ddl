@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFiles } from "@/hooks/use-ddl";
 import { Grid3X3, TableProperties } from "lucide-react";
 import type { TableInfo } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 export default function Dashboard() {
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
@@ -18,6 +19,7 @@ export default function Dashboard() {
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
 
   const { data: files } = useFiles();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!selectedFileId && files && files.length > 0) {
@@ -73,17 +75,17 @@ export default function Dashboard() {
                     <TabsList className="h-7 p-0.5">
                       <TabsTrigger value="auto" className="text-[11px] h-6 px-2.5 gap-1">
                         <TableProperties className="w-3 h-3" />
-                        Auto Parse
+                        {t("view.autoParse")}
                       </TabsTrigger>
                       <TabsTrigger value="spreadsheet" className="text-[11px] h-6 px-2.5 gap-1">
                         <Grid3X3 className="w-3 h-3" />
-                        Spreadsheet
+                        {t("view.spreadsheet")}
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
                   {viewMode === "spreadsheet" && regionTables && regionTables.length > 0 && (
                     <span className="text-[10px] text-green-600 font-medium">
-                      ✓ {regionTables.length} table(s) parsed from selection
+                      ✓ {t("table.tablesParsedFromSelection", { count: regionTables.length })}
                     </span>
                   )}
                 </div>

@@ -8,11 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Save, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
   const { mutate: updateSettings, isPending } = useUpdateSettings();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [formData, setFormData] = useState<DdlSettings>({
     mysqlEngine: "InnoDB",
@@ -40,13 +42,13 @@ export default function Settings() {
     updateSettings(formData, {
       onSuccess: () => {
         toast({
-          title: "Settings saved",
-          description: "Your DDL settings have been updated successfully.",
+          title: t("settings.saved"),
+          description: t("settings.savedSuccess"),
         });
       },
       onError: (error) => {
         toast({
-          title: "Failed to save settings",
+          title: t("settings.saveFailed"),
           description: error.message,
           variant: "destructive",
         });
@@ -61,7 +63,7 @@ export default function Settings() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading settings...</p>
+        <p className="text-muted-foreground">{t("settings.loading")}</p>
       </div>
     );
   }
@@ -73,28 +75,28 @@ export default function Settings() {
           <Link href="/">
             <Button variant="ghost" size="sm" className="mb-4">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
+              {t("settings.backToDashboard")}
             </Button>
           </Link>
           <div className="flex items-center gap-3 mb-2">
             <SettingsIcon className="w-6 h-6 text-primary" />
-            <h1 className="text-3xl font-bold">DDL Settings</h1>
+            <h1 className="text-3xl font-bold">{t("settings.title")}</h1>
           </div>
           <p className="text-muted-foreground">
-            Configure default parameters for DDL generation and file handling
+            {t("settings.subtitle")}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* DDL Generation Options */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-semibold mb-4">DDL Generation Options</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("settings.ddlOptions.title")}</h2>
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="includeCommentHeader">Include Comment Header</Label>
+                <Label htmlFor="includeCommentHeader">{t("settings.ddlOptions.includeCommentHeader")}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Add comment block with table name, author, and date at the top of DDL
+                  {t("settings.ddlOptions.includeCommentHeaderDesc")}
                 </p>
               </div>
               <Switch
@@ -105,7 +107,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="authorName">Author Name</Label>
+              <Label htmlFor="authorName">{t("settings.ddlOptions.authorName")}</Label>
               <Input
                 id="authorName"
                 value={formData.authorName}
@@ -114,15 +116,15 @@ export default function Settings() {
                 disabled={!formData.includeCommentHeader}
               />
               <p className="text-xs text-muted-foreground">
-                Author name shown in comment header. Default: ISI
+                {t("settings.ddlOptions.authorNameDesc")}
               </p>
             </div>
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="includeSetNames">Include SET NAMES Statement</Label>
+                <Label htmlFor="includeSetNames">{t("settings.ddlOptions.includeSetNames")}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Add SET NAMES statement before CREATE TABLE
+                  {t("settings.ddlOptions.includeSetNamesDesc")}
                 </p>
               </div>
               <Switch
@@ -134,9 +136,9 @@ export default function Settings() {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="includeDropTable">Include DROP TABLE Statement</Label>
+                <Label htmlFor="includeDropTable">{t("settings.ddlOptions.includeDropTable")}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Add DROP TABLE IF EXISTS before CREATE TABLE
+                  {t("settings.ddlOptions.includeDropTableDesc")}
                 </p>
               </div>
               <Switch
@@ -149,10 +151,10 @@ export default function Settings() {
 
           {/* MySQL Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">MySQL Settings</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("settings.mysql.title")}</h2>
 
             <div className="space-y-2">
-              <Label htmlFor="mysqlEngine">Engine</Label>
+              <Label htmlFor="mysqlEngine">{t("settings.mysql.engine")}</Label>
               <Input
                 id="mysqlEngine"
                 value={formData.mysqlEngine}
@@ -160,12 +162,12 @@ export default function Settings() {
                 placeholder="InnoDB"
               />
               <p className="text-xs text-muted-foreground">
-                Storage engine for tables. Default: InnoDB
+                {t("settings.mysql.engineDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="mysqlCharset">Character Set</Label>
+              <Label htmlFor="mysqlCharset">{t("settings.mysql.charset")}</Label>
               <Input
                 id="mysqlCharset"
                 value={formData.mysqlCharset}
@@ -173,12 +175,12 @@ export default function Settings() {
                 placeholder="utf8mb4"
               />
               <p className="text-xs text-muted-foreground">
-                Default character set for tables. Default: utf8mb4
+                {t("settings.mysql.charsetDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="mysqlCollate">Collation</Label>
+              <Label htmlFor="mysqlCollate">{t("settings.mysql.collation")}</Label>
               <Input
                 id="mysqlCollate"
                 value={formData.mysqlCollate}
@@ -186,17 +188,17 @@ export default function Settings() {
                 placeholder="utf8mb4_bin"
               />
               <p className="text-xs text-muted-foreground">
-                Default collation for tables. Default: utf8mb4_bin
+                {t("settings.mysql.collationDesc")}
               </p>
             </div>
           </div>
 
           {/* VARCHAR Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">VARCHAR/CHAR Settings</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("settings.varchar.title")}</h2>
 
             <div className="space-y-2">
-              <Label htmlFor="varcharCharset">Character Set</Label>
+              <Label htmlFor="varcharCharset">{t("settings.varchar.charset")}</Label>
               <Input
                 id="varcharCharset"
                 value={formData.varcharCharset}
@@ -204,12 +206,12 @@ export default function Settings() {
                 placeholder="utf8mb4"
               />
               <p className="text-xs text-muted-foreground">
-                Character set for VARCHAR and CHAR columns. Default: utf8mb4
+                {t("settings.varchar.charsetDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="varcharCollate">Collation</Label>
+              <Label htmlFor="varcharCollate">{t("settings.varchar.collation")}</Label>
               <Input
                 id="varcharCollate"
                 value={formData.varcharCollate}
@@ -217,17 +219,17 @@ export default function Settings() {
                 placeholder="utf8mb4_bin"
               />
               <p className="text-xs text-muted-foreground">
-                Collation for VARCHAR and CHAR columns. Default: utf8mb4_bin
+                {t("settings.varchar.collationDesc")}
               </p>
             </div>
           </div>
 
           {/* Export Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">Export Settings</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("settings.export.title")}</h2>
 
             <div className="space-y-2">
-              <Label htmlFor="exportFilenamePrefix">Filename Prefix</Label>
+              <Label htmlFor="exportFilenamePrefix">{t("settings.export.filenamePrefix")}</Label>
               <Input
                 id="exportFilenamePrefix"
                 value={formData.exportFilenamePrefix}
@@ -237,12 +239,12 @@ export default function Settings() {
                 placeholder="Crt_"
               />
               <p className="text-xs text-muted-foreground">
-                Prefix for exported DDL files. Example: Crt_menus.sql. Default: Crt_
+                {t("settings.export.filenamePrefixDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="downloadPath">Download Path (Desktop Only)</Label>
+              <Label htmlFor="downloadPath">{t("settings.export.downloadPath")}</Label>
               <Input
                 id="downloadPath"
                 value={formData.downloadPath || ""}
@@ -252,12 +254,12 @@ export default function Settings() {
                 placeholder="/path/to/downloads"
               />
               <p className="text-xs text-muted-foreground">
-                Default path for saving exported DDL files (optional)
+                {t("settings.export.downloadPathDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="excelReadPath">Excel Read Path (Desktop Only)</Label>
+              <Label htmlFor="excelReadPath">{t("settings.export.excelReadPath")}</Label>
               <Input
                 id="excelReadPath"
                 value={formData.excelReadPath || ""}
@@ -267,7 +269,7 @@ export default function Settings() {
                 placeholder="/path/to/excel/files"
               />
               <p className="text-xs text-muted-foreground">
-                Default path for reading Excel files (optional)
+                {t("settings.export.excelReadPathDesc")}
               </p>
             </div>
           </div>
@@ -275,16 +277,16 @@ export default function Settings() {
           <div className="flex justify-end gap-3">
             <Link href="/">
               <Button type="button" variant="outline">
-                Cancel
+                {t("settings.cancel")}
               </Button>
             </Link>
             <Button type="submit" disabled={isPending} className="min-w-32">
               {isPending ? (
-                "Saving..."
+                t("settings.saving")
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  Save Settings
+                  {t("settings.save")}
                 </>
               )}
             </Button>

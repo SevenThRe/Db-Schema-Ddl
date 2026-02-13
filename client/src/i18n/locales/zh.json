@@ -1,0 +1,111 @@
+{
+  "app": {
+    "title": "DDL 生成器",
+    "subtitle": "Excel 转 SQL 工具"
+  },
+  "sidebar": {
+    "expandSidebar": "展开侧边栏",
+    "collapseSidebar": "折叠侧边栏",
+    "uploadExcel": "上传 Excel",
+    "uploading": "上传中...",
+    "definitionFiles": "定义文件",
+    "noFilesYet": "暂无上传文件",
+    "settings": "设置",
+    "deleteFile": "删除文件"
+  },
+  "sheet": {
+    "selectSheet": "选择工作表",
+    "loading": "加载中...",
+    "failed": "加载工作表失败",
+    "noSheets": "未找到工作表"
+  },
+  "table": {
+    "columns": "列",
+    "logicalName": "逻辑名",
+    "physicalName": "物理名",
+    "type": "类型",
+    "size": "大小",
+    "null": "可空",
+    "notNull": "不可空",
+    "nullable": "可空",
+    "selectSheet": "选择工作表以预览表定义",
+    "parsing": "解析表定义中...",
+    "invalidDefinition": "无效的表定义",
+    "parseError": "无法从此工作表中提取有效的表信息",
+    "noTables": "此工作表中未找到表定义",
+    "tablesFound": "在工作表中找到 {{count}} 个表",
+    "tablesParsedFromSelection": "从选择区域解析了 {{count}} 个表"
+  },
+  "ddl": {
+    "output": "DDL 输出",
+    "generate": "生成",
+    "generating": "生成中...",
+    "readyToGenerate": "准备生成 SQL",
+    "generated": "DDL 已生成",
+    "generatedSuccess": "成功为 {{count}} 个表生成了 {{dialect}} DDL",
+    "generationFailed": "生成失败",
+    "copy": "复制",
+    "copied": "已复制",
+    "copiedToClipboard": "已复制到剪贴板",
+    "export": "导出",
+    "exported": "DDL 已导出",
+    "exportedAs": "已保存为 {{filename}}"
+  },
+  "view": {
+    "autoParse": "自动解析",
+    "spreadsheet": "电子表格"
+  },
+  "settings": {
+    "title": "DDL 设置",
+    "subtitle": "配置 DDL 生成和文件处理的默认参数",
+    "backToDashboard": "返回仪表板",
+    "save": "保存设置",
+    "saving": "保存中...",
+    "cancel": "取消",
+    "saved": "设置已保存",
+    "savedSuccess": "您的 DDL 设置已成功更新",
+    "saveFailed": "保存设置失败",
+    "loading": "加载设置中...",
+    "ddlOptions": {
+      "title": "DDL 生成选项",
+      "includeCommentHeader": "包含注释头",
+      "includeCommentHeaderDesc": "在 DDL 顶部添加包含表名、作者和日期的注释块",
+      "authorName": "作者名称",
+      "authorNameDesc": "注释头中显示的作者名称。默认：ISI",
+      "includeSetNames": "包含 SET NAMES 语句",
+      "includeSetNamesDesc": "在 CREATE TABLE 之前添加 SET NAMES 语句",
+      "includeDropTable": "包含 DROP TABLE 语句",
+      "includeDropTableDesc": "在 CREATE TABLE 之前添加 DROP TABLE IF EXISTS"
+    },
+    "mysql": {
+      "title": "MySQL 设置",
+      "engine": "引擎",
+      "engineDesc": "表的存储引擎。默认：InnoDB",
+      "charset": "字符集",
+      "charsetDesc": "表的默认字符集。默认：utf8mb4",
+      "collation": "排序规则",
+      "collationDesc": "表的默认排序规则。默认：utf8mb4_bin"
+    },
+    "varchar": {
+      "title": "VARCHAR/CHAR 设置",
+      "charset": "字符集",
+      "charsetDesc": "VARCHAR 和 CHAR 列的字符集。默认：utf8mb4",
+      "collation": "排序规则",
+      "collationDesc": "VARCHAR 和 CHAR 列的排序规则。默认：utf8mb4_bin"
+    },
+    "export": {
+      "title": "导出设置",
+      "filenamePrefix": "文件名前缀",
+      "filenamePrefixDesc": "导出的 DDL 文件的前缀。例如：Crt_menus.sql。默认：Crt_",
+      "downloadPath": "下载路径（仅桌面版）",
+      "downloadPathDesc": "保存导出的 DDL 文件的默认路径（可选）",
+      "excelReadPath": "Excel 读取路径（仅桌面版）",
+      "excelReadPathDesc": "读取 Excel 文件的默认路径（可选）"
+    }
+  },
+  "toast": {
+    "fileUploaded": "文件上传成功",
+    "uploadFailed": "上传失败",
+    "fileDeleted": "文件已删除"
+  }
+}
