@@ -13,7 +13,20 @@ const DEFAULT_SETTINGS: DdlSettings = {
   includeDropTable: true,
   downloadPath: undefined,
   excelReadPath: undefined,
+  customHeaderTemplate: undefined,
+  useCustomHeader: false,
 };
+
+function substituteHeaderVariables(template: string, table: TableInfo, authorName: string | undefined): string {
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+
+  return template
+    .replace(/\$\{logical_name\}/g, table.logicalTableName)
+    .replace(/\$\{physical_name\}/g, table.physicalTableName)
+    .replace(/\$\{author\}/g, authorName || 'ISI')
+    .replace(/\$\{date\}/g, dateStr);
+}
 
 export function generateDDL(request: GenerateDdlRequest): string {
   const { tables, dialect, settings = DEFAULT_SETTINGS } = request;
@@ -21,7 +34,7 @@ export function generateDDL(request: GenerateDdlRequest): string {
     if (dialect === 'mysql') {
       return generateMySQL(table, settings);
     } else {
-      return generateOracle(table);
+      return generateOracle(table, settings);
     }
   });
   return ddls.join('\n\n');
@@ -32,13 +45,29 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
 
   // Add comment header (if enabled)
   if (settings.includeCommentHeader) {
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-    lines.push('/*');
-    lines.push(` TableName: ${table.logicalTableName}`);
-    lines.push(` Author: ${settings.authorName}`);
-    lines.push(` Date: ${today}`);
-    lines.push('*/');
-    lines.push('');
+    if (settings.useCustomHeader && settings.customHeaderTemplate) {
+      // Use custom header template with variable substitution
+      const customHeader = substituteHeaderVariables(
+        settings.customHeaderTemplate,
+        table,
+        settings.authorName
+      );
+      lines.push('/*');
+      customHeader.split('\n').forEach(line => {
+        lines.push(line ? ` ${line}` : '');
+      });
+      lines.push('*/');
+      lines.push('');
+    } else {
+      // Use default header format
+      const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+      lines.push('/*');
+      lines.push(` TableName: ${table.logicalTableName}`);
+      lines.push(` Author: ${settings.authorName}`);
+      lines.push(` Date: ${today}`);
+      lines.push('*/');
+      lines.push('');
+    }
   }
 
   // Add SET NAMES (if enabled)
@@ -76,13 +105,13 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
 
     lines.push(line);
 
-    if (col.isPk) {
-      pkCols.push(`\`${col.physicalName}\``);
+    if (col.isPk && col.physicalName) {
+      pkCols.push(col.physicalName);
     }
   });
 
   if (pkCols.length > 0) {
-    lines.push(`  PRIMARY KEY (\`${pkCols.join('`, `')}\`) USING BTREE`);
+    lines.push(`  PRIMARY KEY (${pkCols.map(c => `\`${c}\``).join(', ')}) USING BTREE`);
   }
 
   lines.push(`) ENGINE = ${settings.mysqlEngine} CHARACTER SET = ${settings.mysqlCharset} COLLATE = ${settings.mysqlCollate} COMMENT = '${escapeSql(table.logicalTableName)}';`);
@@ -90,8 +119,36 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   return lines.join('\n');
 }
 
-function generateOracle(table: TableInfo): string {
+function generateOracle(table: TableInfo, settings: DdlSettings = DEFAULT_SETTINGS): string {
   const lines: string[] = [];
+
+  // Add comment header (if enabled)
+  if (settings.includeCommentHeader) {
+    if (settings.useCustomHeader && settings.customHeaderTemplate) {
+      // Use custom header template with variable substitution
+      const customHeader = substituteHeaderVariables(
+        settings.customHeaderTemplate,
+        table,
+        settings.authorName
+      );
+      lines.push('/*');
+      customHeader.split('\n').forEach(line => {
+        lines.push(line ? ` ${line}` : '');
+      });
+      lines.push('*/');
+      lines.push('');
+    } else {
+      // Use default header format
+      const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+      lines.push('/*');
+      lines.push(` TableName: ${table.logicalTableName}`);
+      lines.push(` Author: ${settings.authorName}`);
+      lines.push(` Date: ${today}`);
+      lines.push('*/');
+      lines.push('');
+    }
+  }
+
   lines.push(`CREATE TABLE ${table.physicalTableName} (`);
 
   const pkCols: string[] = [];

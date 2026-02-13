@@ -18,6 +18,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [exportMode, setExportMode] = useState<"single" | "per-table">("single");
 
   const { data: autoTables } = useTableInfo(fileId, sheetName);
   const tables = overrideTables || autoTables;
@@ -60,27 +61,73 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
     });
   };
 
-  const handleExport = () => {
-    if (!generatedDdl || !tables || tables.length === 0) return;
+  const handleExport = async () => {
+    if (!tables || tables.length === 0) return;
 
-    const prefix = settings?.exportFilenamePrefix || "Crt_";
-    const tableName = tables[0].physicalTableName || "table";
-    const filename = `${prefix}${tableName}.sql`;
+    if (exportMode === "single") {
+      // Single file export
+      if (!generatedDdl) return;
 
-    const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const prefix = settings?.exportFilenamePrefix || "Crt_";
+      const tableName = tables.length === 1 ? tables[0].physicalTableName : "all_tables";
+      const filename = `${prefix}${tableName}.sql`;
 
-    toast({
-      title: t("ddl.exported"),
-      description: t("ddl.exportedAs", { filename }),
-    });
+      const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: t("ddl.exported"),
+        description: t("ddl.exportedAs", { filename }),
+      });
+    } else {
+      // Per-table ZIP export
+      try {
+        const response = await fetch("/api/export-ddl-zip", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tables,
+            dialect,
+            settings,
+            exportMode: "per-table",
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to generate ZIP");
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `ddl_${dialect}_${Date.now()}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast({
+          title: t("ddl.exported"),
+          description: `Exported ${tables.length} tables as ZIP file`,
+        });
+      } catch (error) {
+        toast({
+          title: t("ddl.exportFailed"),
+          description: (error as Error).message,
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   if (!tables || tables.length === 0) return null;
@@ -101,6 +148,16 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
             <SelectContent>
               <SelectItem value="mysql" data-testid="option-mysql">MySQL</SelectItem>
               <SelectItem value="oracle" data-testid="option-oracle">Oracle</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
+            <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="select-export-mode">
+              <SelectValue placeholder="Export Mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="single" data-testid="option-single">Single File</SelectItem>
+              <SelectItem value="per-table" data-testid="option-per-table">Per Table (ZIP)</SelectItem>
             </SelectContent>
           </Select>
 

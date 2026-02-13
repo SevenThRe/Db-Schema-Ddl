@@ -28,6 +28,8 @@ export const ddlSettings = pgTable("ddl_settings", {
   includeDropTable: boolean("include_drop_table").notNull().default(true),
   downloadPath: text("download_path"),
   excelReadPath: text("excel_read_path"),
+  customHeaderTemplate: text("custom_header_template"),
+  useCustomHeader: boolean("use_custom_header").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -44,6 +46,8 @@ export const ddlSettingsSchema = z.object({
   includeDropTable: z.boolean().default(true),
   downloadPath: z.string().optional(),
   excelReadPath: z.string().optional(),
+  customHeaderTemplate: z.string().optional(),
+  useCustomHeader: z.boolean().default(false),
 });
 
 export type DdlSettings = z.infer<typeof ddlSettingsSchema>;

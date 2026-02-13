@@ -47,6 +47,15 @@ export const api = {
         400: z.object({ message: z.string() }),
       },
     },
+    exportZip: {
+      method: 'POST' as const,
+      path: '/api/export-ddl-zip' as const,
+      input: generateDdlRequestSchema,
+      responses: {
+        200: z.custom<Blob>(), // Binary response (ZIP file)
+        400: z.object({ message: z.string() }),
+      },
+    },
   },
   settings: {
     get: {
