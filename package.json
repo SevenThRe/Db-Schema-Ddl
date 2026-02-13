@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "main": "dist/electron/main.cjs",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
+    "build:electron": "npm run build && electron-builder",
+    "start:electron": "npm run build && electron .",
+    "release": "npm run build && electron-builder --publish always",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push"
@@ -49,6 +53,7 @@
     "date-fns": "^3.6.0",
     "drizzle-orm": "^0.39.3",
     "drizzle-zod": "^0.7.0",
+    "electron-updater": "^6.7.3",
     "embla-carousel-react": "^8.6.0",
     "express": "^5.0.1",
     "express-session": "^1.18.1",
@@ -79,9 +84,6 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
-    "@replit/vite-plugin-cartographer": "^0.4.4",
-    "@replit/vite-plugin-dev-banner": "^0.1.1",
-    "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/connect-pg-simple": "^7.0.3",
@@ -111,5 +113,37 @@
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
+  },
+  "build": {
+    "appId": "com.seventhre.db-schema-ddl",
+    "productName": "DB Schema DDL Generator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "attached_assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SevenThRe",
+      "repo": "Db-Schema-Ddl"
+    }
   }
 }
