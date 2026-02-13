@@ -1,16 +1,26 @@
-import { type InsertUploadedFile, type UploadedFile } from "@shared/schema";
+import { type InsertUploadedFile, type UploadedFile, type DdlSettings } from "@shared/schema";
 
 export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
   getUploadedFile(id: number): Promise<UploadedFile | undefined>;
   deleteUploadedFile(id: number): Promise<void>;
+  getSettings(): Promise<DdlSettings>;
+  updateSettings(settings: DdlSettings): Promise<DdlSettings>;
 }
 
 // Memory-based storage for development (no database needed)
 export class MemoryStorage implements IStorage {
   private files: UploadedFile[] = [];
   private nextId = 1;
+  private settings: DdlSettings = {
+    mysqlEngine: "InnoDB",
+    mysqlCharset: "utf8mb4",
+    mysqlCollate: "utf8mb4_bin",
+    varcharCharset: "utf8mb4",
+    varcharCollate: "utf8mb4_bin",
+    exportFilenamePrefix: "Crt_",
+  };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
     const file: UploadedFile = {
@@ -34,20 +44,31 @@ export class MemoryStorage implements IStorage {
   async deleteUploadedFile(id: number): Promise<void> {
     this.files = this.files.filter(f => f.id !== id);
   }
+
+  async getSettings(): Promise<DdlSettings> {
+    return this.settings;
+  }
+
+  async updateSettings(settings: DdlSettings): Promise<DdlSettings> {
+    this.settings = settings;
+    return this.settings;
+  }
 }
 
 // Database storage (requires PostgreSQL)
 export class DatabaseStorage implements IStorage {
   private db: any;
   private uploadedFiles: any;
+  private ddlSettings: any;
 
   constructor() {
     // Lazy load DB modules only if DATABASE_URL is set
     const { db } = require("./db");
-    const { uploadedFiles } = require("@shared/schema");
+    const { uploadedFiles, ddlSettings } = require("@shared/schema");
     const { eq } = require("drizzle-orm");
     this.db = db;
     this.uploadedFiles = uploadedFiles;
+    this.ddlSettings = ddlSettings;
     this.eq = eq;
   }
 
@@ -69,6 +90,66 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUploadedFile(id: number): Promise<void> {
     await this.db.delete(this.uploadedFiles).where(this.eq(this.uploadedFiles.id, id));
+  }
+
+  async getSettings(): Promise<DdlSettings> {
+    const [settings] = await this.db.select().from(this.ddlSettings).limit(1);
+    if (!settings) {
+      // Create default settings if none exist
+      const defaultSettings: DdlSettings = {
+        mysqlEngine: "InnoDB",
+        mysqlCharset: "utf8mb4",
+        mysqlCollate: "utf8mb4_bin",
+        varcharCharset: "utf8mb4",
+        varcharCollate: "utf8mb4_bin",
+        exportFilenamePrefix: "Crt_",
+      };
+      const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
+      return {
+        mysqlEngine: created.mysqlEngine,
+        mysqlCharset: created.mysqlCharset,
+        mysqlCollate: created.mysqlCollate,
+        varcharCharset: created.varcharCharset,
+        varcharCollate: created.varcharCollate,
+        exportFilenamePrefix: created.exportFilenamePrefix,
+      };
+    }
+    return {
+      mysqlEngine: settings.mysqlEngine,
+      mysqlCharset: settings.mysqlCharset,
+      mysqlCollate: settings.mysqlCollate,
+      varcharCharset: settings.varcharCharset,
+      varcharCollate: settings.varcharCollate,
+      exportFilenamePrefix: settings.exportFilenamePrefix,
+    };
+  }
+
+  async updateSettings(newSettings: DdlSettings): Promise<DdlSettings> {
+    const [existing] = await this.db.select().from(this.ddlSettings).limit(1);
+    if (!existing) {
+      const [created] = await this.db.insert(this.ddlSettings).values(newSettings).returning();
+      return {
+        mysqlEngine: created.mysqlEngine,
+        mysqlCharset: created.mysqlCharset,
+        mysqlCollate: created.mysqlCollate,
+        varcharCharset: created.varcharCharset,
+        varcharCollate: created.varcharCollate,
+        exportFilenamePrefix: created.exportFilenamePrefix,
+      };
+    }
+    const [updated] = await this.db
+      .update(this.ddlSettings)
+      .set({ ...newSettings, updatedAt: new Date() })
+      .where(this.eq(this.ddlSettings.id, existing.id))
+      .returning();
+    return {
+      mysqlEngine: updated.mysqlEngine,
+      mysqlCharset: updated.mysqlCharset,
+      mysqlCollate: updated.mysqlCollate,
+      varcharCharset: updated.varcharCharset,
+      varcharCollate: updated.varcharCollate,
+      exportFilenamePrefix: updated.exportFilenamePrefix,
+    };
   }
 }
 

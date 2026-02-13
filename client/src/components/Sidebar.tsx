@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Upload, FileSpreadsheet, Database, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Trash2 } from "lucide-react";
+import { Upload, FileSpreadsheet, Database, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings } from "lucide-react";
 import { useFiles, useUploadFile, useDeleteFile } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 interface SidebarProps {
   selectedFileId: number | null;
@@ -201,6 +202,16 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
             )}
           </div>
         </ScrollArea>
+      </div>
+
+      {/* Settings button at the bottom */}
+      <div className="p-3 border-t border-border/50">
+        <Link href="/settings">
+          <Button variant="ghost" className="w-full justify-start gap-2 h-9 text-xs">
+            <Settings className="w-3.5 h-3.5" />
+            Settings
+          </Button>
+        </Link>
       </div>
     </div>
   );
