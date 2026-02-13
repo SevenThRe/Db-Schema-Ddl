@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -22,6 +22,12 @@ export const ddlSettings = pgTable("ddl_settings", {
   varcharCharset: text("varchar_charset").notNull().default("utf8mb4"),
   varcharCollate: text("varchar_collate").notNull().default("utf8mb4_bin"),
   exportFilenamePrefix: text("export_filename_prefix").notNull().default("Crt_"),
+  includeCommentHeader: boolean("include_comment_header").notNull().default(true),
+  authorName: text("author_name").notNull().default("ISI"),
+  includeSetNames: boolean("include_set_names").notNull().default(true),
+  includeDropTable: boolean("include_drop_table").notNull().default(true),
+  downloadPath: text("download_path"),
+  excelReadPath: text("excel_read_path"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -32,6 +38,12 @@ export const ddlSettingsSchema = z.object({
   varcharCharset: z.string().default("utf8mb4"),
   varcharCollate: z.string().default("utf8mb4_bin"),
   exportFilenamePrefix: z.string().default("Crt_"),
+  includeCommentHeader: z.boolean().default(true),
+  authorName: z.string().default("ISI"),
+  includeSetNames: z.boolean().default(true),
+  includeDropTable: z.boolean().default(true),
+  downloadPath: z.string().optional(),
+  excelReadPath: z.string().optional(),
 });
 
 export type DdlSettings = z.infer<typeof ddlSettingsSchema>;

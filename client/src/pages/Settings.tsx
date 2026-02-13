@@ -3,6 +3,7 @@ import { useSettings, useUpdateSettings } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Save, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
@@ -20,6 +21,12 @@ export default function Settings() {
     varcharCharset: "utf8mb4",
     varcharCollate: "utf8mb4_bin",
     exportFilenamePrefix: "Crt_",
+    includeCommentHeader: true,
+    authorName: "ISI",
+    includeSetNames: true,
+    includeDropTable: true,
+    downloadPath: undefined,
+    excelReadPath: undefined,
   });
 
   useEffect(() => {
@@ -47,7 +54,7 @@ export default function Settings() {
     });
   };
 
-  const handleChange = (field: keyof DdlSettings, value: string) => {
+  const handleChange = (field: keyof DdlSettings, value: string | boolean | undefined) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -61,7 +68,7 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container max-w-2xl mx-auto py-8 px-4">
+      <div className="container max-w-3xl mx-auto py-8 px-4">
         <div className="mb-6">
           <Link href="/">
             <Button variant="ghost" size="sm" className="mb-4">
@@ -74,11 +81,73 @@ export default function Settings() {
             <h1 className="text-3xl font-bold">DDL Settings</h1>
           </div>
           <p className="text-muted-foreground">
-            Configure default parameters for DDL generation
+            Configure default parameters for DDL generation and file handling
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* DDL Generation Options */}
+          <div className="bg-card border border-border rounded-lg p-6 space-y-5">
+            <h2 className="text-lg font-semibold mb-4">DDL Generation Options</h2>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label htmlFor="includeCommentHeader">Include Comment Header</Label>
+                <p className="text-xs text-muted-foreground">
+                  Add comment block with table name, author, and date at the top of DDL
+                </p>
+              </div>
+              <Switch
+                id="includeCommentHeader"
+                checked={formData.includeCommentHeader}
+                onCheckedChange={(checked) => handleChange("includeCommentHeader", checked)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="authorName">Author Name</Label>
+              <Input
+                id="authorName"
+                value={formData.authorName}
+                onChange={(e) => handleChange("authorName", e.target.value)}
+                placeholder="ISI"
+                disabled={!formData.includeCommentHeader}
+              />
+              <p className="text-xs text-muted-foreground">
+                Author name shown in comment header. Default: ISI
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label htmlFor="includeSetNames">Include SET NAMES Statement</Label>
+                <p className="text-xs text-muted-foreground">
+                  Add SET NAMES statement before CREATE TABLE
+                </p>
+              </div>
+              <Switch
+                id="includeSetNames"
+                checked={formData.includeSetNames}
+                onCheckedChange={(checked) => handleChange("includeSetNames", checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label htmlFor="includeDropTable">Include DROP TABLE Statement</Label>
+                <p className="text-xs text-muted-foreground">
+                  Add DROP TABLE IF EXISTS before CREATE TABLE
+                </p>
+              </div>
+              <Switch
+                id="includeDropTable"
+                checked={formData.includeDropTable}
+                onCheckedChange={(checked) => handleChange("includeDropTable", checked)}
+              />
+            </div>
+          </div>
+
+          {/* MySQL Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
             <h2 className="text-lg font-semibold mb-4">MySQL Settings</h2>
 
@@ -91,7 +160,7 @@ export default function Settings() {
                 placeholder="InnoDB"
               />
               <p className="text-xs text-muted-foreground">
-                Default: InnoDB
+                Storage engine for tables. Default: InnoDB
               </p>
             </div>
 
@@ -104,7 +173,7 @@ export default function Settings() {
                 placeholder="utf8mb4"
               />
               <p className="text-xs text-muted-foreground">
-                Default: utf8mb4
+                Default character set for tables. Default: utf8mb4
               </p>
             </div>
 
@@ -117,16 +186,17 @@ export default function Settings() {
                 placeholder="utf8mb4_bin"
               />
               <p className="text-xs text-muted-foreground">
-                Default: utf8mb4_bin
+                Default collation for tables. Default: utf8mb4_bin
               </p>
             </div>
           </div>
 
+          {/* VARCHAR Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">VARCHAR Settings</h2>
+            <h2 className="text-lg font-semibold mb-4">VARCHAR/CHAR Settings</h2>
 
             <div className="space-y-2">
-              <Label htmlFor="varcharCharset">VARCHAR Character Set</Label>
+              <Label htmlFor="varcharCharset">Character Set</Label>
               <Input
                 id="varcharCharset"
                 value={formData.varcharCharset}
@@ -139,7 +209,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="varcharCollate">VARCHAR Collation</Label>
+              <Label htmlFor="varcharCollate">Collation</Label>
               <Input
                 id="varcharCollate"
                 value={formData.varcharCollate}
@@ -152,6 +222,7 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Export Settings */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">
             <h2 className="text-lg font-semibold mb-4">Export Settings</h2>
 
@@ -169,9 +240,44 @@ export default function Settings() {
                 Prefix for exported DDL files. Example: Crt_menus.sql. Default: Crt_
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="downloadPath">Download Path (Desktop Only)</Label>
+              <Input
+                id="downloadPath"
+                value={formData.downloadPath || ""}
+                onChange={(e) =>
+                  handleChange("downloadPath", e.target.value || undefined)
+                }
+                placeholder="/path/to/downloads"
+              />
+              <p className="text-xs text-muted-foreground">
+                Default path for saving exported DDL files (optional)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="excelReadPath">Excel Read Path (Desktop Only)</Label>
+              <Input
+                id="excelReadPath"
+                value={formData.excelReadPath || ""}
+                onChange={(e) =>
+                  handleChange("excelReadPath", e.target.value || undefined)
+                }
+                placeholder="/path/to/excel/files"
+              />
+              <p className="text-xs text-muted-foreground">
+                Default path for reading Excel files (optional)
+              </p>
+            </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            <Link href="/">
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </Link>
             <Button type="submit" disabled={isPending} className="min-w-32">
               {isPending ? (
                 "Saving..."

@@ -20,6 +20,12 @@ export class MemoryStorage implements IStorage {
     varcharCharset: "utf8mb4",
     varcharCollate: "utf8mb4_bin",
     exportFilenamePrefix: "Crt_",
+    includeCommentHeader: true,
+    authorName: "ISI",
+    includeSetNames: true,
+    includeDropTable: true,
+    downloadPath: undefined,
+    excelReadPath: undefined,
   };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -103,6 +109,12 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: "utf8mb4",
         varcharCollate: "utf8mb4_bin",
         exportFilenamePrefix: "Crt_",
+        includeCommentHeader: true,
+        authorName: "ISI",
+        includeSetNames: true,
+        includeDropTable: true,
+        downloadPath: undefined,
+        excelReadPath: undefined,
       };
       const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
       return {
@@ -112,6 +124,12 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: created.varcharCharset,
         varcharCollate: created.varcharCollate,
         exportFilenamePrefix: created.exportFilenamePrefix,
+        includeCommentHeader: created.includeCommentHeader,
+        authorName: created.authorName,
+        includeSetNames: created.includeSetNames,
+        includeDropTable: created.includeDropTable,
+        downloadPath: created.downloadPath,
+        excelReadPath: created.excelReadPath,
       };
     }
     return {
@@ -121,6 +139,12 @@ export class DatabaseStorage implements IStorage {
       varcharCharset: settings.varcharCharset,
       varcharCollate: settings.varcharCollate,
       exportFilenamePrefix: settings.exportFilenamePrefix,
+      includeCommentHeader: settings.includeCommentHeader,
+      authorName: settings.authorName,
+      includeSetNames: settings.includeSetNames,
+      includeDropTable: settings.includeDropTable,
+      downloadPath: settings.downloadPath,
+      excelReadPath: settings.excelReadPath,
     };
   }
 
@@ -135,6 +159,12 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: created.varcharCharset,
         varcharCollate: created.varcharCollate,
         exportFilenamePrefix: created.exportFilenamePrefix,
+        includeCommentHeader: created.includeCommentHeader,
+        authorName: created.authorName,
+        includeSetNames: created.includeSetNames,
+        includeDropTable: created.includeDropTable,
+        downloadPath: created.downloadPath,
+        excelReadPath: created.excelReadPath,
       };
     }
     const [updated] = await this.db
@@ -149,6 +179,12 @@ export class DatabaseStorage implements IStorage {
       varcharCharset: updated.varcharCharset,
       varcharCollate: updated.varcharCollate,
       exportFilenamePrefix: updated.exportFilenamePrefix,
+      includeCommentHeader: updated.includeCommentHeader,
+      authorName: updated.authorName,
+      includeSetNames: updated.includeSetNames,
+      includeDropTable: updated.includeDropTable,
+      downloadPath: updated.downloadPath,
+      excelReadPath: updated.excelReadPath,
     };
   }
 }
