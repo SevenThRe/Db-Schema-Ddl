@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useGenerateDdl, useTableInfo } from "@/hooks/use-ddl";
+import { useGenerateDdl, useTableInfo, useSettings } from "@/hooks/use-ddl";
 import type { TableInfo } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Code, Database, ArrowRight } from "lucide-react";
+import { Copy, Check, Code, Database, ArrowRight, Download } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface DdlGeneratorProps {
@@ -21,13 +21,14 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
   const { data: autoTables } = useTableInfo(fileId, sheetName);
   const tables = overrideTables || autoTables;
   const { mutate: generate, isPending } = useGenerateDdl();
+  const { data: settings } = useSettings();
   const { toast } = useToast();
 
   const handleGenerate = () => {
     if (!tables || tables.length === 0) return;
 
     generate(
-      { tables, dialect },
+      { tables, dialect, settings },
       {
         onSuccess: (data) => {
           setGeneratedDdl(data.ddl);
@@ -54,6 +55,29 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
     setTimeout(() => setCopied(false), 2000);
     toast({
       title: "Copied to clipboard",
+    });
+  };
+
+  const handleExport = () => {
+    if (!generatedDdl || !tables || tables.length === 0) return;
+
+    const prefix = settings?.exportFilenamePrefix || "Crt_";
+    const tableName = tables[0].physicalTableName || "table";
+    const filename = `${prefix}${tableName}.sql`;
+
+    const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "DDL Exported",
+      description: `Saved as ${filename}`,
     });
   };
 
@@ -114,8 +138,18 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="absolute top-4 right-4"
+              className="absolute top-4 right-4 flex gap-2"
             >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExport}
+                className="shadow-lg bg-white/10 text-white border-none backdrop-blur-sm"
+                data-testid="button-export"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Export
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
