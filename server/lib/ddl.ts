@@ -7,6 +7,12 @@ const DEFAULT_SETTINGS: DdlSettings = {
   varcharCharset: "utf8mb4",
   varcharCollate: "utf8mb4_bin",
   exportFilenamePrefix: "Crt_",
+  includeCommentHeader: true,
+  authorName: "ISI",
+  includeSetNames: true,
+  includeDropTable: true,
+  downloadPath: undefined,
+  excelReadPath: undefined,
 };
 
 export function generateDDL(request: GenerateDdlRequest): string {
@@ -24,21 +30,27 @@ export function generateDDL(request: GenerateDdlRequest): string {
 function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   const lines: string[] = [];
 
-  // Add comment header
-  const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-  lines.push('/*');
-  lines.push(` TableName: ${table.logicalTableName}`);
-  lines.push(` Author: ISI`);
-  lines.push(` Date: ${today}`);
-  lines.push('*/');
-  lines.push('');
+  // Add comment header (if enabled)
+  if (settings.includeCommentHeader) {
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+    lines.push('/*');
+    lines.push(` TableName: ${table.logicalTableName}`);
+    lines.push(` Author: ${settings.authorName}`);
+    lines.push(` Date: ${today}`);
+    lines.push('*/');
+    lines.push('');
+  }
 
-  // Add SET NAMES
-  lines.push(`SET NAMES ${settings.mysqlCharset};`);
-  lines.push('');
+  // Add SET NAMES (if enabled)
+  if (settings.includeSetNames) {
+    lines.push(`SET NAMES ${settings.mysqlCharset};`);
+    lines.push('');
+  }
 
-  // Add DROP TABLE IF EXISTS
-  lines.push(`DROP TABLE IF EXISTS \`${table.physicalTableName}\`;`);
+  // Add DROP TABLE IF EXISTS (if enabled)
+  if (settings.includeDropTable) {
+    lines.push(`DROP TABLE IF EXISTS \`${table.physicalTableName}\`;`);
+  }
 
   // CREATE TABLE
   lines.push(`CREATE TABLE \`${table.physicalTableName}\`  (`);
