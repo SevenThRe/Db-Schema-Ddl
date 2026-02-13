@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Table, Loader2, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 
 interface SheetSelectorProps {
   fileId: number | null;
@@ -12,6 +13,7 @@ interface SheetSelectorProps {
 
 export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSelectorProps) {
   const { data: sheets, isLoading, isError } = useSheets(fileId);
+  const { t } = useTranslation();
 
   if (!fileId) return null;
 
@@ -20,7 +22,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
       <div className="p-4 border-b border-border/50 bg-muted/20">
         <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
           <Table className="w-4 h-4 text-primary" />
-          Select Sheet
+          {t("sheet.selectSheet")}
         </h3>
       </div>
 
@@ -28,15 +30,15 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
         <div className="p-2 space-y-1">
           {isLoading ? (
              <div className="flex items-center justify-center p-8 text-muted-foreground">
-               <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading...
+               <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t("sheet.loading")}
              </div>
           ) : isError ? (
             <div className="p-4 text-red-500 text-sm flex items-center gap-2 bg-red-50 rounded-md m-2">
-              <AlertCircle className="w-4 h-4" /> Failed to load sheets
+              <AlertCircle className="w-4 h-4" /> {t("sheet.failed")}
             </div>
           ) : sheets?.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground text-sm">
-              No sheets found
+              {t("sheet.noSheets")}
             </div>
           ) : (
             <AnimatePresence mode="popLayout">
