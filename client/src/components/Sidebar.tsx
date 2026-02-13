@@ -34,8 +34,16 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     formData.append("file", file);
 
     uploadFile(formData, {
-      onSuccess: () => {
-        toast({ title: t("toast.fileUploaded") });
+      onSuccess: (data: any) => {
+        if (data.isDuplicate) {
+          toast({
+            title: t("toast.duplicateFile"),
+            description: t("toast.duplicateFileDesc"),
+            variant: "default"
+          });
+        } else {
+          toast({ title: t("toast.fileUploaded") });
+        }
       },
       onError: (error) => {
         toast({ title: t("toast.uploadFailed"), description: error.message, variant: "destructive" });
