@@ -26,6 +26,8 @@ export class MemoryStorage implements IStorage {
     includeDropTable: true,
     downloadPath: undefined,
     excelReadPath: undefined,
+    customHeaderTemplate: undefined,
+    useCustomHeader: false,
   };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -115,6 +117,8 @@ export class DatabaseStorage implements IStorage {
         includeDropTable: true,
         downloadPath: undefined,
         excelReadPath: undefined,
+        customHeaderTemplate: undefined,
+        useCustomHeader: false,
       };
       const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
       return {
@@ -130,6 +134,8 @@ export class DatabaseStorage implements IStorage {
         includeDropTable: created.includeDropTable,
         downloadPath: created.downloadPath,
         excelReadPath: created.excelReadPath,
+        customHeaderTemplate: created.customHeaderTemplate,
+        useCustomHeader: created.useCustomHeader,
       };
     }
     return {
@@ -145,6 +151,8 @@ export class DatabaseStorage implements IStorage {
       includeDropTable: settings.includeDropTable,
       downloadPath: settings.downloadPath,
       excelReadPath: settings.excelReadPath,
+      customHeaderTemplate: settings.customHeaderTemplate,
+      useCustomHeader: settings.useCustomHeader,
     };
   }
 
@@ -165,6 +173,8 @@ export class DatabaseStorage implements IStorage {
         includeDropTable: created.includeDropTable,
         downloadPath: created.downloadPath,
         excelReadPath: created.excelReadPath,
+        customHeaderTemplate: created.customHeaderTemplate,
+        useCustomHeader: created.useCustomHeader,
       };
     }
     const [updated] = await this.db
@@ -185,6 +195,8 @@ export class DatabaseStorage implements IStorage {
       includeDropTable: updated.includeDropTable,
       downloadPath: updated.downloadPath,
       excelReadPath: updated.excelReadPath,
+      customHeaderTemplate: updated.customHeaderTemplate,
+      useCustomHeader: updated.useCustomHeader,
     };
   }
 }

@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import archiver from "archiver";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
@@ -161,6 +162,59 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message });
       }
       res.status(500).json({ message: 'Failed to generate DDL' });
+    }
+  });
+
+  app.post(api.ddl.exportZip.path, async (req, res) => {
+    try {
+      const request = api.ddl.exportZip.input.parse(req.body);
+      const { tables, dialect, settings } = request;
+
+      // Create a zip archive
+      const archive = archiver('zip', {
+        zlib: { level: 9 } // Maximum compression
+      });
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="ddl_${dialect}_${Date.now()}.zip"`);
+
+      // Pipe archive to response
+      archive.pipe(res);
+
+      // Generate individual DDL for each table and add to ZIP
+      const prefix = settings?.exportFilenamePrefix || "Crt_";
+      tables.forEach((table) => {
+        // Generate DDL for single table
+        const singleTableDdl = generateDDL({
+          tables: [table],
+          dialect,
+          settings
+        });
+
+        // Create filename for this table
+        const filename = `${prefix}${table.physicalTableName}.sql`;
+
+        // Add to ZIP
+        archive.append(singleTableDdl, { name: filename });
+      });
+
+      // Handle errors
+      archive.on('error', (err) => {
+        throw err;
+      });
+
+      // Finalize the archive
+      await archive.finalize();
+
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      console.error('ZIP export error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Failed to generate ZIP' });
+      }
     }
   });
 
