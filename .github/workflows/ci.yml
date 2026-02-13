@@ -1,0 +1,39 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Build project
+        run: npm run build
+
+      - name: Check build artifacts
+        run: |
+          if (!(Test-Path "dist/index.cjs")) { exit 1 }
+          if (!(Test-Path "dist/public/index.html")) { exit 1 }
+          if (!(Test-Path "dist/electron/main.cjs")) { exit 1 }
+          Write-Host "✓ All build artifacts generated successfully"
