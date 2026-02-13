@@ -8,7 +8,7 @@ import archiver from "archiver";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
-import { generateDDL } from "./lib/ddl";
+import { generateDDL, substituteFilenameSuffix } from "./lib/ddl";
 import { z } from "zod";
 
 // Ensure uploads directory exists
@@ -207,7 +207,9 @@ export async function registerRoutes(
 
       // Generate individual DDL for each table and add to ZIP
       const prefix = settings?.exportFilenamePrefix || "Crt_";
-      const suffix = settings?.exportFilenameSuffix || "";
+      const suffixTemplate = settings?.exportFilenameSuffix || "";
+      const authorName = settings?.authorName || "ISI";
+
       tables.forEach((table) => {
         // Generate DDL for single table
         const singleTableDdl = generateDDL({
@@ -215,6 +217,9 @@ export async function registerRoutes(
           dialect,
           settings
         });
+
+        // Substitute variables in suffix for this specific table
+        const suffix = substituteFilenameSuffix(suffixTemplate, table, authorName);
 
         // Create filename for this table
         const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;

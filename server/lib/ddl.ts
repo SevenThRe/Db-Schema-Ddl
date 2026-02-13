@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: DdlSettings = {
   useCustomHeader: false,
 };
 
-function substituteHeaderVariables(template: string, table: TableInfo, authorName: string | undefined): string {
+function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {
   const today = new Date();
   const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
 
@@ -27,6 +27,12 @@ function substituteHeaderVariables(template: string, table: TableInfo, authorNam
     .replace(/\$\{physical_name\}/g, table.physicalTableName)
     .replace(/\$\{author\}/g, authorName || 'ISI')
     .replace(/\$\{date\}/g, dateStr);
+}
+
+// Export function for use in routes (for filename suffix substitution)
+export function substituteFilenameSuffix(suffix: string, table: TableInfo, authorName: string): string {
+  if (!suffix) return '';
+  return substituteTemplateVariables(suffix, table, authorName);
 }
 
 export function generateDDL(request: GenerateDdlRequest): string {
@@ -48,7 +54,7 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   if (settings.includeCommentHeader) {
     if (settings.useCustomHeader && settings.customHeaderTemplate) {
       // Use custom header template with variable substitution
-      const customHeader = substituteHeaderVariables(
+      const customHeader = substituteTemplateVariables(
         settings.customHeaderTemplate,
         table,
         settings.authorName
@@ -127,7 +133,7 @@ function generateOracle(table: TableInfo, settings: DdlSettings = DEFAULT_SETTIN
   if (settings.includeCommentHeader) {
     if (settings.useCustomHeader && settings.customHeaderTemplate) {
       // Use custom header template with variable substitution
-      const customHeader = substituteHeaderVariables(
+      const customHeader = substituteTemplateVariables(
         settings.customHeaderTemplate,
         table,
         settings.authorName

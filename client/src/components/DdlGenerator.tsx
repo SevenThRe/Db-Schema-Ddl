@@ -61,6 +61,18 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
     });
   };
 
+  const substituteVariables = (template: string, table: TableInfo): string => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+    const author = settings?.authorName || 'ISI';
+
+    return template
+      .replace(/\$\{logical_name\}/g, table.logicalTableName)
+      .replace(/\$\{physical_name\}/g, table.physicalTableName)
+      .replace(/\$\{author\}/g, author)
+      .replace(/\$\{date\}/g, dateStr);
+  };
+
   const handleExport = async () => {
     if (!tables || tables.length === 0) return;
 
@@ -69,9 +81,14 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
       if (!generatedDdl) return;
 
       const prefix = settings?.exportFilenamePrefix || "Crt_";
-      const suffix = settings?.exportFilenameSuffix || "";
-      const tableName = tables.length === 1 ? tables[0].physicalTableName : "all_tables";
-      const filename = `${prefix}${tableName}${suffix}.sql`;
+      const suffixTemplate = settings?.exportFilenameSuffix || "";
+      const table = tables.length === 1 ? tables[0] : {
+        logicalTableName: "all_tables",
+        physicalTableName: "all_tables",
+        columns: []
+      };
+      const suffix = suffixTemplate ? substituteVariables(suffixTemplate, table) : "";
+      const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
 
       const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);

@@ -286,10 +286,11 @@ export default function Settings() {
                 onChange={(e) =>
                   handleChange("exportFilenameSuffix", e.target.value)
                 }
-                placeholder="_ISI"
+                placeholder="_ISI or _${date}"
+                className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Suffix to append to exported SQL filenames (e.g., "_ISI" for users_ISI.sql)
+                Suffix to append to exported SQL filenames. Supports variables: <code className="bg-muted px-1 py-0.5 rounded">$&#123;logical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;physical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;author&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;date&#125;</code>
               </p>
             </div>
 
