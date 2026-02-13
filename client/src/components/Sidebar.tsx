@@ -46,7 +46,7 @@ export function Sidebar({ selectedFileId, onSelectFile, className }: SidebarProp
 
   return (
     <div className={cn("flex flex-col h-full bg-card border-r border-border", className)}>
-      <div className="p-6 border-b border-border/50">
+      <div className="p-6 border-b border-border/50 text-[12px]">
         <div className="flex items-center gap-3 mb-6">
           <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
             <Database className="w-6 h-6" />
@@ -81,7 +81,6 @@ export function Sidebar({ selectedFileId, onSelectFile, className }: SidebarProp
           </label>
         </div>
       </div>
-
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="px-6 py-4">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
