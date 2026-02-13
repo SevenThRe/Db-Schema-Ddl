@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Save, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
@@ -23,6 +24,7 @@ export default function Settings() {
     exportFilenamePrefix: "Crt_",
     includeCommentHeader: true,
     authorName: "ISI",
+    customHeaderTemplate: "/*\n TableName: ${logical_name}\n Author: ${author}\n Date: ${date}\n*/",
     includeSetNames: true,
     includeDropTable: true,
     downloadPath: undefined,
@@ -115,6 +117,22 @@ export default function Settings() {
               />
               <p className="text-xs text-muted-foreground">
                 Author name shown in comment header. Default: ISI
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="customHeaderTemplate">Custom Header Template</Label>
+              <Textarea
+                id="customHeaderTemplate"
+                value={formData.customHeaderTemplate}
+                onChange={(e) => handleChange("customHeaderTemplate", e.target.value)}
+                placeholder="/*&#10; TableName: ${logical_name}&#10; Author: ${author}&#10; Date: ${date}&#10;*/"
+                disabled={!formData.includeCommentHeader}
+                rows={6}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Template for comment header. Available variables: ${"{"}logical_name{"}"}, ${"{"}physical_name{"}"}, ${"{"}author{"}"}, ${"{"}date{"}"}
               </p>
             </div>
 

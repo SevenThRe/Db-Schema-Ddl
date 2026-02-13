@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: DdlSettings = {
   exportFilenamePrefix: "Crt_",
   includeCommentHeader: true,
   authorName: "ISI",
+  customHeaderTemplate: "/*\n TableName: ${logical_name}\n Author: ${author}\n Date: ${date}\n*/",
   includeSetNames: true,
   includeDropTable: true,
   downloadPath: undefined,
@@ -27,17 +28,27 @@ export function generateDDL(request: GenerateDdlRequest): string {
   return ddls.join('\n\n');
 }
 
+function renderHeaderTemplate(template: string, logicalName: string, physicalName: string, author: string): string {
+  const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+  return template
+    .replace(/\$\{logical_name\}/g, logicalName)
+    .replace(/\$\{physical_name\}/g, physicalName)
+    .replace(/\$\{author\}/g, author)
+    .replace(/\$\{date\}/g, today);
+}
+
 function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   const lines: string[] = [];
 
   // Add comment header (if enabled)
   if (settings.includeCommentHeader) {
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-    lines.push('/*');
-    lines.push(` TableName: ${table.logicalTableName}`);
-    lines.push(` Author: ${settings.authorName}`);
-    lines.push(` Date: ${today}`);
-    lines.push('*/');
+    const renderedHeader = renderHeaderTemplate(
+      settings.customHeaderTemplate,
+      table.logicalTableName,
+      table.physicalTableName,
+      settings.authorName
+    );
+    lines.push(renderedHeader);
     lines.push('');
   }
 
@@ -82,7 +93,7 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   });
 
   if (pkCols.length > 0) {
-    lines.push(`  PRIMARY KEY (\`${pkCols.join('`, `')}\`) USING BTREE`);
+    lines.push(`  PRIMARY KEY (${pkCols.join(', ')}) USING BTREE`);
   }
 
   lines.push(`) ENGINE = ${settings.mysqlEngine} CHARACTER SET = ${settings.mysqlCharset} COLLATE = ${settings.mysqlCollate} COMMENT = '${escapeSql(table.logicalTableName)}';`);
