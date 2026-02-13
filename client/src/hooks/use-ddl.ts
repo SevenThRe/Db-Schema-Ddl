@@ -58,6 +58,20 @@ export function useSheets(fileId: number | null) {
   });
 }
 
+export function useSearchIndex(fileId: number | null) {
+  return useQuery({
+    queryKey: [api.files.getSearchIndex.path, fileId],
+    queryFn: async () => {
+      if (!fileId) return [];
+      const url = buildUrl(api.files.getSearchIndex.path, { id: fileId });
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch search index");
+      return api.files.getSearchIndex.responses[200].parse(await res.json());
+    },
+    enabled: !!fileId,
+  });
+}
+
 // --- Table Info & DDL ---
 
 export function useTableInfo(fileId: number | null, sheetName: string | null) {

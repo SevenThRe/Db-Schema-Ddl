@@ -39,6 +39,20 @@ export const api = {
         400: z.object({ message: z.string() }),
       },
     },
+    getSearchIndex: {
+      method: 'GET' as const,
+      path: '/api/files/:id/search-index' as const,
+      responses: {
+        200: z.array(z.object({
+          type: z.enum(['sheet', 'table']),
+          sheetName: z.string(),
+          displayName: z.string(),
+          physicalTableName: z.string().optional(),
+          logicalTableName: z.string().optional(),
+        })),
+        404: z.object({ message: z.string() }),
+      },
+    },
   },
   ddl: {
     generate: {

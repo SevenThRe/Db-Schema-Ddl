@@ -57,6 +57,15 @@
     "autoParse": "自动解析",
     "spreadsheet": "电子表格"
   },
+  "search": {
+    "button": "搜索",
+    "placeholder": "搜索工作表和表...",
+    "loading": "加载中...",
+    "noResults": "未找到结果",
+    "sheets": "工作表",
+    "tables": "表",
+    "inSheet": "位于"
+  },
   "settings": {
     "title": "DDL 设置",
     "subtitle": "配置 DDL 生成和文件处理的默认参数",
