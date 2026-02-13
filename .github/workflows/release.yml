@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -16,6 +27,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+            if (-not $version.StartsWith("v")) {
+              $version = "v$version"
+            }
+          } else {
+            $version = "${{ github.ref_name }}"
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "Release version: $version"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -25,7 +51,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Update package.json version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}".TrimStart("v")
+          npm version $version --no-git-tag-version --allow-same-version
+
       - name: Build and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ inputs.prerelease || false }}
         run: npm run release
