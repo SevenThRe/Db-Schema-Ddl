@@ -6,8 +6,8 @@ import { BrowserWindow, ipcMain, app } from 'electron';
  * GitHub Releases をベースにした自動更新機能を設定
  */
 export function initAutoUpdater(mainWindow: BrowserWindow) {
-  // 自動ダウンロードを有効化
-  autoUpdater.autoDownload = true;
+  // 自動ダウンロードを無効化（ユーザーの確認後にダウンロード）
+  autoUpdater.autoDownload = false;
 
   // アプリケーション終了時に自動インストール
   autoUpdater.autoInstallOnAppQuit = true;
@@ -69,6 +69,13 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
    */
   ipcMain.on('install-update', () => {
     autoUpdater.quitAndInstall(false, true);
+  });
+
+  /**
+   * レンダラープロセスからのダウンロード開始要求ハンドラー
+   */
+  ipcMain.on('start-download', () => {
+    autoUpdater.downloadUpdate();
   });
 
   /**

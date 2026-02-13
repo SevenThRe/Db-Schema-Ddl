@@ -77,37 +77,66 @@
       "includeSetNames": "SET NAMES ステートメントを含める",
       "includeSetNamesDesc": "CREATE TABLE の前に SET NAMES ステートメントを追加",
       "includeDropTable": "DROP TABLE ステートメントを含める",
-      "includeDropTableDesc": "CREATE TABLE の前に DROP TABLE IF EXISTS を追加"
+      "includeDropTableDesc": "CREATE TABLE の前に DROP TABLE IF EXISTS を追加",
+      "useCustomHeader": "カスタムヘッダーテンプレートを使用",
+      "useCustomHeaderDesc": "変数置換をサポートするカスタムヘッダーテンプレートを有効化",
+      "customHeaderTemplate": "カスタムヘッダーテンプレート",
+      "useDefaultTemplate": "デフォルトを使用",
+      "customHeaderTemplateDesc": "利用可能な変数：${logical_name}, ${physical_name}, ${author}, ${date}"
     },
     "mysql": {
       "title": "MySQL 設定",
       "engine": "エンジン",
       "engineDesc": "テーブルのストレージエンジン。デフォルト：InnoDB",
+      "enginePlaceholder": "ストレージエンジンを選択",
       "charset": "文字セット",
       "charsetDesc": "テーブルのデフォルト文字セット。デフォルト：utf8mb4",
+      "charsetPlaceholder": "文字セットを選択",
       "collation": "照合順序",
-      "collationDesc": "テーブルのデフォルト照合順序。デフォルト：utf8mb4_bin"
+      "collationDesc": "テーブルのデフォルト照合順序。デフォルト：utf8mb4_bin",
+      "collationPlaceholder": "照合順序を選択"
     },
     "varchar": {
       "title": "VARCHAR/CHAR 設定",
       "charset": "文字セット",
       "charsetDesc": "VARCHAR と CHAR カラムの文字セット。デフォルト：utf8mb4",
+      "charsetPlaceholder": "文字セットを選択",
       "collation": "照合順序",
-      "collationDesc": "VARCHAR と CHAR カラムの照合順序。デフォルト：utf8mb4_bin"
+      "collationDesc": "VARCHAR と CHAR カラムの照合順序。デフォルト：utf8mb4_bin",
+      "collationPlaceholder": "照合順序を選択"
     },
     "export": {
       "title": "エクスポート設定",
       "filenamePrefix": "ファイル名プレフィックス",
       "filenamePrefixDesc": "エクスポートされた DDL ファイルのプレフィックス。例：Crt_menus.sql。デフォルト：Crt_",
+      "filenameSuffix": "ファイル名サフィックス",
+      "filenameSuffixDesc": "エクスポートされた SQL ファイル名のサフィックス。利用可能な変数：${logical_name}, ${physical_name}, ${author}, ${date}",
       "downloadPath": "ダウンロードパス（デスクトップのみ）",
       "downloadPathDesc": "エクスポートされた DDL ファイルを保存するデフォルトパス（オプション）",
+      "selectFolder": "フォルダを選択",
       "excelReadPath": "Excel 読み取りパス（デスクトップのみ）",
       "excelReadPathDesc": "Excel ファイルを読み取るデフォルトパス（オプション）"
-    }
+    },
+    "notInElectron": "デスクトップ版のみ利用可能",
+    "notInElectronDesc": "この機能は Electron デスクトップアプリケーションでのみ使用できます"
   },
   "toast": {
     "fileUploaded": "ファイルが正常にアップロードされました",
     "uploadFailed": "アップロードに失敗しました",
     "fileDeleted": "ファイルが削除されました"
+  },
+  "update": {
+    "available": "新しいバージョンが利用可能です",
+    "availableDesc": "バージョン {{version}} をダウンロードしています...",
+    "askDownload": "新しいバージョンをダウンロードしますか？",
+    "askDownloadDesc": "バージョン {{version}} が利用可能です。今すぐダウンロードしますか？",
+    "downloadNow": "今すぐダウンロード",
+    "later": "後で通知",
+    "downloading": "アップデートをダウンロード中...",
+    "downloadProgress": "{{percent}}%",
+    "ready": "アップデートの準備が完了しました",
+    "readyDesc": "バージョン {{version}} のダウンロードが完了しました。再起動後に自動でインストールされます。",
+    "restartNow": "今すぐ再起動",
+    "restartLater": "後で再起動"
   }
 }

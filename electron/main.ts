@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import net from 'net';
 import { initAutoUpdater } from './updater';
@@ -151,4 +151,40 @@ app.on('window-all-closed', () => {
  */
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
+});
+
+// ディレクトリ選択ダイアログ
+ipcMain.handle('select-directory', async () => {
+  if (!mainWindow) return null;
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'フォルダを選択',
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
+});
+
+// ファイル選択ダイアログ（Excel ファイル）
+ipcMain.handle('select-excel-file', async () => {
+  if (!mainWindow) return null;
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    title: 'Excel ファイルを選択',
+    filters: [
+      { name: 'Excel Files', extensions: ['xlsx', 'xls'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
 });

@@ -5,11 +5,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Settings as SettingsIcon, Save, ArrowLeft } from "lucide-react";
+import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
+import {
+  MYSQL_ENGINES,
+  MYSQL_CHARSETS,
+  UTF8MB4_COLLATIONS,
+  UTF8_COLLATIONS,
+  DEFAULT_HEADER_TEMPLATE,
+} from "@shared/mysql-constants";
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
@@ -62,6 +76,38 @@ export default function Settings() {
 
   const handleChange = (field: keyof DdlSettings, value: string | boolean | undefined) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Electron 環境でのディレクトリ選択
+  const handleSelectDirectory = async (field: 'downloadPath' | 'excelReadPath') => {
+    if (window.electronAPI) {
+      const path = await window.electronAPI.selectDirectory();
+      if (path) {
+        handleChange(field, path);
+      }
+    } else {
+      toast({
+        title: t("settings.notInElectron"),
+        description: t("settings.notInElectronDesc"),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // デフォルトテンプレートを使用
+  const useDefaultTemplate = () => {
+    handleChange("customHeaderTemplate", DEFAULT_HEADER_TEMPLATE);
+  };
+
+  // 照合順序の選択肢を文字セットに応じて動的に変更
+  const getCollationOptions = (charset: string) => {
+    if (charset === 'utf8mb4') {
+      return UTF8MB4_COLLATIONS;
+    } else if (charset === 'utf8' || charset === 'utf8mb3') {
+      return UTF8_COLLATIONS;
+    }
+    // その他の文字セットの場合はデフォルトのみ
+    return [{ value: `${charset}_bin`, label: `${charset}_bin` }];
   };
 
   if (isLoading) {
@@ -154,9 +200,9 @@ export default function Settings() {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="useCustomHeader">Use Custom Header Template</Label>
+                <Label htmlFor="useCustomHeader">{t("settings.ddlOptions.useCustomHeader")}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Enable custom header template with variable substitution
+                  {t("settings.ddlOptions.useCustomHeaderDesc")}
                 </p>
               </div>
               <Switch
@@ -168,18 +214,30 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="customHeaderTemplate">Custom Header Template</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="customHeaderTemplate">{t("settings.ddlOptions.customHeaderTemplate")}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={useDefaultTemplate}
+                  disabled={!formData.includeCommentHeader || !formData.useCustomHeader}
+                >
+                  <FileText className="w-3 h-3 mr-1" />
+                  {t("settings.ddlOptions.useDefaultTemplate")}
+                </Button>
+              </div>
               <Textarea
                 id="customHeaderTemplate"
                 value={formData.customHeaderTemplate || ""}
                 onChange={(e) => handleChange("customHeaderTemplate", e.target.value || undefined)}
-                placeholder="Table: ${logical_name} (${physical_name})&#10;Author: ${author}&#10;Date: ${date}"
+                placeholder="TableName: ${logical_name}&#10;Author: ${author}&#10;Date: ${date}"
                 rows={6}
                 disabled={!formData.includeCommentHeader || !formData.useCustomHeader}
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Available variables: <code className="bg-muted px-1 py-0.5 rounded">$&#123;logical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;physical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;author&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;date&#125;</code>
+                {t("settings.ddlOptions.customHeaderTemplateDesc")}
               </p>
             </div>
           </div>
@@ -190,12 +248,21 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="mysqlEngine">{t("settings.mysql.engine")}</Label>
-              <Input
-                id="mysqlEngine"
+              <Select
                 value={formData.mysqlEngine}
-                onChange={(e) => handleChange("mysqlEngine", e.target.value)}
-                placeholder="InnoDB"
-              />
+                onValueChange={(value) => handleChange("mysqlEngine", value)}
+              >
+                <SelectTrigger id="mysqlEngine">
+                  <SelectValue placeholder={t("settings.mysql.enginePlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {MYSQL_ENGINES.map((engine) => (
+                    <SelectItem key={engine.value} value={engine.value}>
+                      {engine.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 {t("settings.mysql.engineDesc")}
               </p>
@@ -203,12 +270,21 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="mysqlCharset">{t("settings.mysql.charset")}</Label>
-              <Input
-                id="mysqlCharset"
+              <Select
                 value={formData.mysqlCharset}
-                onChange={(e) => handleChange("mysqlCharset", e.target.value)}
-                placeholder="utf8mb4"
-              />
+                onValueChange={(value) => handleChange("mysqlCharset", value)}
+              >
+                <SelectTrigger id="mysqlCharset">
+                  <SelectValue placeholder={t("settings.mysql.charsetPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {MYSQL_CHARSETS.map((charset) => (
+                    <SelectItem key={charset.value} value={charset.value}>
+                      {charset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 {t("settings.mysql.charsetDesc")}
               </p>
@@ -216,12 +292,21 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="mysqlCollate">{t("settings.mysql.collation")}</Label>
-              <Input
-                id="mysqlCollate"
+              <Select
                 value={formData.mysqlCollate}
-                onChange={(e) => handleChange("mysqlCollate", e.target.value)}
-                placeholder="utf8mb4_bin"
-              />
+                onValueChange={(value) => handleChange("mysqlCollate", value)}
+              >
+                <SelectTrigger id="mysqlCollate">
+                  <SelectValue placeholder={t("settings.mysql.collationPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {getCollationOptions(formData.mysqlCharset).map((collation) => (
+                    <SelectItem key={collation.value} value={collation.value}>
+                      {collation.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 {t("settings.mysql.collationDesc")}
               </p>
@@ -234,12 +319,21 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="varcharCharset">{t("settings.varchar.charset")}</Label>
-              <Input
-                id="varcharCharset"
+              <Select
                 value={formData.varcharCharset}
-                onChange={(e) => handleChange("varcharCharset", e.target.value)}
-                placeholder="utf8mb4"
-              />
+                onValueChange={(value) => handleChange("varcharCharset", value)}
+              >
+                <SelectTrigger id="varcharCharset">
+                  <SelectValue placeholder={t("settings.varchar.charsetPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {MYSQL_CHARSETS.map((charset) => (
+                    <SelectItem key={charset.value} value={charset.value}>
+                      {charset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 {t("settings.varchar.charsetDesc")}
               </p>
@@ -247,12 +341,21 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="varcharCollate">{t("settings.varchar.collation")}</Label>
-              <Input
-                id="varcharCollate"
+              <Select
                 value={formData.varcharCollate}
-                onChange={(e) => handleChange("varcharCollate", e.target.value)}
-                placeholder="utf8mb4_bin"
-              />
+                onValueChange={(value) => handleChange("varcharCollate", value)}
+              >
+                <SelectTrigger id="varcharCollate">
+                  <SelectValue placeholder={t("settings.varchar.collationPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {getCollationOptions(formData.varcharCharset).map((collation) => (
+                    <SelectItem key={collation.value} value={collation.value}>
+                      {collation.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 {t("settings.varchar.collationDesc")}
               </p>
@@ -279,7 +382,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="exportFilenameSuffix">Export Filename Suffix</Label>
+              <Label htmlFor="exportFilenameSuffix">{t("settings.export.filenameSuffix")}</Label>
               <Input
                 id="exportFilenameSuffix"
                 value={formData.exportFilenameSuffix}
@@ -290,20 +393,32 @@ export default function Settings() {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Suffix to append to exported SQL filenames. Supports variables: <code className="bg-muted px-1 py-0.5 rounded">$&#123;logical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;physical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;author&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;date&#125;</code>
+                {t("settings.export.filenameSuffixDesc")}
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="downloadPath">{t("settings.export.downloadPath")}</Label>
-              <Input
-                id="downloadPath"
-                value={formData.downloadPath || ""}
-                onChange={(e) =>
-                  handleChange("downloadPath", e.target.value || undefined)
-                }
-                placeholder="/path/to/downloads"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="downloadPath"
+                  value={formData.downloadPath || ""}
+                  onChange={(e) =>
+                    handleChange("downloadPath", e.target.value || undefined)
+                  }
+                  placeholder="/path/to/downloads"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleSelectDirectory('downloadPath')}
+                  title={t("settings.export.selectFolder")}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {t("settings.export.downloadPathDesc")}
               </p>
@@ -311,14 +426,26 @@ export default function Settings() {
 
             <div className="space-y-2">
               <Label htmlFor="excelReadPath">{t("settings.export.excelReadPath")}</Label>
-              <Input
-                id="excelReadPath"
-                value={formData.excelReadPath || ""}
-                onChange={(e) =>
-                  handleChange("excelReadPath", e.target.value || undefined)
-                }
-                placeholder="/path/to/excel/files"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="excelReadPath"
+                  value={formData.excelReadPath || ""}
+                  onChange={(e) =>
+                    handleChange("excelReadPath", e.target.value || undefined)
+                  }
+                  placeholder="/path/to/excel/files"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleSelectDirectory('excelReadPath')}
+                  title={t("settings.export.selectFolder")}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {t("settings.export.excelReadPathDesc")}
               </p>

@@ -77,37 +77,66 @@
       "includeSetNames": "包含 SET NAMES 语句",
       "includeSetNamesDesc": "在 CREATE TABLE 之前添加 SET NAMES 语句",
       "includeDropTable": "包含 DROP TABLE 语句",
-      "includeDropTableDesc": "在 CREATE TABLE 之前添加 DROP TABLE IF EXISTS"
+      "includeDropTableDesc": "在 CREATE TABLE 之前添加 DROP TABLE IF EXISTS",
+      "useCustomHeader": "使用自定义头部模板",
+      "useCustomHeaderDesc": "启用支持变量替换的自定义头部模板",
+      "customHeaderTemplate": "自定义头部模板",
+      "useDefaultTemplate": "使用默认模板",
+      "customHeaderTemplateDesc": "可用变量：${logical_name}, ${physical_name}, ${author}, ${date}"
     },
     "mysql": {
       "title": "MySQL 设置",
       "engine": "引擎",
       "engineDesc": "表的存储引擎。默认：InnoDB",
+      "enginePlaceholder": "选择存储引擎",
       "charset": "字符集",
       "charsetDesc": "表的默认字符集。默认：utf8mb4",
+      "charsetPlaceholder": "选择字符集",
       "collation": "排序规则",
-      "collationDesc": "表的默认排序规则。默认：utf8mb4_bin"
+      "collationDesc": "表的默认排序规则。默认：utf8mb4_bin",
+      "collationPlaceholder": "选择排序规则"
     },
     "varchar": {
       "title": "VARCHAR/CHAR 设置",
       "charset": "字符集",
       "charsetDesc": "VARCHAR 和 CHAR 列的字符集。默认：utf8mb4",
+      "charsetPlaceholder": "选择字符集",
       "collation": "排序规则",
-      "collationDesc": "VARCHAR 和 CHAR 列的排序规则。默认：utf8mb4_bin"
+      "collationDesc": "VARCHAR 和 CHAR 列的排序规则。默认：utf8mb4_bin",
+      "collationPlaceholder": "选择排序规则"
     },
     "export": {
       "title": "导出设置",
       "filenamePrefix": "文件名前缀",
       "filenamePrefixDesc": "导出的 DDL 文件的前缀。例如：Crt_menus.sql。默认：Crt_",
+      "filenameSuffix": "文件名后缀",
+      "filenameSuffixDesc": "导出的 SQL 文件名后缀。支持变量：${logical_name}, ${physical_name}, ${author}, ${date}",
       "downloadPath": "下载路径（仅桌面版）",
       "downloadPathDesc": "保存导出的 DDL 文件的默认路径（可选）",
+      "selectFolder": "选择文件夹",
       "excelReadPath": "Excel 读取路径（仅桌面版）",
       "excelReadPathDesc": "读取 Excel 文件的默认路径（可选）"
-    }
+    },
+    "notInElectron": "仅桌面版可用",
+    "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用"
   },
   "toast": {
     "fileUploaded": "文件上传成功",
     "uploadFailed": "上传失败",
     "fileDeleted": "文件已删除"
+  },
+  "update": {
+    "available": "发现新版本",
+    "availableDesc": "正在下载版本 {{version}}...",
+    "askDownload": "是否下载新版本？",
+    "askDownloadDesc": "发现版本 {{version}}，是否立即下载？",
+    "downloadNow": "立即下载",
+    "later": "稍后提醒",
+    "downloading": "正在下载更新...",
+    "downloadProgress": "{{percent}}%",
+    "ready": "更新已就绪",
+    "readyDesc": "版本 {{version}} 已下载完成，重启后将自动安装。",
+    "restartNow": "立即重启",
+    "restartLater": "稍后重启"
   }
 }
