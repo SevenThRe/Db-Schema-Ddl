@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Code, Database, ArrowRight, Download } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 
 interface DdlGeneratorProps {
   fileId: number | null;
@@ -23,6 +24,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
   const { mutate: generate, isPending } = useGenerateDdl();
   const { data: settings } = useSettings();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const handleGenerate = () => {
     if (!tables || tables.length === 0) return;
@@ -33,13 +35,13 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
         onSuccess: (data) => {
           setGeneratedDdl(data.ddl);
           toast({
-            title: "DDL Generated",
-            description: `Successfully generated ${dialect.toUpperCase()} DDL for ${tables.length} table(s).`,
+            title: t("ddl.generated"),
+            description: t("ddl.generatedSuccess", { count: tables.length, dialect: dialect.toUpperCase() }),
           });
         },
         onError: (error) => {
           toast({
-            title: "Generation Failed",
+            title: t("ddl.generationFailed"),
             description: error.message,
             variant: "destructive",
           });
@@ -54,7 +56,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     toast({
-      title: "Copied to clipboard",
+      title: t("ddl.copiedToClipboard"),
     });
   };
 
@@ -76,8 +78,8 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
     URL.revokeObjectURL(url);
 
     toast({
-      title: "DDL Exported",
-      description: `Saved as ${filename}`,
+      title: t("ddl.exported"),
+      description: t("ddl.exportedAs", { filename }),
     });
   };
 
@@ -88,7 +90,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
       <div className="p-4 border-b border-border bg-card/50 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Code className="w-4 h-4 text-primary" />
-          <h3 className="font-semibold text-sm" data-testid="text-ddl-header">DDL Output</h3>
+          <h3 className="font-semibold text-sm" data-testid="text-ddl-header">{t("ddl.output")}</h3>
         </div>
 
         <div className="flex items-center gap-2">
@@ -109,9 +111,9 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
             className="h-8 text-xs font-semibold shadow-sm"
             data-testid="button-generate"
           >
-            {isPending ? "Generating..." : (
+            {isPending ? t("ddl.generating") : (
               <>
-                Generate <ArrowRight className="w-3 h-3 ml-1" />
+                {t("ddl.generate")} <ArrowRight className="w-3 h-3 ml-1" />
               </>
             )}
           </Button>
@@ -122,7 +124,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
             <Database className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-sm">Ready to generate SQL</p>
+            <p className="text-sm">{t("ddl.readyToGenerate")}</p>
           </div>
         ) : (
           <div className="absolute inset-0 overflow-auto custom-scrollbar">
@@ -148,7 +150,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
                 data-testid="button-export"
               >
                 <Download className="w-4 h-4 mr-1" />
-                Export
+                {t("ddl.export")}
               </Button>
               <Button
                 variant="secondary"
@@ -158,7 +160,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
                 data-testid="button-copy"
               >
                 {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
-                {copied ? "Copied" : "Copy"}
+                {copied ? t("ddl.copied") : t("ddl.copy")}
               </Button>
             </motion.div>
           )}
