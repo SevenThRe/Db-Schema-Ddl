@@ -3,21 +3,45 @@ import type { Server } from "http";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
 import { generateDDL } from "./lib/ddl";
 import { z } from "zod";
 
-const upload = multer({ 
-  dest: 'uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
-});
-
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) {
   fs.mkdirSync('uploads');
 }
+
+// Custom storage to handle UTF-8 filenames and file deduplication
+const customStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    // Properly decode UTF-8 filename (multer encodes as latin1)
+    const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // Store decoded name in request for later use
+    (req as any).decodedFileName = decodedName;
+
+    // Generate unique filename: hash_timestamp_originalname.ext
+    const ext = path.extname(decodedName);
+    const nameWithoutExt = path.basename(decodedName, ext);
+    const timestamp = Date.now();
+    const hash = crypto.createHash('md5').update(decodedName + timestamp).digest('hex').slice(0, 8);
+    const filename = `${hash}_${timestamp}_${nameWithoutExt}${ext}`;
+
+    cb(null, filename);
+  }
+});
+
+const upload = multer({
+  storage: customStorage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -34,9 +58,9 @@ export async function registerRoutes(
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    // multer encodes originalname as latin1; decode to utf8 for CJK filenames
-    const decodedName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-    
+    // Use the decoded filename we stored in multer config
+    const decodedName = (req as any).decodedFileName || req.file.originalname;
+
     const file = await storage.createUploadedFile({
       filePath: req.file.path,
       originalName: decodedName,
