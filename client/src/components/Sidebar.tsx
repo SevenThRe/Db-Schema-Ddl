@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Upload, FileSpreadsheet, Database, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Trash2 } from "lucide-react";
+import { Upload, FileSpreadsheet, Database, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings } from "lucide-react";
 import { useFiles, useUploadFile, useDeleteFile } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
+import { useTranslation } from "react-i18next";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 
 interface SidebarProps {
   selectedFileId: number | null;
@@ -20,6 +23,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   const { mutate: uploadFile, isPending: isUploading } = useUploadFile();
   const { mutate: deleteFile } = useDeleteFile();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [hoverFileId, setHoverFileId] = useState<number | null>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,10 +35,10 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
     uploadFile(formData, {
       onSuccess: () => {
-        toast({ title: "File uploaded successfully" });
+        toast({ title: t("toast.fileUploaded") });
       },
       onError: (error) => {
-        toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+        toast({ title: t("toast.uploadFailed"), description: error.message, variant: "destructive" });
       },
     });
     e.target.value = "";
@@ -47,7 +51,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     }
     deleteFile(fileId, {
       onSuccess: () => {
-        toast({ title: "File deleted" });
+        toast({ title: t("toast.fileDeleted") });
       },
     });
   };
@@ -62,7 +66,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               <PanelLeft className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">Expand sidebar</TooltipContent>
+          <TooltipContent side="right">{t("sidebar.expandSidebar")}</TooltipContent>
         </Tooltip>
         <div className="h-px w-6 bg-border" />
         <Tooltip>
@@ -71,7 +75,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               <Database className="w-4 h-4" />
             </div>
           </TooltipTrigger>
-          <TooltipContent side="right">DDL Gen</TooltipContent>
+          <TooltipContent side="right">{t("app.title")}</TooltipContent>
         </Tooltip>
       </div>
     );
@@ -86,8 +90,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               <Database className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-sm tracking-tight">DDL Gen</h2>
-              <p className="text-[10px] text-muted-foreground">Excel to SQL Tool</p>
+              <h2 className="font-bold text-sm tracking-tight">{t("app.title")}</h2>
+              <p className="text-[10px] text-muted-foreground">{t("app.subtitle")}</p>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-7 w-7 text-muted-foreground hover:text-foreground">
@@ -113,7 +117,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
             >
               <div className="cursor-pointer flex items-center gap-2">
                 {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                {isUploading ? "Uploading..." : "Upload Excel"}
+                {isUploading ? t("sidebar.uploading") : t("sidebar.uploadExcel")}
               </div>
             </Button>
           </label>
@@ -123,7 +127,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="px-4 py-3">
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Definition Files
+            {t("sidebar.definitionFiles")}
           </h3>
         </div>
 
@@ -137,7 +141,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               </div>
             ) : files?.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg mx-2">
-                No files uploaded yet.
+                {t("sidebar.noFilesYet")}
               </div>
             ) : (
               files?.map((file) => (
@@ -174,7 +178,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
                         <button
                           onClick={(e) => handleDelete(e, file.id)}
                           className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
-                          title="Delete file"
+                          title={t("sidebar.deleteFile")}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -183,7 +187,7 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
                         <button
                           onClick={(e) => handleDelete(e, file.id)}
                           className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/20 text-primary-foreground/70 hover:text-red-200 transition-colors"
-                          title="Delete file"
+                          title={t("sidebar.deleteFile")}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -201,6 +205,17 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
             )}
           </div>
         </ScrollArea>
+      </div>
+
+      {/* Settings and Language Switcher at the bottom */}
+      <div className="p-3 border-t border-border/50 space-y-2">
+        <Link href="/settings">
+          <Button variant="ghost" className="w-full justify-start gap-2 h-9 text-xs">
+            <Settings className="w-3.5 h-3.5" />
+            {t("sidebar.settings")}
+          </Button>
+        </Link>
+        <LanguageSwitcher />
       </div>
     </div>
   );

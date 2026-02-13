@@ -165,6 +165,29 @@ export async function registerRoutes(
     }
   });
 
+  // Settings routes
+  app.get(api.settings.get.path, async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json(settings);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to get settings' });
+    }
+  });
+
+  app.put(api.settings.update.path, async (req, res) => {
+    try {
+      const settings = api.settings.update.input.parse(req.body);
+      const updated = await storage.updateSettings(settings);
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: 'Failed to update settings' });
+    }
+  });
+
   // サンプルファイルの初期登録（Electron環境では RESOURCES_PATH から取得）
   const attachedFile = process.env.RESOURCES_PATH
     ? path.join(process.env.RESOURCES_PATH, '30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx')
