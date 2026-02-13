@@ -164,6 +164,29 @@ export async function registerRoutes(
     }
   });
 
+  // Settings routes
+  app.get(api.settings.get.path, async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json(settings);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to get settings' });
+    }
+  });
+
+  app.put(api.settings.update.path, async (req, res) => {
+    try {
+      const settings = api.settings.update.input.parse(req.body);
+      const updated = await storage.updateSettings(settings);
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: 'Failed to update settings' });
+    }
+  });
+
   // Seed with the attached file if not exists
   // We can't easily "upload" it via API here, but we can insert into DB if file exists
   const attachedFile = 'attached_assets/30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx';
