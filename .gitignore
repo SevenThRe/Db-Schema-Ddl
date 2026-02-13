@@ -18,6 +18,7 @@ uploads/
 # IDE
 .vscode/
 .idea/
+.claude/*.local.json
 *.swp
 *.swo
 *~
