@@ -17,7 +17,9 @@
     "selectSheet": "シートを選択",
     "loading": "読み込み中...",
     "failed": "シートの読み込みに失敗しました",
-    "noSheets": "シートが見つかりません"
+    "noSheets": "シートが見つかりません",
+    "filterUndefined": "定義のないシートを非表示",
+    "noDefinedSheets": "表定義のあるシートが見つかりません"
   },
   "table": {
     "columns": "列",

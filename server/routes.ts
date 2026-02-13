@@ -152,8 +152,25 @@ export async function registerRoutes(
     }
 
     try {
-      const sheets = getSheetNames(file.filePath);
-      res.json(sheets);
+      const sheetNames = getSheetNames(file.filePath);
+
+      // Check each sheet for table definitions
+      const sheetsWithInfo = sheetNames.map(name => {
+        let hasTableDefinitions = false;
+        try {
+          const tables = parseTableDefinitions(file.filePath, name);
+          hasTableDefinitions = tables.length > 0;
+        } catch (err) {
+          // If parsing fails, assume no table definitions
+          hasTableDefinitions = false;
+        }
+        return {
+          name,
+          hasTableDefinitions,
+        };
+      });
+
+      res.json(sheetsWithInfo);
     } catch (err) {
       res.status(500).json({ message: 'Failed to read Excel file' });
     }

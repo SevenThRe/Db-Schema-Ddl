@@ -23,7 +23,10 @@ export const api = {
       method: 'GET' as const,
       path: '/api/files/:id/sheets' as const,
       responses: {
-        200: z.array(z.string()),
+        200: z.array(z.object({
+          name: z.string(),
+          hasTableDefinitions: z.boolean(),
+        })),
         404: z.object({ message: z.string() }),
       },
     },
