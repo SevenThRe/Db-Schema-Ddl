@@ -34,9 +34,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * アップデートのダウンロードを開始
+   */
+  startDownload: () => {
+    ipcRenderer.send('start-download');
+  },
+
+  /**
    * 現在のアプリケーションバージョンを取得
    */
   getAppVersion: async (): Promise<string> => {
     return await ipcRenderer.invoke('get-app-version');
+  },
+
+  /**
+   * ディレクトリ選択ダイアログを開く
+   */
+  selectDirectory: async (): Promise<string | null> => {
+    return await ipcRenderer.invoke('select-directory');
+  },
+
+  /**
+   * Excel ファイル選択ダイアログを開く
+   */
+  selectExcelFile: async (): Promise<string | null> => {
+    return await ipcRenderer.invoke('select-excel-file');
   },
 });
