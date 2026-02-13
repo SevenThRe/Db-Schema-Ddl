@@ -83,3 +83,30 @@ export const generateDdlRequestSchema = z.object({
 export type ColumnInfo = z.infer<typeof columnInfoSchema>;
 export type TableInfo = z.infer<typeof tableInfoSchema>;
 export type GenerateDdlRequest = z.infer<typeof generateDdlRequestSchema>;
+
+// Processing Tasks table for tracking background file processing
+export const processingTasks = pgTable("processing_tasks", {
+  id: serial("id").primaryKey(),
+  fileId: serial("file_id"),
+  taskType: text("task_type").notNull(), // 'upload', 'parse_sheets'
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  progress: serial("progress").notNull().default(0), // 0-100
+  error: text("error"),
+  result: text("result"), // JSON-encoded result data
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const processingTaskSchema = z.object({
+  id: z.number(),
+  fileId: z.number().optional(),
+  taskType: z.string(),
+  status: z.enum(["pending", "processing", "completed", "failed"]),
+  progress: z.number().min(0).max(100),
+  error: z.string().optional(),
+  result: z.any().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type ProcessingTask = z.infer<typeof processingTaskSchema>;

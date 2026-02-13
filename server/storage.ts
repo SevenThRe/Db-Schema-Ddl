@@ -1,4 +1,4 @@
-import { type InsertUploadedFile, type UploadedFile, type DdlSettings } from "@shared/schema";
+import { type InsertUploadedFile, type UploadedFile, type DdlSettings, type ProcessingTask } from "@shared/schema";
 
 export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
@@ -8,12 +8,20 @@ export interface IStorage {
   deleteUploadedFile(id: number): Promise<void>;
   getSettings(): Promise<DdlSettings>;
   updateSettings(settings: DdlSettings): Promise<DdlSettings>;
+
+  // Task management
+  createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask>;
+  getTask(id: number): Promise<ProcessingTask | undefined>;
+  updateTask(id: number, updates: Partial<Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ProcessingTask | undefined>;
+  deleteTask(id: number): Promise<void>;
 }
 
 // Memory-based storage for development (no database needed)
 export class MemoryStorage implements IStorage {
   private files: UploadedFile[] = [];
+  private tasks: ProcessingTask[] = [];
   private nextId = 1;
+  private nextTaskId = 1;
   private settings: DdlSettings = {
     mysqlEngine: "InnoDB",
     mysqlCharset: "utf8mb4",
@@ -69,6 +77,32 @@ export class MemoryStorage implements IStorage {
     this.settings = settings;
     return this.settings;
   }
+
+  async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {
+    const newTask: ProcessingTask = {
+      ...task,
+      id: this.nextTaskId++,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.tasks.push(newTask);
+    return newTask;
+  }
+
+  async getTask(id: number): Promise<ProcessingTask | undefined> {
+    return this.tasks.find(t => t.id === id);
+  }
+
+  async updateTask(id: number, updates: Partial<Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ProcessingTask | undefined> {
+    const task = this.tasks.find(t => t.id === id);
+    if (!task) return undefined;
+    Object.assign(task, updates, { updatedAt: new Date() });
+    return task;
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    this.tasks = this.tasks.filter(t => t.id !== id);
+  }
 }
 
 // Database storage (requires PostgreSQL)
@@ -76,15 +110,17 @@ export class DatabaseStorage implements IStorage {
   private db: any;
   private uploadedFiles: any;
   private ddlSettings: any;
+  private processingTasks: any;
 
   constructor() {
     // Lazy load DB modules only if DATABASE_URL is set
     const { db } = require("./db");
-    const { uploadedFiles, ddlSettings } = require("@shared/schema");
+    const { uploadedFiles, ddlSettings, processingTasks } = require("@shared/schema");
     const { eq } = require("drizzle-orm");
     this.db = db;
     this.uploadedFiles = uploadedFiles;
     this.ddlSettings = ddlSettings;
+    this.processingTasks = processingTasks;
     this.eq = eq;
   }
 
@@ -216,6 +252,65 @@ export class DatabaseStorage implements IStorage {
       customHeaderTemplate: updated.customHeaderTemplate,
       useCustomHeader: updated.useCustomHeader,
     };
+  }
+
+  async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {
+    const [created] = await this.db.insert(this.processingTasks).values(task).returning();
+    return {
+      id: created.id,
+      fileId: created.fileId,
+      taskType: created.taskType,
+      status: created.status,
+      progress: created.progress,
+      error: created.error,
+      result: created.result ? JSON.parse(created.result) : undefined,
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    };
+  }
+
+  async getTask(id: number): Promise<ProcessingTask | undefined> {
+    const [task] = await this.db.select().from(this.processingTasks).where(this.eq(this.processingTasks.id, id));
+    if (!task) return undefined;
+    return {
+      id: task.id,
+      fileId: task.fileId,
+      taskType: task.taskType,
+      status: task.status,
+      progress: task.progress,
+      error: task.error,
+      result: task.result ? JSON.parse(task.result) : undefined,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    };
+  }
+
+  async updateTask(id: number, updates: Partial<Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ProcessingTask | undefined> {
+    const updateData = { ...updates };
+    if (updateData.result !== undefined) {
+      (updateData as any).result = JSON.stringify(updateData.result);
+    }
+    const [updated] = await this.db
+      .update(this.processingTasks)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(this.eq(this.processingTasks.id, id))
+      .returning();
+    if (!updated) return undefined;
+    return {
+      id: updated.id,
+      fileId: updated.fileId,
+      taskType: updated.taskType,
+      status: updated.status,
+      progress: updated.progress,
+      error: updated.error,
+      result: updated.result ? JSON.parse(updated.result) : undefined,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    await this.db.delete(this.processingTasks).where(this.eq(this.processingTasks.id, id));
   }
 }
 
