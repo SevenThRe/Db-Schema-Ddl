@@ -1,7 +1,9 @@
 import { useTableInfo } from "@/hooks/use-ddl";
-import { Loader2, AlertTriangle, Key } from "lucide-react";
+import { Loader2, AlertTriangle, Key, Info } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -10,13 +12,50 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import type { TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 
 interface TablePreviewProps {
   fileId: number | null;
   sheetName: string | null;
+}
+
+function DataSummary({ tables }: { tables: TableInfo[] }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="mb-6 p-4 border border-border rounded-md bg-card/30">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-foreground">
+        <Info className="w-4 h-4" />
+        Data Summary
+      </h3>
+      <div className="space-y-2">
+        {tables.map((table, idx) => (
+          <div key={idx} className="flex items-center justify-between text-sm p-2 bg-background/50 rounded border border-border/50">
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-foreground">{table.physicalTableName}</span>
+              <Badge variant="secondary" className="font-mono text-[10px]">
+                {table.columns.length} columns
+              </Badge>
+            </div>
+            {table.excelRange && (
+              <Badge variant="outline" className="font-mono text-xs text-muted-foreground">
+                Range: {table.excelRange}
+              </Badge>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SingleTablePreview({ table, sheetName }: { table: TableInfo; sheetName: string }) {
@@ -29,6 +68,11 @@ function SingleTablePreview({ table, sheetName }: { table: TableInfo; sheetName:
           <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground">
             {table.physicalTableName || "NO_PHYSICAL_NAME"}
           </Badge>
+          {table.excelRange && (
+            <Badge variant="secondary" className="font-mono text-xs">
+              {table.excelRange}
+            </Badge>
+          )}
         </h2>
         <p className="text-sm text-muted-foreground">
           {table.columns.length} {t("table.columns")}
@@ -84,6 +128,8 @@ function SingleTablePreview({ table, sheetName }: { table: TableInfo; sheetName:
 export function TablePreview({ fileId, sheetName }: TablePreviewProps) {
   const { data: tables, isLoading, error } = useTableInfo(fileId, sheetName);
   const { t } = useTranslation();
+  const [showSummary, setShowSummary] = useState(true);
+  const [onlyStandardColumns, setOnlyStandardColumns] = useState(true);
 
   if (!fileId || !sheetName) {
     return (
@@ -131,16 +177,48 @@ export function TablePreview({ fileId, sheetName }: TablePreviewProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-border bg-card/50">
-        <p className="text-sm text-muted-foreground">
-          {t("table.tablesFound", { count: tables.length })} <span className="font-medium text-foreground">{sheetName}</span>
-        </p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm text-muted-foreground">
+            {t("table.tablesFound", { count: tables.length })} <span className="font-medium text-foreground">{sheetName}</span>
+          </p>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-summary"
+                checked={showSummary}
+                onCheckedChange={setShowSummary}
+              />
+              <Label htmlFor="show-summary" className="text-xs cursor-pointer">
+                Show Summary
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="only-standard"
+                checked={onlyStandardColumns}
+                onCheckedChange={setOnlyStandardColumns}
+              />
+              <Label htmlFor="only-standard" className="text-xs cursor-pointer">
+                Standard Columns Only
+              </Label>
+            </div>
+          </div>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 w-full bg-background/30">
         <div className="p-6">
+          {showSummary && <DataSummary tables={tables} />}
           {tables.map((table, idx) => (
             <SingleTablePreview key={idx} table={table} sheetName={sheetName} />
           ))}
+          {!onlyStandardColumns && (
+            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-md">
+              <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                <strong>Note:</strong> "Standard Columns Only" is enabled. Only columns within the detected range (No to 備考) are shown. Disable this toggle to include any additional columns outside the standard range.
+              </p>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
