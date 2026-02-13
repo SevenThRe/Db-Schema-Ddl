@@ -62,9 +62,32 @@ export async function registerRoutes(
     // Use the decoded filename we stored in multer config
     const decodedName = (req as any).decodedFileName || req.file.originalname;
 
+    // Calculate SHA256 hash of the file content
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const fileSize = fileBuffer.length;
+
+    // Check if a file with the same hash already exists
+    const existingFile = await storage.findFileByHash(fileHash);
+
+    if (existingFile) {
+      // File already exists, remove the newly uploaded duplicate
+      fs.unlinkSync(req.file.path);
+
+      // Return the existing file with a flag indicating it's a duplicate
+      return res.status(200).json({
+        ...existingFile,
+        isDuplicate: true,
+        message: 'File already exists. Showing existing file.'
+      });
+    }
+
+    // Create new file entry with hash
     const file = await storage.createUploadedFile({
       filePath: req.file.path,
       originalName: decodedName,
+      fileHash,
+      fileSize,
     });
 
     res.status(201).json(file);
@@ -247,9 +270,14 @@ export async function registerRoutes(
   if (fs.existsSync(attachedFile)) {
     const existing = await storage.getUploadedFiles();
     if (existing.length === 0) {
+      // Calculate hash for the seed file
+      const fileBuffer = fs.readFileSync(attachedFile);
+      const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
       await storage.createUploadedFile({
         filePath: attachedFile,
         originalName: '30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx',
+        fileHash,
+        fileSize: fileBuffer.length,
       });
     }
   }

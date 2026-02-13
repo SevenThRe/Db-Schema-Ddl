@@ -4,6 +4,7 @@ export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
   getUploadedFile(id: number): Promise<UploadedFile | undefined>;
+  findFileByHash(hash: string): Promise<UploadedFile | undefined>;
   deleteUploadedFile(id: number): Promise<void>;
   getSettings(): Promise<DdlSettings>;
   updateSettings(settings: DdlSettings): Promise<DdlSettings>;
@@ -35,6 +36,8 @@ export class MemoryStorage implements IStorage {
       id: this.nextId++,
       filePath: insertFile.filePath,
       originalName: insertFile.originalName,
+      fileHash: insertFile.fileHash,
+      fileSize: insertFile.fileSize || 0,
       uploadedAt: new Date(),
     };
     this.files.push(file);
@@ -47,6 +50,10 @@ export class MemoryStorage implements IStorage {
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
     return this.files.find(f => f.id === id);
+  }
+
+  async findFileByHash(hash: string): Promise<UploadedFile | undefined> {
+    return this.files.find(f => f.fileHash === hash);
   }
 
   async deleteUploadedFile(id: number): Promise<void> {
@@ -93,6 +100,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
     const [file] = await this.db.select().from(this.uploadedFiles).where(this.eq(this.uploadedFiles.id, id));
+    return file;
+  }
+
+  async findFileByHash(hash: string): Promise<UploadedFile | undefined> {
+    const [file] = await this.db.select().from(this.uploadedFiles).where(this.eq(this.uploadedFiles.fileHash, hash));
     return file;
   }
 
