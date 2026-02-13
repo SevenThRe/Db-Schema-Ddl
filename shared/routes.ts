@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema, ddlSettingsSchema } from './schema';
+import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema, ddlSettingsSchema, processingTaskSchema } from './schema';
 
 export const api = {
   files: {
@@ -57,6 +57,16 @@ export const api = {
       responses: {
         200: z.custom<Blob>(), // Binary response (ZIP file)
         400: z.object({ message: z.string() }),
+      },
+    },
+  },
+  tasks: {
+    get: {
+      method: 'GET' as const,
+      path: '/api/tasks/:id' as const,
+      responses: {
+        200: processingTaskSchema,
+        404: z.object({ message: z.string() }),
       },
     },
   },
