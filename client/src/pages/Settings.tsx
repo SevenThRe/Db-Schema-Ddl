@@ -24,6 +24,7 @@ export default function Settings() {
     varcharCharset: "utf8mb4",
     varcharCollate: "utf8mb4_bin",
     exportFilenamePrefix: "Crt_",
+    exportFilenameSuffix: "",
     includeCommentHeader: true,
     authorName: "ISI",
     includeSetNames: true,
@@ -274,6 +275,21 @@ export default function Settings() {
               />
               <p className="text-xs text-muted-foreground">
                 {t("settings.export.filenamePrefixDesc")}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="exportFilenameSuffix">Export Filename Suffix</Label>
+              <Input
+                id="exportFilenameSuffix"
+                value={formData.exportFilenameSuffix}
+                onChange={(e) =>
+                  handleChange("exportFilenameSuffix", e.target.value)
+                }
+                placeholder="_ISI"
+              />
+              <p className="text-xs text-muted-foreground">
+                Suffix to append to exported SQL filenames (e.g., "_ISI" for users_ISI.sql)
               </p>
             </div>
 
