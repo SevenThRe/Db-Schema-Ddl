@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS: DdlSettings = {
   varcharCharset: "utf8mb4",
   varcharCollate: "utf8mb4_bin",
   exportFilenamePrefix: "Crt_",
+  exportFilenameSuffix: "",
   includeCommentHeader: true,
   authorName: "ISI",
   includeSetNames: true,

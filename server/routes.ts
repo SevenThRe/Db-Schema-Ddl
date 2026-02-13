@@ -207,6 +207,7 @@ export async function registerRoutes(
 
       // Generate individual DDL for each table and add to ZIP
       const prefix = settings?.exportFilenamePrefix || "Crt_";
+      const suffix = settings?.exportFilenameSuffix || "";
       tables.forEach((table) => {
         // Generate DDL for single table
         const singleTableDdl = generateDDL({
@@ -216,7 +217,7 @@ export async function registerRoutes(
         });
 
         // Create filename for this table
-        const filename = `${prefix}${table.physicalTableName}.sql`;
+        const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
 
         // Add to ZIP
         archive.append(singleTableDdl, { name: filename });

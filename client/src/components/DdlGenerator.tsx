@@ -69,8 +69,9 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
       if (!generatedDdl) return;
 
       const prefix = settings?.exportFilenamePrefix || "Crt_";
+      const suffix = settings?.exportFilenameSuffix || "";
       const tableName = tables.length === 1 ? tables[0].physicalTableName : "all_tables";
-      const filename = `${prefix}${tableName}.sql`;
+      const filename = `${prefix}${tableName}${suffix}.sql`;
 
       const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
