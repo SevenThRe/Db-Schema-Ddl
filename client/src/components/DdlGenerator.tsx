@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useGenerateDdl, useTableInfo } from "@/hooks/use-ddl";
+import type { TableInfo } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -9,14 +10,16 @@ import { motion, AnimatePresence } from "framer-motion";
 interface DdlGeneratorProps {
   fileId: number | null;
   sheetName: string | null;
+  overrideTables?: TableInfo[] | null;
 }
 
-export function DdlGenerator({ fileId, sheetName }: DdlGeneratorProps) {
+export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGeneratorProps) {
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const { data: tables } = useTableInfo(fileId, sheetName);
+  const { data: autoTables } = useTableInfo(fileId, sheetName);
+  const tables = overrideTables || autoTables;
   const { mutate: generate, isPending } = useGenerateDdl();
   const { toast } = useToast();
 

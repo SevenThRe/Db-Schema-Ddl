@@ -97,3 +97,71 @@ export function useGenerateDdl() {
     },
   });
 }
+
+// --- Delete File ---
+
+export function useDeleteFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (fileId: number) => {
+      const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to delete file");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
+    },
+  });
+}
+
+// --- Sheet Raw Data (for spreadsheet viewer) ---
+
+export function useSheetData(fileId: number | null, sheetName: string | null) {
+  return useQuery({
+    queryKey: ["sheetData", fileId, sheetName],
+    queryFn: async () => {
+      if (!fileId || !sheetName) return null;
+      const res = await fetch(`/api/files/${fileId}/sheets/${encodeURIComponent(sheetName)}/data`);
+      if (!res.ok) throw new Error("Failed to fetch sheet data");
+      return (await res.json()) as any[][];
+    },
+    enabled: !!fileId && !!sheetName,
+    retry: false,
+    staleTime: 5 * 60 * 1000, // cache 5 min
+  });
+}
+
+// --- Parse Region ---
+
+export function useParseRegion() {
+  return useMutation({
+    mutationFn: async (params: {
+      fileId: number;
+      sheetName: string;
+      startRow: number;
+      endRow: number;
+      startCol: number;
+      endCol: number;
+    }) => {
+      const res = await fetch(`/api/files/${params.fileId}/parse-region`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sheetName: params.sheetName,
+          startRow: params.startRow,
+          endRow: params.endRow,
+          startCol: params.startCol,
+          endCol: params.endCol,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to parse region");
+      }
+      return (await res.json()) as TableInfo[];
+    },
+  });
+}

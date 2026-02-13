@@ -6,6 +6,7 @@ export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
   getUploadedFile(id: number): Promise<UploadedFile | undefined>;
+  deleteUploadedFile(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -21,6 +22,10 @@ export class DatabaseStorage implements IStorage {
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
     const [file] = await db.select().from(uploadedFiles).where(eq(uploadedFiles.id, id));
     return file;
+  }
+
+  async deleteUploadedFile(id: number): Promise<void> {
+    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id));
   }
 }
 

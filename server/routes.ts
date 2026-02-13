@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { getSheetNames, parseTableDefinitions } from "./lib/excel";
+import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
 import { generateDDL } from "./lib/ddl";
 import { z } from "zod";
 
@@ -34,12 +34,66 @@ export async function registerRoutes(
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    // multer encodes originalname as latin1; decode to utf8 for CJK filenames
+    const decodedName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    
     const file = await storage.createUploadedFile({
       filePath: req.file.path,
-      originalName: req.file.originalname,
+      originalName: decodedName,
     });
 
     res.status(201).json(file);
+  });
+
+  // Delete file
+  app.delete('/api/files/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    const file = await storage.getUploadedFile(id);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    try {
+      // Remove physical file if it's in uploads/
+      if (file.filePath.startsWith('uploads/') && fs.existsSync(file.filePath)) {
+        fs.unlinkSync(file.filePath);
+      }
+      await storage.deleteUploadedFile(id);
+      res.json({ message: 'File deleted' });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to delete file' });
+    }
+  });
+
+  // Get raw sheet data (2D array) for spreadsheet viewer
+  app.get('/api/files/:id/sheets/:sheetName/data', async (req, res) => {
+    const id = Number(req.params.id);
+    const sheetName = decodeURIComponent(req.params.sheetName);
+    const file = await storage.getUploadedFile(id);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    try {
+      const data = getSheetData(file.filePath, sheetName);
+      res.json(data);
+    } catch (err) {
+      res.status(400).json({ message: `Failed to read sheet: ${(err as Error).message}` });
+    }
+  });
+
+  // Parse a selected region of a sheet
+  app.post('/api/files/:id/parse-region', async (req, res) => {
+    const id = Number(req.params.id);
+    const file = await storage.getUploadedFile(id);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    try {
+      const { sheetName, startRow, endRow, startCol, endCol } = req.body;
+      const tables = parseSheetRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol);
+      res.json(tables);
+    } catch (err) {
+      res.status(400).json({ message: `Failed to parse region: ${(err as Error).message}` });
+    }
   });
 
   app.get(api.files.getSheets.path, async (req, res) => {
