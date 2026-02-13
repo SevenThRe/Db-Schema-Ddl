@@ -4,10 +4,11 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import archiver from "archiver";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
-import { generateDDL } from "./lib/ddl";
+import { generateDDL, substituteFilenameSuffix } from "./lib/ddl";
 import { z } from "zod";
 
 // アップロードディレクトリの取得と作成
@@ -62,9 +63,32 @@ export async function registerRoutes(
     // Use the decoded filename we stored in multer config
     const decodedName = (req as any).decodedFileName || req.file.originalname;
 
+    // Calculate SHA256 hash of the file content
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const fileSize = fileBuffer.length;
+
+    // Check if a file with the same hash already exists
+    const existingFile = await storage.findFileByHash(fileHash);
+
+    if (existingFile) {
+      // File already exists, remove the newly uploaded duplicate
+      fs.unlinkSync(req.file.path);
+
+      // Return the existing file with a flag indicating it's a duplicate
+      return res.status(200).json({
+        ...existingFile,
+        isDuplicate: true,
+        message: 'File already exists. Showing existing file.'
+      });
+    }
+
+    // Create new file entry with hash
     const file = await storage.createUploadedFile({
       filePath: req.file.path,
       originalName: decodedName,
+      fileHash,
+      fileSize,
     });
 
     res.status(201).json(file);
@@ -129,8 +153,25 @@ export async function registerRoutes(
     }
 
     try {
-      const sheets = getSheetNames(file.filePath);
-      res.json(sheets);
+      const sheetNames = getSheetNames(file.filePath);
+
+      // Check each sheet for table definitions
+      const sheetsWithInfo = sheetNames.map(name => {
+        let hasTableDefinitions = false;
+        try {
+          const tables = parseTableDefinitions(file.filePath, name);
+          hasTableDefinitions = tables.length > 0;
+        } catch (err) {
+          // If parsing fails, assume no table definitions
+          hasTableDefinitions = false;
+        }
+        return {
+          name,
+          hasTableDefinitions,
+        };
+      });
+
+      res.json(sheetsWithInfo);
     } catch (err) {
       res.status(500).json({ message: 'Failed to read Excel file' });
     }
@@ -165,6 +206,65 @@ export async function registerRoutes(
     }
   });
 
+  app.post(api.ddl.exportZip.path, async (req, res) => {
+    try {
+      const request = api.ddl.exportZip.input.parse(req.body);
+      const { tables, dialect, settings } = request;
+
+      // Create a zip archive
+      const archive = archiver('zip', {
+        zlib: { level: 9 } // Maximum compression
+      });
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="ddl_${dialect}_${Date.now()}.zip"`);
+
+      // Pipe archive to response
+      archive.pipe(res);
+
+      // Generate individual DDL for each table and add to ZIP
+      const prefix = settings?.exportFilenamePrefix || "Crt_";
+      const suffixTemplate = settings?.exportFilenameSuffix || "";
+      const authorName = settings?.authorName || "ISI";
+
+      tables.forEach((table) => {
+        // Generate DDL for single table
+        const singleTableDdl = generateDDL({
+          tables: [table],
+          dialect,
+          settings
+        });
+
+        // Substitute variables in suffix for this specific table
+        const suffix = substituteFilenameSuffix(suffixTemplate, table, authorName);
+
+        // Create filename for this table
+        const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
+
+        // Add to ZIP
+        archive.append(singleTableDdl, { name: filename });
+      });
+
+      // Handle errors
+      archive.on('error', (err) => {
+        throw err;
+      });
+
+      // Finalize the archive
+      await archive.finalize();
+
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      console.error('ZIP export error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Failed to generate ZIP' });
+      }
+    }
+  });
+
   // Settings routes
   app.get(api.settings.get.path, async (req, res) => {
     try {
@@ -195,9 +295,14 @@ export async function registerRoutes(
   if (fs.existsSync(attachedFile)) {
     const existing = await storage.getUploadedFiles();
     if (existing.length === 0) {
+      // Calculate hash for the seed file
+      const fileBuffer = fs.readFileSync(attachedFile);
+      const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
       await storage.createUploadedFile({
         filePath: attachedFile,
         originalName: '30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx',
+        fileHash,
+        fileSize: fileBuffer.length,
       });
     }
   }

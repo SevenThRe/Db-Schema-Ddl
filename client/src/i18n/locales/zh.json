@@ -17,7 +17,9 @@
     "selectSheet": "选择工作表",
     "loading": "加载中...",
     "failed": "加载工作表失败",
-    "noSheets": "未找到工作表"
+    "noSheets": "未找到工作表",
+    "filterUndefined": "隐藏无定义的工作表",
+    "noDefinedSheets": "未找到有表定义的工作表"
   },
   "table": {
     "columns": "列",

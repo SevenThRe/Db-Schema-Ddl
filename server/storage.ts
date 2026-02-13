@@ -4,6 +4,7 @@ export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
   getUploadedFile(id: number): Promise<UploadedFile | undefined>;
+  findFileByHash(hash: string): Promise<UploadedFile | undefined>;
   deleteUploadedFile(id: number): Promise<void>;
   getSettings(): Promise<DdlSettings>;
   updateSettings(settings: DdlSettings): Promise<DdlSettings>;
@@ -20,12 +21,15 @@ export class MemoryStorage implements IStorage {
     varcharCharset: "utf8mb4",
     varcharCollate: "utf8mb4_bin",
     exportFilenamePrefix: "Crt_",
+    exportFilenameSuffix: "",
     includeCommentHeader: true,
     authorName: "ISI",
     includeSetNames: true,
     includeDropTable: true,
     downloadPath: undefined,
     excelReadPath: undefined,
+    customHeaderTemplate: undefined,
+    useCustomHeader: false,
   };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -33,6 +37,8 @@ export class MemoryStorage implements IStorage {
       id: this.nextId++,
       filePath: insertFile.filePath,
       originalName: insertFile.originalName,
+      fileHash: insertFile.fileHash,
+      fileSize: insertFile.fileSize || 0,
       uploadedAt: new Date(),
     };
     this.files.push(file);
@@ -45,6 +51,10 @@ export class MemoryStorage implements IStorage {
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
     return this.files.find(f => f.id === id);
+  }
+
+  async findFileByHash(hash: string): Promise<UploadedFile | undefined> {
+    return this.files.find(f => f.fileHash === hash);
   }
 
   async deleteUploadedFile(id: number): Promise<void> {
@@ -94,6 +104,11 @@ export class DatabaseStorage implements IStorage {
     return file;
   }
 
+  async findFileByHash(hash: string): Promise<UploadedFile | undefined> {
+    const [file] = await this.db.select().from(this.uploadedFiles).where(this.eq(this.uploadedFiles.fileHash, hash));
+    return file;
+  }
+
   async deleteUploadedFile(id: number): Promise<void> {
     await this.db.delete(this.uploadedFiles).where(this.eq(this.uploadedFiles.id, id));
   }
@@ -109,12 +124,15 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: "utf8mb4",
         varcharCollate: "utf8mb4_bin",
         exportFilenamePrefix: "Crt_",
+        exportFilenameSuffix: "",
         includeCommentHeader: true,
         authorName: "ISI",
         includeSetNames: true,
         includeDropTable: true,
         downloadPath: undefined,
         excelReadPath: undefined,
+        customHeaderTemplate: undefined,
+        useCustomHeader: false,
       };
       const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
       return {
@@ -124,12 +142,15 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: created.varcharCharset,
         varcharCollate: created.varcharCollate,
         exportFilenamePrefix: created.exportFilenamePrefix,
+        exportFilenameSuffix: created.exportFilenameSuffix,
         includeCommentHeader: created.includeCommentHeader,
         authorName: created.authorName,
         includeSetNames: created.includeSetNames,
         includeDropTable: created.includeDropTable,
         downloadPath: created.downloadPath,
         excelReadPath: created.excelReadPath,
+        customHeaderTemplate: created.customHeaderTemplate,
+        useCustomHeader: created.useCustomHeader,
       };
     }
     return {
@@ -139,12 +160,15 @@ export class DatabaseStorage implements IStorage {
       varcharCharset: settings.varcharCharset,
       varcharCollate: settings.varcharCollate,
       exportFilenamePrefix: settings.exportFilenamePrefix,
+      exportFilenameSuffix: settings.exportFilenameSuffix,
       includeCommentHeader: settings.includeCommentHeader,
       authorName: settings.authorName,
       includeSetNames: settings.includeSetNames,
       includeDropTable: settings.includeDropTable,
       downloadPath: settings.downloadPath,
       excelReadPath: settings.excelReadPath,
+      customHeaderTemplate: settings.customHeaderTemplate,
+      useCustomHeader: settings.useCustomHeader,
     };
   }
 
@@ -159,12 +183,15 @@ export class DatabaseStorage implements IStorage {
         varcharCharset: created.varcharCharset,
         varcharCollate: created.varcharCollate,
         exportFilenamePrefix: created.exportFilenamePrefix,
+        exportFilenameSuffix: created.exportFilenameSuffix,
         includeCommentHeader: created.includeCommentHeader,
         authorName: created.authorName,
         includeSetNames: created.includeSetNames,
         includeDropTable: created.includeDropTable,
         downloadPath: created.downloadPath,
         excelReadPath: created.excelReadPath,
+        customHeaderTemplate: created.customHeaderTemplate,
+        useCustomHeader: created.useCustomHeader,
       };
     }
     const [updated] = await this.db
@@ -179,12 +206,15 @@ export class DatabaseStorage implements IStorage {
       varcharCharset: updated.varcharCharset,
       varcharCollate: updated.varcharCollate,
       exportFilenamePrefix: updated.exportFilenamePrefix,
+      exportFilenameSuffix: updated.exportFilenameSuffix,
       includeCommentHeader: updated.includeCommentHeader,
       authorName: updated.authorName,
       includeSetNames: updated.includeSetNames,
       includeDropTable: updated.includeDropTable,
       downloadPath: updated.downloadPath,
       excelReadPath: updated.excelReadPath,
+      customHeaderTemplate: updated.customHeaderTemplate,
+      useCustomHeader: updated.useCustomHeader,
     };
   }
 }

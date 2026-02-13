@@ -23,7 +23,10 @@ export const api = {
       method: 'GET' as const,
       path: '/api/files/:id/sheets' as const,
       responses: {
-        200: z.array(z.string()),
+        200: z.array(z.object({
+          name: z.string(),
+          hasTableDefinitions: z.boolean(),
+        })),
         404: z.object({ message: z.string() }),
       },
     },
@@ -44,6 +47,15 @@ export const api = {
       input: generateDdlRequestSchema,
       responses: {
         200: z.object({ ddl: z.string() }),
+        400: z.object({ message: z.string() }),
+      },
+    },
+    exportZip: {
+      method: 'POST' as const,
+      path: '/api/export-ddl-zip' as const,
+      input: generateDdlRequestSchema,
+      responses: {
+        200: z.custom<Blob>(), // Binary response (ZIP file)
         400: z.object({ message: z.string() }),
       },
     },
