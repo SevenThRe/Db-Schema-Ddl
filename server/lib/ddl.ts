@@ -1,10 +1,19 @@
-import { type TableInfo, type ColumnInfo, type GenerateDdlRequest } from '@shared/schema';
+import { type TableInfo, type ColumnInfo, type GenerateDdlRequest, type DdlSettings } from '@shared/schema';
+
+const DEFAULT_SETTINGS: DdlSettings = {
+  mysqlEngine: "InnoDB",
+  mysqlCharset: "utf8mb4",
+  mysqlCollate: "utf8mb4_bin",
+  varcharCharset: "utf8mb4",
+  varcharCollate: "utf8mb4_bin",
+  exportFilenamePrefix: "Crt_",
+};
 
 export function generateDDL(request: GenerateDdlRequest): string {
-  const { tables, dialect } = request;
+  const { tables, dialect, settings = DEFAULT_SETTINGS } = request;
   const ddls = tables.map(table => {
     if (dialect === 'mysql') {
-      return generateMySQL(table);
+      return generateMySQL(table, settings);
     } else {
       return generateOracle(table);
     }
@@ -12,15 +21,33 @@ export function generateDDL(request: GenerateDdlRequest): string {
   return ddls.join('\n\n');
 }
 
-function generateMySQL(table: TableInfo): string {
+function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   const lines: string[] = [];
-  lines.push(`CREATE TABLE \`${table.physicalTableName}\` (`);
+
+  // Add comment header
+  const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+  lines.push('/*');
+  lines.push(` TableName: ${table.logicalTableName}`);
+  lines.push(` Author: ISI`);
+  lines.push(` Date: ${today}`);
+  lines.push('*/');
+  lines.push('');
+
+  // Add SET NAMES
+  lines.push(`SET NAMES ${settings.mysqlCharset};`);
+  lines.push('');
+
+  // Add DROP TABLE IF EXISTS
+  lines.push(`DROP TABLE IF EXISTS \`${table.physicalTableName}\`;`);
+
+  // CREATE TABLE
+  lines.push(`CREATE TABLE \`${table.physicalTableName}\`  (`);
 
   const pkCols: string[] = [];
   const hasPk = table.columns.some(c => c.isPk);
 
   table.columns.forEach((col, index) => {
-    let line = `  \`${col.physicalName}\` ${mapDataTypeMySQL(col.dataType, col.size)}`;
+    let line = `  \`${col.physicalName}\` ${mapDataTypeMySQL(col.dataType, col.size, settings)}`;
 
     if (col.notNull) {
       line += ' NOT NULL';
@@ -43,10 +70,10 @@ function generateMySQL(table: TableInfo): string {
   });
 
   if (pkCols.length > 0) {
-    lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
+    lines.push(`  PRIMARY KEY (\`${pkCols.join('`, `')}\`) USING BTREE`);
   }
 
-  lines.push(`) COMMENT='${escapeSql(table.logicalTableName)}';`);
+  lines.push(`) ENGINE = ${settings.mysqlEngine} CHARACTER SET = ${settings.mysqlCharset} COLLATE = ${settings.mysqlCollate} COMMENT = '${escapeSql(table.logicalTableName)}';`);
 
   return lines.join('\n');
 }
@@ -98,11 +125,14 @@ function escapeSql(str: string): string {
   return str.replace(/'/g, "''");
 }
 
-function mapDataTypeMySQL(type?: string, size?: string): string {
-  if (!type) return 'VARCHAR(255)';
+function mapDataTypeMySQL(type?: string, size?: string, settings?: DdlSettings): string {
+  const charset = settings?.varcharCharset || 'utf8mb4';
+  const collate = settings?.varcharCollate || 'utf8mb4_bin';
+
+  if (!type) return `VARCHAR(255) CHARACTER SET ${charset} COLLATE ${collate}`;
   const t = type.toLowerCase().trim();
   if (t === 'varchar' || t === 'char') {
-    return `${t.toUpperCase()}(${size || '255'})`;
+    return `${t.toUpperCase()}(${size || '255'}) CHARACTER SET ${charset} COLLATE ${collate}`;
   }
   if (t === 'tinyint') return size ? `TINYINT(${size})` : 'TINYINT';
   if (t === 'smallint') return size ? `SMALLINT(${size})` : 'SMALLINT';

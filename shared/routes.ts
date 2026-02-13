@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema } from './schema';
+import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema, ddlSettingsSchema } from './schema';
 
 export const api = {
   files: {
@@ -44,6 +44,24 @@ export const api = {
       input: generateDdlRequestSchema,
       responses: {
         200: z.object({ ddl: z.string() }),
+        400: z.object({ message: z.string() }),
+      },
+    },
+  },
+  settings: {
+    get: {
+      method: 'GET' as const,
+      path: '/api/settings' as const,
+      responses: {
+        200: ddlSettingsSchema,
+      },
+    },
+    update: {
+      method: 'PUT' as const,
+      path: '/api/settings' as const,
+      input: ddlSettingsSchema,
+      responses: {
+        200: ddlSettingsSchema,
         400: z.object({ message: z.string() }),
       },
     },
