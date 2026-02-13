@@ -59,6 +59,28 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  console.log("building electron main process...");
+  await esbuild({
+    entryPoints: ["electron/main.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/electron/main.cjs",
+    external: ["electron"],
+    logLevel: "info",
+  });
+
+  console.log("building electron preload...");
+  await esbuild({
+    entryPoints: ["electron/preload.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/electron/preload.cjs",
+    external: ["electron"],
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

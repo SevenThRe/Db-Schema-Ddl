@@ -10,15 +10,16 @@ import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } 
 import { generateDDL } from "./lib/ddl";
 import { z } from "zod";
 
-// Ensure uploads directory exists
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
+// アップロードディレクトリの取得と作成
+const UPLOADS_DIR = process.env.UPLOADS_DIR || 'uploads';
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
 // Custom storage to handle UTF-8 filenames and file deduplication
 const customStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     // Properly decode UTF-8 filename (multer encodes as latin1)
@@ -77,8 +78,8 @@ export async function registerRoutes(
       return res.status(404).json({ message: 'File not found' });
     }
     try {
-      // Remove physical file if it's in uploads/
-      if (file.filePath.startsWith('uploads/') && fs.existsSync(file.filePath)) {
+      // アップロードディレクトリ内のファイルのみ削除
+      if (file.filePath.startsWith(UPLOADS_DIR) && fs.existsSync(file.filePath)) {
         fs.unlinkSync(file.filePath);
       }
       await storage.deleteUploadedFile(id);
@@ -164,9 +165,10 @@ export async function registerRoutes(
     }
   });
 
-  // Seed with the attached file if not exists
-  // We can't easily "upload" it via API here, but we can insert into DB if file exists
-  const attachedFile = 'attached_assets/30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx';
+  // サンプルファイルの初期登録（Electron環境では RESOURCES_PATH から取得）
+  const attachedFile = process.env.RESOURCES_PATH
+    ? path.join(process.env.RESOURCES_PATH, '30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx')
+    : 'attached_assets/30.データベース定義書-給与_ISI_20260209_1770863427874.xlsx';
   if (fs.existsSync(attachedFile)) {
     const existing = await storage.getUploadedFiles();
     if (existing.length === 0) {
