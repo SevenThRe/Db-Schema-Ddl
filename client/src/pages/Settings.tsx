@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Save, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
@@ -23,12 +24,15 @@ export default function Settings() {
     varcharCharset: "utf8mb4",
     varcharCollate: "utf8mb4_bin",
     exportFilenamePrefix: "Crt_",
+    exportFilenameSuffix: "",
     includeCommentHeader: true,
     authorName: "ISI",
     includeSetNames: true,
     includeDropTable: true,
     downloadPath: undefined,
     excelReadPath: undefined,
+    customHeaderTemplate: undefined,
+    useCustomHeader: false,
   });
 
   useEffect(() => {
@@ -147,6 +151,37 @@ export default function Settings() {
                 onCheckedChange={(checked) => handleChange("includeDropTable", checked)}
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label htmlFor="useCustomHeader">Use Custom Header Template</Label>
+                <p className="text-xs text-muted-foreground">
+                  Enable custom header template with variable substitution
+                </p>
+              </div>
+              <Switch
+                id="useCustomHeader"
+                checked={formData.useCustomHeader}
+                onCheckedChange={(checked) => handleChange("useCustomHeader", checked)}
+                disabled={!formData.includeCommentHeader}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="customHeaderTemplate">Custom Header Template</Label>
+              <Textarea
+                id="customHeaderTemplate"
+                value={formData.customHeaderTemplate || ""}
+                onChange={(e) => handleChange("customHeaderTemplate", e.target.value || undefined)}
+                placeholder="Table: ${logical_name} (${physical_name})&#10;Author: ${author}&#10;Date: ${date}"
+                rows={6}
+                disabled={!formData.includeCommentHeader || !formData.useCustomHeader}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Available variables: <code className="bg-muted px-1 py-0.5 rounded">$&#123;logical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;physical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;author&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;date&#125;</code>
+              </p>
+            </div>
           </div>
 
           {/* MySQL Settings */}
@@ -240,6 +275,22 @@ export default function Settings() {
               />
               <p className="text-xs text-muted-foreground">
                 {t("settings.export.filenamePrefixDesc")}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="exportFilenameSuffix">Export Filename Suffix</Label>
+              <Input
+                id="exportFilenameSuffix"
+                value={formData.exportFilenameSuffix}
+                onChange={(e) =>
+                  handleChange("exportFilenameSuffix", e.target.value)
+                }
+                placeholder="_ISI or _${date}"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Suffix to append to exported SQL filenames. Supports variables: <code className="bg-muted px-1 py-0.5 rounded">$&#123;logical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;physical_name&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;author&#125;</code>, <code className="bg-muted px-1 py-0.5 rounded">$&#123;date&#125;</code>
               </p>
             </div>
 
