@@ -19,6 +19,26 @@ function isEmpty(v: any): boolean {
   return v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '　';
 }
 
+/**
+ * Convert column index (0-based) to Excel column label (A, B, ... Z, AA, AB, ...)
+ */
+function colToLabel(col: number): string {
+  let label = '';
+  let num = col;
+  while (num >= 0) {
+    label = String.fromCharCode(65 + (num % 26)) + label;
+    num = Math.floor(num / 26) - 1;
+  }
+  return label;
+}
+
+/**
+ * Format Excel range notation (e.g., "A15:N40")
+ */
+function formatExcelRange(startRow: number, endRow: number, startCol: number, endCol: number): string {
+  return `${colToLabel(startCol)}${startRow + 1}:${colToLabel(endCol)}${endRow + 1}`;
+}
+
 // ─── Format A: Single-table sheet ─────────────────────────────────────────────
 // Structure: Row 0 = "テーブル情報"
 //   Row ~4: label "論理テーブル名" + value in the next col
@@ -78,20 +98,60 @@ function parseFormatABlock(data: any[][], colOffset: number, startRow: number, e
 
   if (headerRowIdx === -1) return null;
 
-  // Build column map from header row
+  // Build column map from header row and detect column boundaries
   const headerRow = data[headerRowIdx];
   const colMap: Record<string, number> = {};
+  let tableStartCol = colOffset;
+  let tableEndCol = colOffset;
+
   for (let j = colOffset; j < headerRow.length; j++) {
     const v = str(headerRow[j]);
     if (v !== '') colMap[v] = j;
   }
 
+  // Detect actual column boundaries: from 'No' to '備考' or last standard column
+  const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+
+  // Find first standard header
+  for (let j = colOffset; j < headerRow.length; j++) {
+    const v = str(headerRow[j]);
+    if (standardHeaders.includes(v)) {
+      tableStartCol = j;
+      break;
+    }
+  }
+
+  // Find last standard header
+  for (let j = tableStartCol; j < headerRow.length; j++) {
+    const v = str(headerRow[j]);
+    if (standardHeaders.includes(v)) {
+      tableEndCol = j;
+    } else if (v !== '' && !standardHeaders.includes(v)) {
+      // Hit a non-standard column, stop here
+      break;
+    }
+  }
+
   const columns = parseColumnsGeneric(data, headerRowIdx + 1, maxRow, colMap);
+
+  // Determine actual data end row
+  const dataEndRow = columns.length > 0 ? headerRowIdx + columns.length : headerRowIdx + 1;
 
   return {
     logicalTableName: logicalTableName || physicalTableName,
     physicalTableName: physicalTableName || logicalTableName,
     columns,
+    columnRange: {
+      startCol: tableStartCol,
+      endCol: tableEndCol,
+      startColLabel: colToLabel(tableStartCol),
+      endColLabel: colToLabel(tableEndCol),
+    },
+    rowRange: {
+      startRow: startRow,
+      endRow: dataEndRow,
+    },
+    excelRange: formatExcelRange(startRow, dataEndRow, tableStartCol, tableEndCol),
   };
 }
 
@@ -173,12 +233,35 @@ function* findFormatBVerticalTables(data: any[][]): Generator<TableInfo> {
       }
     }
 
-    // Build column map for cols 0-14
+    // Build column map and detect column boundaries
     const headerRow = data[colHeaderIdx];
     const colMap: Record<string, number> = {};
+    const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+
+    let tableStartCol = 0;
+    let tableEndCol = 0;
+
     for (let j = 0; j < Math.min(15, headerRow.length); j++) {
       const v = str(headerRow[j]);
       if (v !== '') colMap[v] = j;
+    }
+
+    // Find first and last standard header columns
+    for (let j = 0; j < Math.min(15, headerRow.length); j++) {
+      const v = str(headerRow[j]);
+      if (standardHeaders.includes(v)) {
+        tableStartCol = j;
+        break;
+      }
+    }
+
+    for (let j = tableStartCol; j < Math.min(15, headerRow.length); j++) {
+      const v = str(headerRow[j]);
+      if (standardHeaders.includes(v)) {
+        tableEndCol = j;
+      } else if (v !== '' && !standardHeaders.includes(v)) {
+        break;
+      }
     }
 
     const columns = parseColumnsGeneric(data, colHeaderIdx + 1, nextTableHeader, colMap);
@@ -188,6 +271,17 @@ function* findFormatBVerticalTables(data: any[][]): Generator<TableInfo> {
         logicalTableName,
         physicalTableName,
         columns,
+        columnRange: {
+          startCol: tableStartCol,
+          endCol: tableEndCol,
+          startColLabel: colToLabel(tableStartCol),
+          endColLabel: colToLabel(tableEndCol),
+        },
+        rowRange: {
+          startRow: tableHeaderIdx,
+          endRow: colHeaderIdx + columns.length,
+        },
+        excelRange: formatExcelRange(tableHeaderIdx, colHeaderIdx + columns.length, tableStartCol, tableEndCol),
       };
     }
 
@@ -224,6 +318,148 @@ function* findFormatBHorizontalTables(data: any[][]): Generator<TableInfo> {
         const table = parseFormatABlock(data, j, i, endRow);
         if (table && table.columns.length > 0) {
           yield table;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Detect multiple tables arranged side-by-side horizontally.
+ * Scans for multiple '物理テーブル名' labels in the same row range.
+ */
+function* findSideBySideTables(data: any[][]): Generator<TableInfo> {
+  const totalRows = data.length;
+  const processedRanges = new Set<string>();
+
+  for (let i = 0; i < totalRows; i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    // Find all '物理テーブル名' labels in this row
+    const tableNamePositions: number[] = [];
+    for (let j = 0; j < row.length; j++) {
+      if (str(row[j]) === '物理テーブル名') {
+        tableNamePositions.push(j);
+      }
+    }
+
+    // If we found multiple table names in the same row, process each as a separate table
+    if (tableNamePositions.length > 1) {
+      for (let idx = 0; idx < tableNamePositions.length; idx++) {
+        const colPos = tableNamePositions[idx];
+        const key = `${i},${colPos}`;
+        if (processedRanges.has(key)) continue;
+        processedRanges.add(key);
+
+        // Determine the column range for this table
+        const nextTableCol = idx < tableNamePositions.length - 1 ? tableNamePositions[idx + 1] : row.length;
+
+        // Search for header row starting from this column position
+        let headerRowIdx = -1;
+        const searchStartCol = Math.max(0, colPos - 2);
+
+        for (let r = i; r < Math.min(i + 30, totalRows); r++) {
+          const searchRow = data[r];
+          if (!searchRow) continue;
+
+          const vals: string[] = [];
+          for (let c = searchStartCol; c < Math.min(nextTableCol, searchRow.length); c++) {
+            vals.push(str(searchRow[c]));
+          }
+
+          if (vals.includes('論理名') && vals.includes('物理名') && vals.includes('データ型')) {
+            headerRowIdx = r;
+            break;
+          }
+        }
+
+        if (headerRowIdx === -1) continue;
+
+        // Build column map and detect boundaries
+        const headerRow = data[headerRowIdx];
+        const colMap: Record<string, number> = {};
+        const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+
+        let tableStartCol = searchStartCol;
+        let tableEndCol = searchStartCol;
+
+        // Build column map for this table's range
+        for (let c = searchStartCol; c < Math.min(nextTableCol, headerRow.length); c++) {
+          const v = str(headerRow[c]);
+          if (v !== '') colMap[v] = c;
+        }
+
+        // Find first and last standard header columns
+        for (let c = searchStartCol; c < Math.min(nextTableCol, headerRow.length); c++) {
+          const v = str(headerRow[c]);
+          if (standardHeaders.includes(v)) {
+            tableStartCol = c;
+            break;
+          }
+        }
+
+        for (let c = tableStartCol; c < Math.min(nextTableCol, headerRow.length); c++) {
+          const v = str(headerRow[c]);
+          if (standardHeaders.includes(v)) {
+            tableEndCol = c;
+          } else if (v !== '' && !standardHeaders.includes(v)) {
+            break;
+          }
+        }
+
+        // Find table name
+        const physicalTableName = str(row[colPos + 1]) || str(data[i + 1]?.[colPos]);
+        let logicalTableName = '';
+
+        // Search for logical table name nearby
+        for (let r = Math.max(0, i - 5); r <= Math.min(i + 5, totalRows - 1); r++) {
+          const searchRow = data[r];
+          if (!searchRow) continue;
+          for (let c = searchStartCol; c < Math.min(nextTableCol, searchRow.length); c++) {
+            if (str(searchRow[c]) === '論理テーブル名' && c + 1 < searchRow.length) {
+              logicalTableName = str(searchRow[c + 1]);
+              break;
+            }
+          }
+          if (logicalTableName) break;
+        }
+
+        // Find boundary for data rows
+        let endRow = totalRows;
+        for (let r = headerRowIdx + 1; r < totalRows; r++) {
+          const searchRow = data[r];
+          if (!searchRow) continue;
+
+          // Check if we hit another table name marker
+          for (let c = searchStartCol; c < Math.min(nextTableCol, searchRow.length); c++) {
+            if (str(searchRow[c]) === '物理テーブル名' || str(searchRow[c]) === 'テーブル情報') {
+              endRow = r;
+              break;
+            }
+          }
+          if (endRow !== totalRows) break;
+        }
+
+        const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow, totalRows), colMap);
+
+        if (columns.length > 0) {
+          yield {
+            logicalTableName: logicalTableName || physicalTableName,
+            physicalTableName: physicalTableName || logicalTableName || 'unknown',
+            columns,
+            columnRange: {
+              startCol: tableStartCol,
+              endCol: tableEndCol,
+              startColLabel: colToLabel(tableStartCol),
+              endColLabel: colToLabel(tableEndCol),
+            },
+            rowRange: {
+              startRow: i,
+              endRow: headerRowIdx + columns.length,
+            },
+            excelRange: formatExcelRange(i, headerRowIdx + columns.length, tableStartCol, tableEndCol),
+          };
         }
       }
     }
@@ -385,6 +621,28 @@ function* findTablesInSheet(data: any[][]): Generator<TableInfo> {
     const headerRow = data[headerRowIndex];
     const colMap = buildColumnMap(headerRow);
 
+    // Detect column boundaries
+    const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+    let tableStartCol = 0;
+    let tableEndCol = 0;
+
+    for (let j = 0; j < headerRow.length; j++) {
+      const v = str(headerRow[j]);
+      if (standardHeaders.includes(v)) {
+        tableStartCol = j;
+        break;
+      }
+    }
+
+    for (let j = tableStartCol; j < headerRow.length; j++) {
+      const v = str(headerRow[j]);
+      if (standardHeaders.includes(v)) {
+        tableEndCol = j;
+      } else if (v !== '' && !standardHeaders.includes(v)) {
+        break;
+      }
+    }
+
     const nextTableStart = findCellRow(data, headerRowIndex + 1, '論理テーブル名');
     const boundary = nextTableStart !== -1 ? nextTableStart : totalRows;
 
@@ -394,6 +652,17 @@ function* findTablesInSheet(data: any[][]): Generator<TableInfo> {
       logicalTableName: String(logicalTableName || ''),
       physicalTableName: String(physicalTableName || ''),
       columns,
+      columnRange: {
+        startCol: tableStartCol,
+        endCol: tableEndCol,
+        startColLabel: colToLabel(tableStartCol),
+        endColLabel: colToLabel(tableEndCol),
+      },
+      rowRange: {
+        startRow: tableStartIndex,
+        endRow: headerRowIndex + columns.length,
+      },
+      excelRange: formatExcelRange(tableStartIndex, headerRowIndex + columns.length, tableStartCol, tableEndCol),
     };
 
     cursor = boundary;
@@ -514,10 +783,43 @@ export function parseSheetRegion(
 
   if (columns.length === 0) return [];
 
+  // Detect column boundaries
+  const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+  let tableStartCol = startCol;
+  let tableEndCol = startCol;
+
+  for (let j = startCol; j <= endCol; j++) {
+    const v = str(headerRow[j]);
+    if (standardHeaders.includes(v)) {
+      tableStartCol = j;
+      break;
+    }
+  }
+
+  for (let j = tableStartCol; j <= endCol; j++) {
+    const v = str(headerRow[j]);
+    if (standardHeaders.includes(v)) {
+      tableEndCol = j;
+    } else if (v !== '' && !standardHeaders.includes(v)) {
+      break;
+    }
+  }
+
   return [{
     logicalTableName: logicalTableName || physicalTableName || 'Unknown',
     physicalTableName: physicalTableName || logicalTableName || 'unknown',
     columns,
+    columnRange: {
+      startCol: tableStartCol,
+      endCol: tableEndCol,
+      startColLabel: colToLabel(tableStartCol),
+      endColLabel: colToLabel(tableEndCol),
+    },
+    rowRange: {
+      startRow,
+      endRow: headerRowIdx + columns.length,
+    },
+    excelRange: formatExcelRange(startRow, headerRowIdx + columns.length, tableStartCol, tableEndCol),
   }];
 }
 
@@ -556,11 +858,21 @@ export function parseTableDefinitions(filePath: string, sheetName: string): Tabl
     const horizGen = findFormatBHorizontalTables(data);
     let horizNext = horizGen.next();
     while (!horizNext.done) { addTable(horizNext.value); horizNext = horizGen.next(); }
+
+    // Check for side-by-side tables
+    const sideBySideGen = findSideBySideTables(data);
+    let sbNext = sideBySideGen.next();
+    while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   } else {
     // Fallback: flexible scanner for unknown layouts
     const fallbackGen = findTablesInSheet(data);
     let fbNext = fallbackGen.next();
     while (!fbNext.done) { addTable(fbNext.value); fbNext = fallbackGen.next(); }
+
+    // Also check for side-by-side tables in unknown formats
+    const sideBySideGen = findSideBySideTables(data);
+    let sbNext = sideBySideGen.next();
+    while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   }
 
   return tables;

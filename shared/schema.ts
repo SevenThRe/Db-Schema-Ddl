@@ -72,6 +72,19 @@ export const tableInfoSchema = z.object({
   logicalTableName: z.string(),
   physicalTableName: z.string(),
   columns: z.array(columnInfoSchema),
+  // Column and row range information for the parsed table
+  columnRange: z.object({
+    startCol: z.number(),
+    endCol: z.number(),
+    startColLabel: z.string().optional(), // Excel column label (e.g., "A", "B", "AA")
+    endColLabel: z.string().optional(),
+  }).optional(),
+  rowRange: z.object({
+    startRow: z.number(),
+    endRow: z.number(),
+  }).optional(),
+  // Excel range notation (e.g., "A15:N40")
+  excelRange: z.string().optional(),
 });
 
 export const generateDdlRequestSchema = z.object({
