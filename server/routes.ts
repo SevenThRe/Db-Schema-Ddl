@@ -9,6 +9,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
 import { generateDDL, substituteFilenameSuffix } from "./lib/ddl";
+import { taskManager } from "./lib/task-manager";
 import { z } from "zod";
 
 // アップロードディレクトリの取得と作成
@@ -62,36 +63,57 @@ export async function registerRoutes(
 
     // Use the decoded filename we stored in multer config
     const decodedName = (req as any).decodedFileName || req.file.originalname;
+    const filePath = req.file.path;
 
-    // Calculate SHA256 hash of the file content
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-    const fileSize = fileBuffer.length;
-
-    // Check if a file with the same hash already exists
-    const existingFile = await storage.findFileByHash(fileHash);
-
-    if (existingFile) {
-      // File already exists, remove the newly uploaded duplicate
-      fs.unlinkSync(req.file.path);
-
-      // Return the existing file with a flag indicating it's a duplicate
-      return res.status(200).json({
-        ...existingFile,
-        isDuplicate: true,
-        message: 'File already exists. Showing existing file.'
-      });
-    }
-
-    // Create new file entry with hash
-    const file = await storage.createUploadedFile({
-      filePath: req.file.path,
+    // Create a temporary file entry without hash (will be updated later)
+    const tempFile = await storage.createUploadedFile({
+      filePath,
       originalName: decodedName,
-      fileHash,
-      fileSize,
+      fileHash: 'processing',
+      fileSize: 0,
     });
 
-    res.status(201).json(file);
+    // Create a background task to process the file
+    const task = taskManager.createTask('hash', filePath, {
+      onComplete: async (result) => {
+        const { fileHash, fileSize } = result;
+
+        // Check if a file with the same hash already exists
+        const existingFile = await storage.findFileByHash(fileHash);
+
+        if (existingFile && existingFile.id !== tempFile.id) {
+          // File already exists, remove the newly uploaded duplicate
+          fs.unlinkSync(filePath);
+          await storage.deleteUploadedFile(tempFile.id);
+        } else {
+          // Update file entry with actual hash and size
+          // Since we can't update via storage interface easily, we'll work around it
+          // For now, delete and recreate
+          await storage.deleteUploadedFile(tempFile.id);
+          await storage.createUploadedFile({
+            filePath,
+            originalName: decodedName,
+            fileHash,
+            fileSize,
+          });
+        }
+      },
+      onError: async (error) => {
+        console.error('Failed to process file:', error);
+        // Clean up the file and database entry
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        await storage.deleteUploadedFile(tempFile.id);
+      }
+    });
+
+    // Return immediately with the file and task ID
+    res.status(201).json({
+      ...tempFile,
+      taskId: task.id,
+      processing: true,
+    });
   });
 
   // Delete file
@@ -153,25 +175,41 @@ export async function registerRoutes(
     }
 
     try {
-      const sheetNames = getSheetNames(file.filePath);
+      // For small files, process synchronously
+      // For large files (> 5MB), use background task
+      const useBackgroundTask = file.fileSize > 5 * 1024 * 1024;
 
-      // Check each sheet for table definitions
-      const sheetsWithInfo = sheetNames.map(name => {
-        let hasTableDefinitions = false;
-        try {
-          const tables = parseTableDefinitions(file.filePath, name);
-          hasTableDefinitions = tables.length > 0;
-        } catch (err) {
-          // If parsing fails, assume no table definitions
-          hasTableDefinitions = false;
-        }
-        return {
-          name,
-          hasTableDefinitions,
-        };
-      });
+      if (!useBackgroundTask) {
+        // Process synchronously for small files
+        const sheetNames = getSheetNames(file.filePath);
+        const sheetsWithInfo = sheetNames.map(name => {
+          let hasTableDefinitions = false;
+          try {
+            const tables = parseTableDefinitions(file.filePath, name);
+            hasTableDefinitions = tables.length > 0;
+          } catch (err) {
+            hasTableDefinitions = false;
+          }
+          return { name, hasTableDefinitions };
+        });
+        res.json(sheetsWithInfo);
+      } else {
+        // Create background task for large files
+        const task = taskManager.createTask('parse_sheets', file.filePath, {
+          onComplete: (result) => {
+            // Task completed, frontend will poll for results
+          },
+          onError: (error) => {
+            console.error('Failed to parse sheets:', error);
+          }
+        });
 
-      res.json(sheetsWithInfo);
+        // Return task ID for polling
+        res.json({
+          taskId: task.id,
+          processing: true,
+        });
+      }
     } catch (err) {
       res.status(500).json({ message: 'Failed to read Excel file' });
     }
@@ -191,6 +229,25 @@ export async function registerRoutes(
     } catch (err) {
       res.status(400).json({ message: `Failed to parse sheet: ${(err as Error).message}` });
     }
+  });
+
+  // Get task status
+  app.get(api.tasks.get.path, async (req, res) => {
+    const id = req.params.id;
+    const task = taskManager.getTask(id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    res.json({
+      id: task.id,
+      taskType: task.type,
+      status: task.status,
+      progress: task.progress,
+      error: task.error,
+      result: task.result,
+      createdAt: task.createdAt,
+      updatedAt: new Date(),
+    });
   });
 
   app.post(api.ddl.generate.path, async (req, res) => {
