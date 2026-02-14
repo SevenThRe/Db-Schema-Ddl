@@ -13,9 +13,7 @@ import { cn } from "@/lib/utils";
 import type { TableInfo, ColumnInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { useState, useMemo } from "react";
-import * as ReactWindow from "react-window";
-
-const FixedSizeList = (ReactWindow as any).FixedSizeList;
+import { FixedSizeList } from "react-window";
 
 interface TablePreviewProps {
   fileId: number | null;
