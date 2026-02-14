@@ -150,13 +150,38 @@ export function useTableInfo(fileId: number | null, sheetName: string | null) {
       if (!fileId || !sheetName) return null;
       const url = buildUrl(api.files.getTableInfo.path, { id: fileId, sheetName });
       const res = await fetch(url);
-      
+
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || "Failed to fetch table info");
       }
-      
-      return api.files.getTableInfo.responses[200].parse(await res.json());
+
+      const data = await res.json();
+
+      // Check if response is a task (for async processing)
+      if (data.taskId && data.processing) {
+        // Poll for task completion
+        const pollTask = async (): Promise<any> => {
+          const taskUrl = buildUrl(api.tasks.get.path, { id: data.taskId });
+          const taskRes = await fetch(taskUrl);
+          if (!taskRes.ok) throw new Error("Failed to fetch task");
+          const task = await taskRes.json() as ProcessingTask;
+
+          if (task.status === 'completed' && task.result) {
+            return task.result;
+          } else if (task.status === 'failed') {
+            throw new Error(task.error || 'Task failed');
+          } else {
+            // Still processing, wait and poll again
+            await new Promise(resolve => setTimeout(resolve, 500));
+            return pollTask();
+          }
+        };
+
+        return pollTask();
+      }
+
+      return api.files.getTableInfo.responses[200].parse(data);
     },
     enabled: !!fileId && !!sheetName,
     retry: false, // Don't retry if sheet is invalid

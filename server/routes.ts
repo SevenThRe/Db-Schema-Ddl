@@ -175,41 +175,21 @@ export async function registerRoutes(
     }
 
     try {
-      // For small files, process synchronously
-      // For large files (> 5MB), use background task
-      const useBackgroundTask = file.fileSize > 5 * 1024 * 1024;
+      // Always use background task to avoid blocking
+      const task = taskManager.createTask('parse_sheets', file.filePath, {
+        onComplete: (result) => {
+          // Task completed, frontend will poll for results
+        },
+        onError: (error) => {
+          console.error('Failed to parse sheets:', error);
+        }
+      });
 
-      if (!useBackgroundTask) {
-        // Process synchronously for small files
-        const sheetNames = getSheetNames(file.filePath);
-        const sheetsWithInfo = sheetNames.map(name => {
-          let hasTableDefinitions = false;
-          try {
-            const tables = parseTableDefinitions(file.filePath, name);
-            hasTableDefinitions = tables.length > 0;
-          } catch (err) {
-            hasTableDefinitions = false;
-          }
-          return { name, hasTableDefinitions };
-        });
-        res.json(sheetsWithInfo);
-      } else {
-        // Create background task for large files
-        const task = taskManager.createTask('parse_sheets', file.filePath, {
-          onComplete: (result) => {
-            // Task completed, frontend will poll for results
-          },
-          onError: (error) => {
-            console.error('Failed to parse sheets:', error);
-          }
-        });
-
-        // Return task ID for polling
-        res.json({
-          taskId: task.id,
-          processing: true,
-        });
-      }
+      // Return task ID for polling
+      res.json({
+        taskId: task.id,
+        processing: true,
+      });
     } catch (err) {
       res.status(500).json({ message: 'Failed to read Excel file' });
     }
@@ -224,8 +204,22 @@ export async function registerRoutes(
     }
 
     try {
-      const tables = parseTableDefinitions(file.filePath, sheetName);
-      res.json(tables);
+      // Use background task to avoid blocking
+      const task = taskManager.createTask('parse_table', file.filePath, {
+        sheetName,
+        onComplete: (result) => {
+          // Task completed, frontend will poll for results
+        },
+        onError: (error) => {
+          console.error('Failed to parse table:', error);
+        }
+      });
+
+      // Return task ID for polling
+      res.json({
+        taskId: task.id,
+        processing: true,
+      });
     } catch (err) {
       res.status(400).json({ message: `Failed to parse sheet: ${(err as Error).message}` });
     }
