@@ -2,9 +2,12 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import net from 'net';
 import { initAutoUpdater } from './updater';
+import type { Server } from 'http';
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
+let httpServer: Server | null = null;
+let isShuttingDown = false;
 
 /**
  * 空きポートを検索
@@ -69,7 +72,10 @@ async function startExpressServer() {
 
   // Express サーバーをロード
   const serverPath = path.join(app.getAppPath(), 'dist', 'index.cjs');
-  require(serverPath);
+  const serverModule = require(serverPath);
+
+  // httpServer インスタンスを保存（クリーンアップ用）
+  httpServer = serverModule.httpServer;
 
   // サーバーが起動するまで待機
   const serverReady = await waitForServer(serverPort);
@@ -143,6 +149,33 @@ app.on('window-all-closed', () => {
   // macOS 以外ではアプリケーションを終了
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+/**
+ * アプリケーション終了前のクリーンアップ
+ * Express サーバーを適切にシャットダウン
+ */
+app.on('before-quit', (event) => {
+  if (httpServer && !isShuttingDown) {
+    event.preventDefault(); // 終了を一時停止
+    isShuttingDown = true;
+
+    console.log('Shutting down Express server...');
+    httpServer.close(() => {
+      console.log('Express server stopped');
+      httpServer = null;
+      app.quit(); // サーバー停止後にアプリを終了
+    });
+
+    // タイムアウト設定（5秒以内にサーバーが停止しない場合は強制終了）
+    setTimeout(() => {
+      if (httpServer) {
+        console.warn('Server shutdown timeout, forcing quit');
+        httpServer = null;
+        app.quit();
+      }
+    }, 5000);
   }
 });
 
