@@ -43,7 +43,7 @@ const customStorage = multer.diskStorage({
 
 const upload = multer({
   storage: customStorage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB（合理的 Excel 文件大小限制）
 });
 
 export async function registerRoutes(
@@ -160,7 +160,10 @@ export async function registerRoutes(
     }
     try {
       const { sheetName, startRow, endRow, startCol, endCol } = req.body;
-      const tables = parseSheetRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol);
+      const settings = await storage.getSettings();
+      const tables = parseSheetRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol, {
+        maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+      });
       res.json(tables);
     } catch (err) {
       res.status(400).json({ message: `Failed to parse region: ${(err as Error).message}` });
@@ -175,8 +178,14 @@ export async function registerRoutes(
     }
 
     try {
+      // Get settings for parse options
+      const settings = await storage.getSettings();
+
       // Always use background task to avoid blocking
       const task = taskManager.createTask('parse_sheets', file.filePath, {
+        parseOptions: {
+          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+        },
         onComplete: (result) => {
           // Task completed, frontend will poll for results
         },
@@ -204,9 +213,15 @@ export async function registerRoutes(
     }
 
     try {
+      // Get settings for parse options
+      const settings = await storage.getSettings();
+
       // Use background task to avoid blocking
       const task = taskManager.createTask('parse_table', file.filePath, {
         sheetName,
+        parseOptions: {
+          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+        },
         onComplete: (result) => {
           // Task completed, frontend will poll for results
         },
@@ -253,6 +268,7 @@ export async function registerRoutes(
     }
 
     try {
+      const settings = await storage.getSettings();
       const sheetNames = getSheetNames(file.filePath);
       const searchIndex: Array<{
         type: 'sheet' | 'table';
@@ -272,7 +288,9 @@ export async function registerRoutes(
 
         // Try to parse tables from each sheet
         try {
-          const tables = parseTableDefinitions(file.filePath, sheetName);
+          const tables = parseTableDefinitions(file.filePath, sheetName, {
+            maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+          });
           tables.forEach(table => {
             searchIndex.push({
               type: 'table',

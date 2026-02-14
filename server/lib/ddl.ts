@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: DdlSettings = {
   excelReadPath: undefined,
   customHeaderTemplate: undefined,
   useCustomHeader: false,
+  maxConsecutiveEmptyRows: 10,
 };
 
 function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {

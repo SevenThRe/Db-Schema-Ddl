@@ -1,4 +1,7 @@
 {
+  "common": {
+    "cancel": "取消"
+  },
   "app": {
     "title": "DDL 生成器",
     "subtitle": "Excel 转 SQL 工具"
@@ -51,7 +54,26 @@
     "copiedToClipboard": "已复制到剪贴板",
     "export": "导出",
     "exported": "DDL 已导出",
-    "exportedAs": "已保存为 {{filename}}"
+    "exportedAs": "已保存为 {{filename}}",
+    "exportFailed": "导出失败",
+    "selectTables": "选择要生成的表",
+    "selectTablesDescription": "勾选需要生成 DDL 的表，默认全选当前工作表的所有表",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "selected": "已选择",
+    "generateZip": "生成 ZIP",
+    "noTableSelected": "未选择表",
+    "pleaseSelectTable": "请在表格预览中选择一个表",
+    "pleaseSelectAtLeastOne": "请至少选择一个表",
+    "searchTables": "搜索表名...",
+    "sortBy": "排序方式",
+    "sortBySource": "按源文件顺序",
+    "sortByColumn": "按列位置 (A→Z)",
+    "sortByName": "按表名",
+    "filterByColumn": "按列筛选",
+    "column": "列",
+    "selectColumn": "选择 {{column}} 列",
+    "deselectColumn": "取消 {{column}} 列"
   },
   "view": {
     "autoParse": "自动解析",
@@ -125,6 +147,11 @@
       "selectFolder": "选择文件夹",
       "excelReadPath": "Excel 读取路径（仅桌面版）",
       "excelReadPathDesc": "读取 Excel 文件的默认路径（可选）"
+    },
+    "parsing": {
+      "title": "Excel 解析设置",
+      "maxConsecutiveEmptyRows": "连续空行容忍度",
+      "maxConsecutiveEmptyRowsDesc": "解析表格时，遇到多少连续空行后停止解析。如果表格中间有大量空行，请增加此值。范围：1-100，默认：10"
     },
     "notInElectron": "仅桌面版可用",
     "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用"

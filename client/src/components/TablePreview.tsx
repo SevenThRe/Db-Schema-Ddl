@@ -9,68 +9,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { TableInfo, ColumnInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
-import { useState, useMemo } from "react";
-import { List as FixedSizeList } from "react-window";
+import { useState, useMemo, useEffect, useCallback } from "react";
 
 interface TablePreviewProps {
   fileId: number | null;
   sheetName: string | null;
+  onCurrentTableChange?: (table: TableInfo | null, index: number) => void;
 }
 
-// 虚拟滚动的行组件
-function VirtualRow({
-  index,
-  style,
-  data,
-}: {
-  index: number;
-  style: React.CSSProperties;
-  data: { columns: ColumnInfo[]; t: any };
-}) {
-  const { columns, t } = data;
-  const col = columns[index];
-
-  return (
-    <div
-      style={style}
-      className="grid grid-cols-[50px_40px_1fr_1fr_120px_80px_80px] gap-2 px-4 border-b border-border hover:bg-muted/30 transition-colors items-center"
-    >
-      <div className="font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
-      <div>
-        {col.isPk && (
-          <Key className="w-3.5 h-3.5 text-amber-500 rotate-45" />
-        )}
-      </div>
-      <div className="font-medium text-foreground truncate" title={col.logicalName}>
-        {col.logicalName}
-      </div>
-      <div className="font-mono text-xs text-muted-foreground truncate" title={col.physicalName}>
-        {col.physicalName}
-      </div>
-      <div>
-        <Badge variant="secondary" className="font-mono text-[10px] uppercase font-bold tracking-wider">
-          {col.dataType}
-        </Badge>
-      </div>
-      <div className="font-mono text-xs">{col.size}</div>
-      <div className="text-center">
-        {col.notNull ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-red-400" title={t("table.notNull")} />
-        ) : (
-          <span className="inline-block w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700" title={t("table.nullable")} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// 单个表格预览组件（使用虚拟滚动）
+// 单个表格预览组件
 function SingleTablePreview({ table }: { table: TableInfo }) {
   const { t } = useTranslation();
-  const containerHeight = Math.min(600, table.columns.length * 40 + 100); // 最大高度 600px
 
   return (
     <div className="space-y-4">
@@ -100,22 +53,47 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
           <div className="text-center">{t("table.null")}</div>
         </div>
 
-        {/* 虚拟滚动列表 */}
-        <FixedSizeList
-          height={containerHeight}
-          itemCount={table.columns.length}
-          itemSize={40}
-          width="100%"
-          itemData={{ columns: table.columns, t }}
-        >
-          {VirtualRow}
-        </FixedSizeList>
+        {/* 表格行列表 */}
+        <ScrollArea className="max-h-[600px]">
+          {table.columns.map((col, index) => (
+            <div
+              key={index}
+              className="grid grid-cols-[50px_40px_1fr_1fr_120px_80px_80px] gap-2 px-4 py-2.5 border-b border-border hover:bg-muted/30 transition-colors items-center"
+            >
+              <div className="font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
+              <div>
+                {col.isPk && (
+                  <Key className="w-3.5 h-3.5 text-amber-500 rotate-45" />
+                )}
+              </div>
+              <div className="font-medium text-foreground truncate" title={col.logicalName}>
+                {col.logicalName}
+              </div>
+              <div className="font-mono text-xs text-muted-foreground truncate" title={col.physicalName}>
+                {col.physicalName}
+              </div>
+              <div>
+                <Badge variant="secondary" className="font-mono text-[10px] uppercase font-bold tracking-wider">
+                  {col.dataType}
+                </Badge>
+              </div>
+              <div className="font-mono text-xs">{col.size}</div>
+              <div className="text-center">
+                {col.notNull ? (
+                  <span className="inline-block w-2 h-2 rounded-full bg-red-400" title={t("table.notNull")} />
+                ) : (
+                  <span className="inline-block w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700" title={t("table.nullable")} />
+                )}
+              </div>
+            </div>
+          ))}
+        </ScrollArea>
       </div>
     </div>
   );
 }
 
-export function TablePreview({ fileId, sheetName }: TablePreviewProps) {
+export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TablePreviewProps) {
   const { data: tables, isLoading, error } = useTableInfo(fileId, sheetName);
   const { t } = useTranslation();
   const [currentTableIndex, setCurrentTableIndex] = useState(0);
@@ -125,6 +103,38 @@ export function TablePreview({ fileId, sheetName }: TablePreviewProps) {
     if (!tables || tables.length === 0) return null;
     return tables[currentTableIndex] || tables[0];
   }, [tables, currentTableIndex]);
+
+  // 通知父组件当前选中的表发生了变化
+  useEffect(() => {
+    if (onCurrentTableChange) {
+      onCurrentTableChange(currentTable, currentTableIndex);
+    }
+  }, [currentTable, currentTableIndex, onCurrentTableChange]);
+
+  // 检测是否有重复的表名（同一个表的多个版本）
+  const hasDuplicateTableNames = useMemo(() => {
+    if (!tables || tables.length === 0) return false;
+    const names = tables.map((t: TableInfo) => t.physicalTableName);
+    return new Set(names).size < names.length;
+  }, [tables]);
+
+  // 为表生成显示名称（包含 Excel 范围）
+  const getTableDisplayName = useCallback((table: TableInfo, index: number) => {
+    const baseName = table.logicalTableName || table.physicalTableName || `Table ${index + 1}`;
+
+    // 如果有 Excel 范围信息，添加到名称后面
+    if (table.excelRange) {
+      return `${baseName} [${table.excelRange}]`;
+    }
+
+    // 如果没有完整的 excelRange 但有列范围，构造简化版本
+    if (table.columnRange?.startColLabel && table.rowRange) {
+      const rangeLabel = `${table.columnRange.startColLabel}${table.rowRange.startRow + 1}:${table.columnRange.endColLabel || '?'}${table.rowRange.endRow + 1}`;
+      return `${baseName} [${rangeLabel}]`;
+    }
+
+    return baseName;
+  }, []);
 
   if (!fileId || !sheetName) {
     return (
@@ -199,9 +209,9 @@ export function TablePreview({ fileId, sheetName }: TablePreviewProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {tables.map((table, idx) => (
+                {tables.map((table: TableInfo, idx: number) => (
                   <SelectItem key={idx} value={idx.toString()}>
-                    {table.logicalTableName || table.physicalTableName || `Table ${idx + 1}`}
+                    {getTableDisplayName(table, idx)}
                   </SelectItem>
                 ))}
               </SelectContent>

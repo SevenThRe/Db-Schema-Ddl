@@ -21,7 +21,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
 
   // Filter sheets based on filter state
   const filteredSheets = filterUndefined
-    ? sheets?.filter(sheet => sheet.hasTableDefinitions)
+    ? sheets?.filter((sheet: any) => sheet.hasTableDefinitions)
     : sheets;
 
   return (
@@ -63,7 +63,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
             </div>
           ) : (
             <AnimatePresence mode="popLayout">
-              {filteredSheets?.map((sheet, idx) => (
+              {filteredSheets?.map((sheet: any, idx: number) => (
                 <motion.button
                   key={sheet.name}
                   initial={{ opacity: 0, x: -10 }}

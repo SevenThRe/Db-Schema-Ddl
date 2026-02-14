@@ -22,8 +22,9 @@ export function useTask(taskId: string | null) {
       return api.tasks.get.responses[200].parse(await res.json());
     },
     enabled: !!taskId,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Poll every 500ms while task is pending or processing
+      const data = query.state.data;
       if (data && (data.status === 'pending' || data.status === 'processing')) {
         return 500;
       }

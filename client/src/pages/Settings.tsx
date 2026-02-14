@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText } from "lucide-react";
+import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
@@ -47,7 +47,24 @@ export default function Settings() {
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
     useCustomHeader: false,
+    maxConsecutiveEmptyRows: 10,
   });
+
+  // 开发者模式状态（localStorage）
+  const [developerMode, setDeveloperMode] = useState(() => {
+    return localStorage.getItem("developerMode") === "true";
+  });
+
+  const handleDeveloperModeChange = (enabled: boolean) => {
+    localStorage.setItem("developerMode", String(enabled));
+    setDeveloperMode(enabled);
+    toast({
+      title: enabled ? "已启用开发者模式" : "已关闭开发者模式",
+      description: enabled
+        ? "现在当应用出错时会显示详细的错误堆栈信息"
+        : "现在只显示用户友好的错误提示",
+    });
+  };
 
   useEffect(() => {
     if (settings) {
@@ -74,7 +91,7 @@ export default function Settings() {
     });
   };
 
-  const handleChange = (field: keyof DdlSettings, value: string | boolean | undefined) => {
+  const handleChange = (field: keyof DdlSettings, value: string | boolean | number | undefined) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -449,6 +466,59 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">
                 {t("settings.export.excelReadPathDesc")}
               </p>
+            </div>
+          </div>
+
+          {/* Excel Parsing Settings */}
+          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+            <h2 className="text-lg font-semibold mb-4">{t("settings.parsing.title")}</h2>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxConsecutiveEmptyRows">{t("settings.parsing.maxConsecutiveEmptyRows")}</Label>
+              <Input
+                id="maxConsecutiveEmptyRows"
+                type="number"
+                min="1"
+                max="100"
+                value={formData.maxConsecutiveEmptyRows || 10}
+                onChange={(e) =>
+                  handleChange("maxConsecutiveEmptyRows", parseInt(e.target.value) || 10)
+                }
+                className="max-w-[200px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("settings.parsing.maxConsecutiveEmptyRowsDesc")}
+              </p>
+            </div>
+          </div>
+
+          {/* Developer Mode */}
+          <div className="bg-card border border-border rounded-lg p-6 space-y-5">
+            <div className="flex items-center gap-3 mb-4">
+              <Code2 className="w-5 h-5 text-primary" />
+              <h2 className="text-lg font-semibold">开发者选项</h2>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label htmlFor="developerMode">开发者模式</Label>
+                <p className="text-xs text-muted-foreground">
+                  启用后，当应用出错时会显示详细的错误堆栈信息和组件堆栈，方便调试问题。关闭后只显示用户友好的错误提示。
+                </p>
+              </div>
+              <Switch
+                id="developerMode"
+                checked={developerMode}
+                onCheckedChange={handleDeveloperModeChange}
+              />
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium text-foreground">调试快捷键</p>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li><kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F12</kbd> - 打开/关闭开发者工具（查看控制台日志和网络请求）</li>
+                <li>开发者模式设置保存在本地存储，重启应用后仍然有效</li>
+              </ul>
             </div>
           </div>
 

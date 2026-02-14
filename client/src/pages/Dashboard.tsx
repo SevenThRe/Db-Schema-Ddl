@@ -20,9 +20,16 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet">("auto");
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [currentTable, setCurrentTable] = useState<TableInfo | null>(null);
+  const [currentTableIndex, setCurrentTableIndex] = useState(0);
 
   const { data: files } = useFiles();
   const { t } = useTranslation();
+
+  const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
+    setCurrentTable(table);
+    setCurrentTableIndex(index);
+  }, []);
 
   useEffect(() => {
     if (!selectedFileId && files && files.length > 0) {
@@ -139,6 +146,7 @@ export default function Dashboard() {
                     <TablePreview
                       fileId={selectedFileId}
                       sheetName={selectedSheet}
+                      onCurrentTableChange={handleCurrentTableChange}
                     />
                   ) : (
                     <SpreadsheetViewer
@@ -158,6 +166,7 @@ export default function Dashboard() {
                 fileId={selectedFileId}
                 sheetName={selectedSheet}
                 overrideTables={activeTables}
+                currentTable={viewMode === "auto" ? currentTable : null}
               />
             </ResizablePanel>
 

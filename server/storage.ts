@@ -38,6 +38,7 @@ export class MemoryStorage implements IStorage {
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
     useCustomHeader: false,
+    maxConsecutiveEmptyRows: 10,
   };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -47,7 +48,7 @@ export class MemoryStorage implements IStorage {
       originalName: insertFile.originalName,
       fileHash: insertFile.fileHash,
       fileSize: insertFile.fileSize || 0,
-      uploadedAt: new Date(),
+      uploadedAt: new Date().toISOString(),
     };
     this.files.push(file);
     return file;
@@ -169,6 +170,7 @@ export class DatabaseStorage implements IStorage {
         excelReadPath: undefined,
         customHeaderTemplate: undefined,
         useCustomHeader: false,
+        maxConsecutiveEmptyRows: 10,
       };
       const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
       return {
@@ -187,6 +189,7 @@ export class DatabaseStorage implements IStorage {
         excelReadPath: created.excelReadPath,
         customHeaderTemplate: created.customHeaderTemplate,
         useCustomHeader: created.useCustomHeader,
+        maxConsecutiveEmptyRows: created.maxConsecutiveEmptyRows,
       };
     }
     return {
@@ -205,6 +208,7 @@ export class DatabaseStorage implements IStorage {
       excelReadPath: settings.excelReadPath,
       customHeaderTemplate: settings.customHeaderTemplate,
       useCustomHeader: settings.useCustomHeader,
+      maxConsecutiveEmptyRows: settings.maxConsecutiveEmptyRows,
     };
   }
 
@@ -228,11 +232,12 @@ export class DatabaseStorage implements IStorage {
         excelReadPath: created.excelReadPath,
         customHeaderTemplate: created.customHeaderTemplate,
         useCustomHeader: created.useCustomHeader,
+        maxConsecutiveEmptyRows: created.maxConsecutiveEmptyRows,
       };
     }
     const [updated] = await this.db
       .update(this.ddlSettings)
-      .set({ ...newSettings, updatedAt: new Date() })
+      .set({ ...newSettings, updatedAt: new Date().toISOString() })
       .where(this.eq(this.ddlSettings.id, existing.id))
       .returning();
     return {
@@ -251,6 +256,7 @@ export class DatabaseStorage implements IStorage {
       excelReadPath: updated.excelReadPath,
       customHeaderTemplate: updated.customHeaderTemplate,
       useCustomHeader: updated.useCustomHeader,
+      maxConsecutiveEmptyRows: updated.maxConsecutiveEmptyRows,
     };
   }
 

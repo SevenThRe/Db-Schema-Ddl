@@ -8,6 +8,7 @@ let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
 let httpServer: Server | null = null;
 let isShuttingDown = false;
+let activeSockets = new Set<any>();
 
 /**
  * 空きポートを検索
@@ -64,11 +65,17 @@ async function startExpressServer() {
   if (isDev) {
     process.env.UPLOADS_DIR = path.join(app.getAppPath(), 'uploads');
     process.env.RESOURCES_PATH = path.join(app.getAppPath(), 'attached_assets');
+    process.env.DB_PATH = path.join(app.getAppPath(), 'data');
   } else {
     // パッケージ化された環境では userData ディレクトリを使用
     process.env.UPLOADS_DIR = path.join(app.getPath('userData'), 'uploads');
     process.env.RESOURCES_PATH = path.join(process.resourcesPath, 'attached_assets');
+    process.env.DB_PATH = path.join(app.getPath('userData'), 'data');
   }
+
+  console.log('Electron environment:');
+  console.log('  UPLOADS_DIR:', process.env.UPLOADS_DIR);
+  console.log('  DB_PATH:', process.env.DB_PATH);
 
   // Express サーバーをロード
   const serverPath = path.join(app.getAppPath(), 'dist', 'index.cjs');
@@ -76,6 +83,18 @@ async function startExpressServer() {
 
   // httpServer インスタンスを保存（クリーンアップ用）
   httpServer = serverModule.httpServer;
+
+  if (!httpServer) {
+    throw new Error('httpServer instance not found in server module');
+  }
+
+  // すべてのソケット接続を追跡して強制終了できるようにする
+  httpServer.on('connection', (socket) => {
+    activeSockets.add(socket);
+    socket.on('close', () => {
+      activeSockets.delete(socket);
+    });
+  });
 
   // サーバーが起動するまで待機
   const serverReady = await waitForServer(serverPort);
@@ -99,7 +118,11 @@ function createWindow() {
       contextIsolation: true,
     },
     icon: path.join(app.getAppPath(), 'dist', 'public', 'favicon.ico'),
+    autoHideMenuBar: true, // 隐藏菜单栏
   });
+
+  // 完全移除菜单栏
+  mainWindow.setMenuBarVisibility(false);
 
   // Express サーバーにアクセス
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
@@ -108,6 +131,17 @@ function createWindow() {
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
+
+  // F12 キーで DevTools を開く（プロダクション環境でもデバッグ可能）
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      if (mainWindow?.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+      } else {
+        mainWindow?.webContents.openDevTools();
+      }
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -156,26 +190,46 @@ app.on('window-all-closed', () => {
  * アプリケーション終了前のクリーンアップ
  * Express サーバーを適切にシャットダウン
  */
-app.on('before-quit', (event) => {
+app.on('before-quit', async (event) => {
   if (httpServer && !isShuttingDown) {
     event.preventDefault(); // 終了を一時停止
     isShuttingDown = true;
 
     console.log('Shutting down Express server...');
+
+    // データベース接続をクローズ
+    try {
+      const serverPath = path.join(app.getAppPath(), 'dist', 'index.cjs');
+      const serverModule = require(serverPath);
+      if (serverModule.cleanup) {
+        await serverModule.cleanup();
+      }
+    } catch (err) {
+      console.error('Error closing database:', err);
+    }
+
+    // すべてのアクティブなソケット接続を強制終了
+    console.log(`Closing ${activeSockets.size} active connections...`);
+    activeSockets.forEach(socket => {
+      socket.destroy();
+    });
+    activeSockets.clear();
+
+    // サーバーを閉じる
     httpServer.close(() => {
       console.log('Express server stopped');
       httpServer = null;
       app.quit(); // サーバー停止後にアプリを終了
     });
 
-    // タイムアウト設定（5秒以内にサーバーが停止しない場合は強制終了）
+    // タイムアウト設定（3秒以内にサーバーが停止しない場合は強制終了）
     setTimeout(() => {
       if (httpServer) {
         console.warn('Server shutdown timeout, forcing quit');
         httpServer = null;
         app.quit();
       }
-    }, 5000);
+    }, 3000);
   }
 });
 

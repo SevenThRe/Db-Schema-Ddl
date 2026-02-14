@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useGenerateDdl, useTableInfo, useSettings } from "@/hooks/use-ddl";
 import type { TableInfo } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Code, Database, ArrowRight, Download } from "lucide-react";
+import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
@@ -12,13 +16,18 @@ interface DdlGeneratorProps {
   fileId: number | null;
   sheetName: string | null;
   overrideTables?: TableInfo[] | null;
+  currentTable?: TableInfo | null;
 }
 
-export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGeneratorProps) {
+export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }: DdlGeneratorProps) {
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [exportMode, setExportMode] = useState<"single" | "per-table">("single");
+  const [selectedTableNames, setSelectedTableNames] = useState<Set<string>>(new Set());
+  const [showTableSelector, setShowTableSelector] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState<"source" | "column" | "name">("source");
 
   const { data: autoTables } = useTableInfo(fileId, sheetName);
   const tables = overrideTables || autoTables;
@@ -27,28 +36,189 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
   const { toast } = useToast();
   const { t } = useTranslation();
 
+  // 从 Excel 范围中提取列字母（例如 "B79:E824" -> "B"）
+  const getColumnLetter = (table: TableInfo): string => {
+    if (table.excelRange) {
+      const match = table.excelRange.match(/^([A-Z]+)\d+/);
+      return match ? match[1] : '';
+    }
+    if (table.columnRange?.startColLabel) {
+      return table.columnRange.startColLabel;
+    }
+    return '';
+  };
+
+  // 将列字母转换为数字（A=1, B=2, ..., Z=26, AA=27, ...）
+  const columnToNumber = (col: string): number => {
+    let result = 0;
+    for (let i = 0; i < col.length; i++) {
+      result = result * 26 + (col.charCodeAt(i) - 64);
+    }
+    return result;
+  };
+
+  // 获取所有唯一的列字母（用于筛选按钮）
+  const availableColumns = useMemo(() => {
+    if (!tables) return [];
+    const columns = new Set<string>();
+    tables.forEach((table: TableInfo) => {
+      const col = getColumnLetter(table);
+      if (col) columns.add(col);
+    });
+    return Array.from(columns).sort((a, b) => columnToNumber(a) - columnToNumber(b));
+  }, [tables]);
+
+  // 筛选和排序表格
+  const filteredAndSortedTables = useMemo(() => {
+    if (!tables) return [];
+
+    let result = [...tables];
+
+    // 搜索过滤
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(table =>
+        table.logicalTableName?.toLowerCase().includes(query) ||
+        table.physicalTableName?.toLowerCase().includes(query)
+      );
+    }
+
+    // 排序
+    if (sortMode === "column") {
+      result.sort((a, b) => {
+        const colA = getColumnLetter(a);
+        const colB = getColumnLetter(b);
+        const numA = colA ? columnToNumber(colA) : 0;
+        const numB = colB ? columnToNumber(colB) : 0;
+        return numA - numB;
+      });
+    } else if (sortMode === "name") {
+      result.sort((a, b) => {
+        const nameA = a.logicalTableName || a.physicalTableName || '';
+        const nameB = b.logicalTableName || b.physicalTableName || '';
+        return nameA.localeCompare(nameB, 'zh-CN');
+      });
+    }
+    // sortMode === "source" 时保持原顺序
+
+    return result;
+  }, [tables, searchQuery, sortMode]);
+
   const handleGenerate = () => {
     if (!tables || tables.length === 0) return;
 
-    generate(
-      { tables, dialect, settings },
-      {
-        onSuccess: (data) => {
-          setGeneratedDdl(data.ddl);
-          toast({
-            title: t("ddl.generated"),
-            description: t("ddl.generatedSuccess", { count: tables.length, dialect: dialect.toUpperCase() }),
-          });
-        },
-        onError: (error) => {
-          toast({
-            title: t("ddl.generationFailed"),
-            description: error.message,
-            variant: "destructive",
-          });
-        },
+    // 单文件模式：只生成当前表
+    if (exportMode === "single") {
+      const targetTable = currentTable || (tables.length === 1 ? tables[0] : null);
+
+      if (!targetTable) {
+        toast({
+          title: t("ddl.noTableSelected"),
+          description: t("ddl.pleaseSelectTable"),
+          variant: "destructive",
+        });
+        return;
       }
-    );
+
+      generate(
+        { tables: [targetTable], dialect, settings },
+        {
+          onSuccess: (data) => {
+            setGeneratedDdl(data.ddl);
+            toast({
+              title: t("ddl.generated"),
+              description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
+            });
+          },
+          onError: (error) => {
+            toast({
+              title: t("ddl.generationFailed"),
+              description: error.message,
+              variant: "destructive",
+            });
+          },
+        }
+      );
+    } else {
+      // ZIP 模式：显示表格选择对话框
+      // 默认全选
+      setSelectedTableNames(new Set(tables.map((t: TableInfo) => t.physicalTableName)));
+      setShowTableSelector(true);
+    }
+  };
+
+  const handleGenerateZip = async () => {
+    if (!tables || selectedTableNames.size === 0) {
+      toast({
+        title: t("ddl.noTableSelected"),
+        description: t("ddl.pleaseSelectAtLeastOne"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedTables = tables.filter((t: TableInfo) => selectedTableNames.has(t.physicalTableName));
+
+    try {
+      const response = await fetch("/api/export-ddl-zip", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tables: selectedTables,
+          dialect,
+          settings,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || "Failed to generate ZIP");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ddl_${dialect}_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: t("ddl.exported"),
+        description: `Exported ${selectedTables.length} tables as ZIP file`,
+      });
+
+      setShowTableSelector(false);
+    } catch (error) {
+      console.error('ZIP export error:', error);
+      toast({
+        title: t("ddl.exportFailed"),
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // 选择/取消选择指定列的所有表
+  const toggleColumnSelection = (column: string, select: boolean) => {
+    if (!tables) return;
+
+    const newSet = new Set(selectedTableNames);
+    tables.forEach((table: TableInfo) => {
+      const tableCol = getColumnLetter(table);
+      if (tableCol === column) {
+        if (select) {
+          newSet.add(table.physicalTableName);
+        } else {
+          newSet.delete(table.physicalTableName);
+        }
+      }
+    });
+    setSelectedTableNames(newSet);
   };
 
   const copyToClipboard = () => {
@@ -76,76 +246,33 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
   const handleExport = async () => {
     if (!tables || tables.length === 0) return;
 
-    if (exportMode === "single") {
-      // Single file export
-      if (!generatedDdl) return;
+    // 单文件导出（导出当前生成的 DDL）
+    if (!generatedDdl) return;
 
-      const prefix = settings?.exportFilenamePrefix || "Crt_";
-      const suffixTemplate = settings?.exportFilenameSuffix || "";
-      const table = tables.length === 1 ? tables[0] : {
-        logicalTableName: "all_tables",
-        physicalTableName: "all_tables",
-        columns: []
-      };
-      const suffix = suffixTemplate ? substituteVariables(suffixTemplate, table) : "";
-      const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
+    const prefix = settings?.exportFilenamePrefix || "Crt_";
+    const suffixTemplate = settings?.exportFilenameSuffix || "";
+    const table = currentTable || (tables.length === 1 ? tables[0] : {
+      logicalTableName: "all_tables",
+      physicalTableName: "all_tables",
+      columns: []
+    });
+    const suffix = suffixTemplate ? substituteVariables(suffixTemplate, table) : "";
+    const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
 
-      const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+    const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
-      toast({
-        title: t("ddl.exported"),
-        description: t("ddl.exportedAs", { filename }),
-      });
-    } else {
-      // Per-table ZIP export
-      try {
-        const response = await fetch("/api/export-ddl-zip", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tables,
-            dialect,
-            settings,
-            exportMode: "per-table",
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to generate ZIP");
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `ddl_${dialect}_${Date.now()}.zip`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        toast({
-          title: t("ddl.exported"),
-          description: `Exported ${tables.length} tables as ZIP file`,
-        });
-      } catch (error) {
-        toast({
-          title: t("ddl.exportFailed"),
-          description: (error as Error).message,
-          variant: "destructive",
-        });
-      }
-    }
+    toast({
+      title: t("ddl.exported"),
+      description: t("ddl.exportedAs", { filename }),
+    });
   };
 
   if (!tables || tables.length === 0) return null;
@@ -241,6 +368,152 @@ export function DdlGenerator({ fileId, sheetName, overrideTables }: DdlGenerator
           )}
         </AnimatePresence>
       </div>
+
+      {/* 表格选择对话框 (ZIP 模式) */}
+      <Dialog open={showTableSelector} onOpenChange={setShowTableSelector}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("ddl.selectTables")}</DialogTitle>
+            <DialogDescription>
+              {t("ddl.selectTablesDescription")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {/* 搜索和排序 */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder={t("ddl.searchTables")}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9"
+                />
+              </div>
+              <Select value={sortMode} onValueChange={(v) => setSortMode(v as "source" | "column" | "name")}>
+                <SelectTrigger className="w-[180px] h-9">
+                  <SortAsc className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="source">{t("ddl.sortBySource")}</SelectItem>
+                  <SelectItem value="column">{t("ddl.sortByColumn")}</SelectItem>
+                  <SelectItem value="name">{t("ddl.sortByName")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 全选/取消全选 和 统计 */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedTableNames(new Set(filteredAndSortedTables?.map(t => t.physicalTableName) || []))}
+              >
+                {t("ddl.selectAll")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedTableNames(new Set())}
+              >
+                {t("ddl.deselectAll")}
+              </Button>
+              <span className="text-sm text-muted-foreground ml-auto">
+                {t("ddl.selected")}: {selectedTableNames.size} / {filteredAndSortedTables?.length || 0}
+              </span>
+            </div>
+
+            {/* 按列快速筛选 */}
+            {availableColumns.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2 p-3 bg-muted/30 rounded-md border">
+                <span className="text-xs font-medium text-muted-foreground">{t("ddl.filterByColumn")}:</span>
+                {availableColumns.map(column => {
+                  const columnTables = tables?.filter((t: TableInfo) => getColumnLetter(t) === column) || [];
+                  const selectedCount = columnTables.filter((t: TableInfo) => selectedTableNames.has(t.physicalTableName)).length;
+                  const allSelected = selectedCount === columnTables.length;
+
+                  return (
+                    <Button
+                      key={column}
+                      variant={allSelected ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleColumnSelection(column, !allSelected)}
+                      className="h-7 text-xs"
+                    >
+                      {t("ddl.column")} {column} ({selectedCount}/{columnTables.length})
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+
+            <ScrollArea className="h-[400px] border rounded-md p-4">
+              <div className="space-y-2">
+                {filteredAndSortedTables && filteredAndSortedTables.length > 0 ? (
+                  filteredAndSortedTables.map((table) => {
+                    // 生成 Excel 范围显示
+                    let rangeLabel = '';
+                    if (table.excelRange) {
+                      rangeLabel = table.excelRange;
+                    } else if (table.columnRange?.startColLabel && table.rowRange) {
+                      rangeLabel = `${table.columnRange.startColLabel}${table.rowRange.startRow + 1}:${table.columnRange.endColLabel || '?'}${table.rowRange.endRow + 1}`;
+                    }
+
+                    return (
+                      <div
+                        key={table.physicalTableName}
+                        className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 transition-colors"
+                      >
+                        <Checkbox
+                          checked={selectedTableNames.has(table.physicalTableName)}
+                          onCheckedChange={(checked) => {
+                            const newSet = new Set(selectedTableNames);
+                            if (checked) {
+                              newSet.add(table.physicalTableName);
+                            } else {
+                              newSet.delete(table.physicalTableName);
+                            }
+                            setSelectedTableNames(newSet);
+                          }}
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium text-sm flex items-center gap-2">
+                            {table.logicalTableName}
+                            {rangeLabel && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                {rangeLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono">{table.physicalTableName}</div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {table.columns.length} {t("table.columns")}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    {searchQuery ? t("search.noResults") : t("table.noTables")}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTableSelector(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleGenerateZip} disabled={selectedTableNames.size === 0}>
+              {t("ddl.generateZip")} ({selectedTableNames.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,14 @@ import { FileSpreadsheet, Table2, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 
+interface SearchItem {
+  type: "sheet" | "table";
+  sheetName: string;
+  displayName: string;
+  physicalTableName?: string;
+  logicalTableName?: string;
+}
+
 interface SearchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -32,7 +40,7 @@ export function SearchDialog({
     }
   }, [open]);
 
-  const handleSelect = useCallback((item: typeof searchIndex extends (infer U)[] ? U : never) => {
+  const handleSelect = useCallback((item: SearchItem) => {
     if (item.type === "sheet") {
       onSelectSheet(item.sheetName);
     } else if (item.type === "table" && item.physicalTableName) {

@@ -57,7 +57,7 @@ function isFormatA(data: any[][]): boolean {
  * Parse a Format A table block starting at a given column offset.
  * Handles standalone Format A sheets AND horizontal table blocks in Format B sheets.
  */
-function parseFormatABlock(data: any[][], colOffset: number, startRow: number, endRow?: number): TableInfo | null {
+function parseFormatABlock(data: any[][], colOffset: number, startRow: number, endRow?: number, maxConsecutiveEmpty: number = 10): TableInfo | null {
   const maxRow = endRow ?? data.length;
 
   let logicalTableName = '';
@@ -132,7 +132,7 @@ function parseFormatABlock(data: any[][], colOffset: number, startRow: number, e
     }
   }
 
-  const columns = parseColumnsGeneric(data, headerRowIdx + 1, maxRow, colMap);
+  const columns = parseColumnsGeneric(data, headerRowIdx + 1, maxRow, colMap, maxConsecutiveEmpty);
 
   // Determine actual data end row
   const dataEndRow = columns.length > 0 ? headerRowIdx + columns.length : headerRowIdx + 1;
@@ -168,7 +168,7 @@ function isFormatB(data: any[][]): boolean {
 /**
  * Find all vertical table blocks in a Format B sheet (at columns 0-14).
  */
-function* findFormatBVerticalTables(data: any[][]): Generator<TableInfo> {
+function* findFormatBVerticalTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
   const totalRows = data.length;
   let cursor = 0;
 
@@ -264,7 +264,7 @@ function* findFormatBVerticalTables(data: any[][]): Generator<TableInfo> {
       }
     }
 
-    const columns = parseColumnsGeneric(data, colHeaderIdx + 1, nextTableHeader, colMap);
+    const columns = parseColumnsGeneric(data, colHeaderIdx + 1, nextTableHeader, colMap, maxConsecutiveEmpty);
 
     if (columns.length > 0) {
       yield {
@@ -293,7 +293,7 @@ function* findFormatBVerticalTables(data: any[][]): Generator<TableInfo> {
  * Find all horizontal Format A table blocks embedded in a Format B sheet.
  * These appear as "テーブル情報" markers at column offsets >= 10.
  */
-function* findFormatBHorizontalTables(data: any[][]): Generator<TableInfo> {
+function* findFormatBHorizontalTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
   const foundBlocks = new Set<string>();
 
   for (let i = 0; i < data.length; i++) {
@@ -305,8 +305,8 @@ function* findFormatBHorizontalTables(data: any[][]): Generator<TableInfo> {
         if (foundBlocks.has(key)) continue;
         foundBlocks.add(key);
 
-        // End row: next テーブル情報 in same column, or 200 rows max
-        let endRow = Math.min(i + 200, data.length);
+        // End row: next テーブル情報 in same column, or end of sheet
+        let endRow = data.length;
         for (let k = i + 1; k < data.length; k++) {
           const r = data[k];
           if (r && str(r[j]) === 'テーブル情報') {
@@ -315,7 +315,7 @@ function* findFormatBHorizontalTables(data: any[][]): Generator<TableInfo> {
           }
         }
 
-        const table = parseFormatABlock(data, j, i, endRow);
+        const table = parseFormatABlock(data, j, i, endRow, maxConsecutiveEmpty);
         if (table && table.columns.length > 0) {
           yield table;
         }
@@ -328,7 +328,7 @@ function* findFormatBHorizontalTables(data: any[][]): Generator<TableInfo> {
  * Detect multiple tables arranged side-by-side horizontally.
  * Scans for multiple '物理テーブル名' labels in the same row range.
  */
-function* findSideBySideTables(data: any[][]): Generator<TableInfo> {
+function* findSideBySideTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
   const totalRows = data.length;
   const processedRanges = new Set<string>();
 
@@ -441,7 +441,7 @@ function* findSideBySideTables(data: any[][]): Generator<TableInfo> {
           if (endRow !== totalRows) break;
         }
 
-        const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow, totalRows), colMap);
+        const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow, totalRows), colMap, maxConsecutiveEmpty);
 
         if (columns.length > 0) {
           yield {
@@ -492,7 +492,8 @@ function parseColumnsGeneric(
   data: any[][],
   startRow: number,
   endRow: number,
-  colMap: Record<string, number>
+  colMap: Record<string, number>,
+  maxConsecutiveEmpty: number = 10
 ): ColumnInfo[] {
   const idxNo       = resolveColumn(colMap, 'no');
   const idxLogical  = resolveColumn(colMap, 'logicalName');
@@ -510,14 +511,14 @@ function parseColumnsGeneric(
     const row = data[i];
     if (!row || row.length === 0) {
       consecutiveEmpty++;
-      if (consecutiveEmpty >= 3 && columns.length > 0) break;
+      if (consecutiveEmpty >= maxConsecutiveEmpty && columns.length > 0) break;
       continue;
     }
 
     const physicalName = idxPhysical !== undefined ? str(row[idxPhysical]) : '';
     if (physicalName === '') {
       consecutiveEmpty++;
-      if (consecutiveEmpty >= 3 && columns.length > 0) break;
+      if (consecutiveEmpty >= maxConsecutiveEmpty && columns.length > 0) break;
       continue;
     }
     consecutiveEmpty = 0;
@@ -598,7 +599,7 @@ function buildColumnMap(headerRow: any[]): Record<string, number> {
   return colMap;
 }
 
-function* findTablesInSheet(data: any[][]): Generator<TableInfo> {
+function* findTablesInSheet(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
   const totalRows = data.length;
   let cursor = 0;
 
@@ -646,7 +647,7 @@ function* findTablesInSheet(data: any[][]): Generator<TableInfo> {
     const nextTableStart = findCellRow(data, headerRowIndex + 1, '論理テーブル名');
     const boundary = nextTableStart !== -1 ? nextTableStart : totalRows;
 
-    const columns = parseColumnsGeneric(data, headerRowIndex + 1, boundary, colMap);
+    const columns = parseColumnsGeneric(data, headerRowIndex + 1, boundary, colMap, maxConsecutiveEmpty);
 
     yield {
       logicalTableName: String(logicalTableName || ''),
@@ -687,8 +688,10 @@ export function parseSheetRegion(
   startRow: number,
   endRow: number,
   startCol: number,
-  endCol: number
+  endCol: number,
+  options: ParseOptions = {}
 ): TableInfo[] {
+  const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
   const data = getSheetData(filePath, sheetName);
 
   let logicalTableName = '';
@@ -779,7 +782,7 @@ export function parseSheetRegion(
     if (v !== '') colMap[v] = j;
   }
 
-  const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow + 1, data.length), colMap);
+  const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow + 1, data.length), colMap, maxConsecutiveEmpty);
 
   if (columns.length === 0) return [];
 
@@ -825,7 +828,13 @@ export function parseSheetRegion(
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function parseTableDefinitions(filePath: string, sheetName: string): TableInfo[] {
+export interface ParseOptions {
+  maxConsecutiveEmptyRows?: number;
+}
+
+export function parseTableDefinitions(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo[] {
+  const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
+
   const fileBuffer = fs.readFileSync(filePath);
   const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
   const worksheet = workbook.Sheets[sheetName];
@@ -847,30 +856,30 @@ export function parseTableDefinitions(filePath: string, sheetName: string): Tabl
 
   if (isFormatA(data)) {
     // Format A: single table per sheet (most common — 136 sheets)
-    const table = parseFormatABlock(data, 0, 0);
+    const table = parseFormatABlock(data, 0, 0, undefined, maxConsecutiveEmpty);
     if (table) addTable(table);
   } else if (isFormatB(data)) {
     // Format B: multi-table sheet (e.g. テーブル定義-社会)
-    const vertGen = findFormatBVerticalTables(data);
+    const vertGen = findFormatBVerticalTables(data, maxConsecutiveEmpty);
     let vertNext = vertGen.next();
     while (!vertNext.done) { addTable(vertNext.value); vertNext = vertGen.next(); }
 
-    const horizGen = findFormatBHorizontalTables(data);
+    const horizGen = findFormatBHorizontalTables(data, maxConsecutiveEmpty);
     let horizNext = horizGen.next();
     while (!horizNext.done) { addTable(horizNext.value); horizNext = horizGen.next(); }
 
     // Check for side-by-side tables
-    const sideBySideGen = findSideBySideTables(data);
+    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty);
     let sbNext = sideBySideGen.next();
     while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   } else {
     // Fallback: flexible scanner for unknown layouts
-    const fallbackGen = findTablesInSheet(data);
+    const fallbackGen = findTablesInSheet(data, maxConsecutiveEmpty);
     let fbNext = fallbackGen.next();
     while (!fbNext.done) { addTable(fbNext.value); fbNext = fallbackGen.next(); }
 
     // Also check for side-by-side tables in unknown formats
-    const sideBySideGen = findSideBySideTables(data);
+    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty);
     let sbNext = sideBySideGen.next();
     while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   }
@@ -878,8 +887,8 @@ export function parseTableDefinitions(filePath: string, sheetName: string): Tabl
   return tables;
 }
 
-export function parseTableDefinition(filePath: string, sheetName: string): TableInfo {
-  const tables = parseTableDefinitions(filePath, sheetName);
+export function parseTableDefinition(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo {
+  const tables = parseTableDefinitions(filePath, sheetName, options);
   if (tables.length === 0) {
     return { logicalTableName: sheetName, physicalTableName: sheetName, columns: [] };
   }

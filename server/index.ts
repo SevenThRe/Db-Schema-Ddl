@@ -60,6 +60,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize database (SQLite for Electron)
+  if (process.env.ELECTRON_MODE === 'true') {
+    const { initializeDatabase } = await import("./init-db");
+    await initializeDatabase();
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -101,3 +107,9 @@ app.use((req, res, next) => {
 
 // Electron main プロセスから httpServer を制御できるようエクスポート
 export { httpServer };
+
+// データベースをクリーンアップする関数をエクスポート
+export async function cleanup() {
+  const { closeDatabase } = await import("./db");
+  closeDatabase();
+}

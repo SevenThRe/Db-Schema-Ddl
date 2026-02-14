@@ -1,13 +1,14 @@
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import crypto from 'crypto';
-import { getSheetNames, parseTableDefinitions } from './excel';
+import { getSheetNames, parseTableDefinitions, type ParseOptions } from './excel';
 
 export interface Task {
   id: string;
   type: 'hash' | 'parse_sheets' | 'parse_table';
   filePath: string;
   sheetName?: string;
+  parseOptions?: ParseOptions;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   result?: any;
@@ -29,6 +30,7 @@ class TaskManager {
     filePath: string,
     options?: {
       sheetName?: string;
+      parseOptions?: ParseOptions;
       onProgress?: (progress: number) => void;
       onComplete?: (result: any) => void;
       onError?: (error: string) => void;
@@ -39,6 +41,7 @@ class TaskManager {
       type,
       filePath,
       sheetName: options?.sheetName,
+      parseOptions: options?.parseOptions,
       status: 'pending',
       progress: 0,
       createdAt: new Date(),
@@ -116,7 +119,7 @@ class TaskManager {
           task.progress = 10;
           if (task.onProgress) task.onProgress(task.progress);
 
-          // Get sheet names
+          // Get sheet names in chunks
           const sheetNames = await new Promise<string[]>((resolve) => {
             setImmediate(() => {
               const names = getSheetNames(task.filePath);
@@ -127,28 +130,29 @@ class TaskManager {
           task.progress = 30;
           if (task.onProgress) task.onProgress(task.progress);
 
-          // Process sheets in chunks to allow event loop to breathe
+          // Process sheets one by one with breaks
           const sheetsWithInfo = [];
           const progressPerSheet = 70 / sheetNames.length;
 
           for (let i = 0; i < sheetNames.length; i++) {
             const name = sheetNames[i];
 
-            // Process each sheet asynchronously
+            // Process each sheet in its own event loop tick
             const hasTableDefinitions = await new Promise<boolean>((resolve) => {
-              setImmediate(() => {
+              // Give UI time to breathe between sheets
+              setTimeout(() => {
                 try {
-                  const tables = parseTableDefinitions(task.filePath, name);
+                  const tables = parseTableDefinitions(task.filePath, name, task.parseOptions);
                   resolve(tables.length > 0);
                 } catch (err) {
                   resolve(false);
                 }
-              });
+              }, 0);
             });
 
             sheetsWithInfo.push({ name, hasTableDefinitions });
 
-            // Update progress
+            // Update progress after each sheet
             task.progress = 30 + Math.round((i + 1) * progressPerSheet);
             if (task.onProgress) task.onProgress(task.progress);
           }
@@ -172,7 +176,7 @@ class TaskManager {
           // Parse table asynchronously
           const tables = await new Promise((resolve) => {
             setImmediate(() => {
-              const result = parseTableDefinitions(task.filePath, task.sheetName!);
+              const result = parseTableDefinitions(task.filePath, task.sheetName!, task.parseOptions);
               resolve(result);
             });
           });
@@ -198,7 +202,7 @@ class TaskManager {
 
   clearCompletedTasks(olderThan: number = 60000) {
     const now = Date.now();
-    for (const [id, task] of this.tasks.entries()) {
+    for (const [id, task] of Array.from(this.tasks.entries())) {
       if (
         (task.status === 'completed' || task.status === 'failed') &&
         now - task.createdAt.getTime() > olderThan
