@@ -250,6 +250,55 @@ export async function registerRoutes(
     });
   });
 
+  // Get search index for a file
+  app.get(api.files.getSearchIndex.path, async (req, res) => {
+    const id = Number(req.params.id);
+    const file = await storage.getUploadedFile(id);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    try {
+      const sheetNames = getSheetNames(file.filePath);
+      const searchIndex: Array<{
+        type: 'sheet' | 'table';
+        sheetName: string;
+        displayName: string;
+        physicalTableName?: string;
+        logicalTableName?: string;
+      }> = [];
+
+      // Add all sheets to the index
+      sheetNames.forEach(sheetName => {
+        searchIndex.push({
+          type: 'sheet',
+          sheetName,
+          displayName: sheetName,
+        });
+
+        // Try to parse tables from each sheet
+        try {
+          const tables = parseTableDefinitions(file.filePath, sheetName);
+          tables.forEach(table => {
+            searchIndex.push({
+              type: 'table',
+              sheetName,
+              displayName: `${table.physicalTableName} (${table.logicalTableName})`,
+              physicalTableName: table.physicalTableName,
+              logicalTableName: table.logicalTableName,
+            });
+          });
+        } catch (err) {
+          // If parsing fails, just skip tables for this sheet
+        }
+      });
+
+      res.json(searchIndex);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to generate search index' });
+    }
+  });
+
   app.post(api.ddl.generate.path, async (req, res) => {
     try {
       const request = api.ddl.generate.input.parse(req.body);
