@@ -36,7 +36,11 @@
     "parseError": "このシートから有効なテーブル情報を抽出できませんでした",
     "noTables": "このシートにテーブル定義が見つかりません",
     "tablesFound": "シート内に {{count}} 個のテーブルが見つかりました",
-    "tablesParsedFromSelection": "選択範囲から {{count}} 個のテーブルを解析しました"
+    "tablesParsedFromSelection": "選択範囲から {{count}} 個のテーブルを解析しました",
+    "namingWarningBadge": "命名警告",
+    "namingWarningTitle": "不正な物理名が検出されました。",
+    "namingWarningColumns": "{{count}} 件のカラム物理名が規約に違反しています。",
+    "namingWarningSummary": "{{count}} 件のテーブルに不正な物理名があります"
   },
   "ddl": {
     "output": "DDL 出力",
@@ -49,6 +53,14 @@
     "copy": "コピー",
     "copied": "コピー済み",
     "copiedToClipboard": "クリップボードにコピーしました",
+    "namingWarningsFound": "{{count}} 件のテーブルに命名警告",
+    "namingWarningBadge": "命名警告",
+    "invalidColumnsHint": "{{count}} 件のカラム名が不正です",
+    "namingFixDialogTitle": "不正な物理名を検出しました",
+    "namingFixDialogDescription": "DDL 出力前に自動修正するテーブルを選択してください。未選択のテーブルは元の名前を維持します。",
+    "namingFixColumnsSummary": "{{count}} 件のカラム名を正規化します",
+    "continueWithoutFix": "自動修正せず続行",
+    "applySelectedFixes": "選択した修正を適用",
     "export": "エクスポート",
     "exported": "DDL をエクスポートしました",
     "exportedAs": "{{filename}} として保存しました"

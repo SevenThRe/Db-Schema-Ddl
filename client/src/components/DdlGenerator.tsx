@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useGenerateDdl, useTableInfo, useSettings } from "@/hooks/use-ddl";
 import type { TableInfo } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc } from "lucide-react";
+import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
+import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
@@ -28,6 +30,11 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const [showTableSelector, setShowTableSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<"source" | "column" | "name">("source");
+  const [showNameFixDialog, setShowNameFixDialog] = useState(false);
+  const [pendingNameFixTables, setPendingNameFixTables] = useState<TableInfo[]>([]);
+  const [nameFixCandidateKeys, setNameFixCandidateKeys] = useState<Set<string>>(new Set());
+  const [generatedTables, setGeneratedTables] = useState<TableInfo[] | null>(null);
+  const nameFixResolverRef = useRef<((tables: TableInfo[] | null) => void) | null>(null);
 
   const { data: autoTables } = useTableInfo(fileId, sheetName);
   const tables = overrideTables || autoTables;
@@ -35,6 +42,10 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const { data: settings } = useSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
+
+  const tablesWithNameIssues = useMemo(() => {
+    return (tables ?? []).filter((table: TableInfo) => validateTablePhysicalNames(table).hasIssues);
+  }, [tables]);
 
   // 从 Excel 范围中提取列字母（例如 "B79:E824" -> "B"）
   const getColumnLetter = (table: TableInfo): string => {
@@ -104,7 +115,61 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
     return result;
   }, [tables, searchQuery, sortMode]);
 
-  const handleGenerate = () => {
+  const getNameFixKey = (_table: TableInfo, index: number) => String(index);
+
+  const resetNameFixDialog = () => {
+    setShowNameFixDialog(false);
+    setPendingNameFixTables([]);
+    setNameFixCandidateKeys(new Set());
+    nameFixResolverRef.current = null;
+  };
+
+  const askAutoFixIfNeeded = (targetTables: TableInfo[]): Promise<TableInfo[] | null> => {
+    const hasInvalidNames = targetTables.some((table) => validateTablePhysicalNames(table).hasIssues);
+
+    if (!hasInvalidNames) {
+      return Promise.resolve(targetTables);
+    }
+
+    return new Promise((resolve) => {
+      nameFixResolverRef.current = resolve;
+      setPendingNameFixTables(targetTables);
+      const defaultSelectedKeys = new Set<string>();
+      targetTables.forEach((table, index) => {
+        if (validateTablePhysicalNames(table).hasIssues) {
+          defaultSelectedKeys.add(getNameFixKey(table, index));
+        }
+      });
+      setNameFixCandidateKeys(defaultSelectedKeys);
+      setShowNameFixDialog(true);
+    });
+  };
+
+  const resolveNameFix = (applyFix: boolean) => {
+    const resolver = nameFixResolverRef.current;
+    if (!resolver) return;
+
+    const resolvedTables = applyFix
+      ? pendingNameFixTables.map((table, index) =>
+          nameFixCandidateKeys.has(getNameFixKey(table, index))
+            ? autoFixTablePhysicalNames(table)
+            : table,
+        )
+      : pendingNameFixTables;
+
+    resolver(resolvedTables);
+    resetNameFixDialog();
+  };
+
+  const cancelNameFix = () => {
+    const resolver = nameFixResolverRef.current;
+    if (resolver) {
+      resolver(null);
+    }
+    resetNameFixDialog();
+  };
+
+  const handleGenerate = async () => {
     if (!tables || tables.length === 0) return;
 
     // 单文件模式：只生成当前表
@@ -120,17 +185,24 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
         return;
       }
 
+      const tablesForGeneration = await askAutoFixIfNeeded([targetTable]);
+      if (!tablesForGeneration) {
+        return;
+      }
+
       generate(
-        { tables: [targetTable], dialect, settings },
+        { tables: tablesForGeneration, dialect, settings },
         {
           onSuccess: (data) => {
             setGeneratedDdl(data.ddl);
+            setGeneratedTables(tablesForGeneration);
             toast({
               title: t("ddl.generated"),
               description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
             });
           },
           onError: (error) => {
+            setGeneratedTables(null);
             toast({
               title: t("ddl.generationFailed"),
               description: error.message,
@@ -158,6 +230,10 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
     }
 
     const selectedTables = tables.filter((t: TableInfo) => selectedTableNames.has(t.physicalTableName));
+    const tablesForExport = await askAutoFixIfNeeded(selectedTables);
+    if (!tablesForExport) {
+      return;
+    }
 
     try {
       const response = await fetch("/api/export-ddl-zip", {
@@ -166,7 +242,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          tables: selectedTables,
+          tables: tablesForExport,
           dialect,
           settings,
         }),
@@ -189,7 +265,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
 
       toast({
         title: t("ddl.exported"),
-        description: `Exported ${selectedTables.length} tables as ZIP file`,
+        description: `Exported ${tablesForExport.length} tables as ZIP file`,
       });
 
       setShowTableSelector(false);
@@ -251,7 +327,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
 
     const prefix = settings?.exportFilenamePrefix || "Crt_";
     const suffixTemplate = settings?.exportFilenameSuffix || "";
-    const table = currentTable || (tables.length === 1 ? tables[0] : {
+    const table = generatedTables?.[0] || currentTable || (tables.length === 1 ? tables[0] : {
       logicalTableName: "all_tables",
       physicalTableName: "all_tables",
       columns: []
@@ -283,6 +359,11 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
         <div className="flex items-center gap-2">
           <Code className="w-4 h-4 text-primary" />
           <h3 className="font-semibold text-sm" data-testid="text-ddl-header">{t("ddl.output")}</h3>
+          {tablesWithNameIssues.length > 0 && (
+            <Badge variant="destructive" className="text-[10px]">
+              {t("ddl.namingWarningsFound", { count: tablesWithNameIssues.length })}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -453,6 +534,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
               <div className="space-y-2">
                 {filteredAndSortedTables && filteredAndSortedTables.length > 0 ? (
                   filteredAndSortedTables.map((table) => {
+                    const validation = validateTablePhysicalNames(table);
                     // 生成 Excel 范围显示
                     let rangeLabel = '';
                     if (table.excelRange) {
@@ -481,6 +563,11 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
                         <div className="flex-1">
                           <div className="font-medium text-sm flex items-center gap-2">
                             {table.logicalTableName}
+                            {validation.hasIssues && (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                {t("ddl.namingWarningBadge")}
+                              </Badge>
+                            )}
                             {rangeLabel && (
                               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                                 {rangeLabel}
@@ -488,6 +575,16 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground font-mono">{table.physicalTableName}</div>
+                          {validation.hasInvalidTableName && (
+                            <div className="text-[10px] text-amber-700 dark:text-amber-300 font-mono mt-0.5">
+                              {"->"} {validation.tableNameSuggested}
+                            </div>
+                          )}
+                          {validation.invalidColumns.length > 0 && (
+                            <div className="text-[10px] text-amber-700 dark:text-amber-300 mt-0.5">
+                              {t("ddl.invalidColumnsHint", { count: validation.invalidColumns.length })}
+                            </div>
+                          )}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {table.columns.length} {t("table.columns")}
@@ -510,6 +607,91 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
             </Button>
             <Button onClick={handleGenerateZip} disabled={selectedTableNames.size === 0}>
               {t("ddl.generateZip")} ({selectedTableNames.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showNameFixDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelNameFix();
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              {t("ddl.namingFixDialogTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("ddl.namingFixDialogDescription")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="h-[320px] border rounded-md p-3">
+            <div className="space-y-2">
+              {pendingNameFixTables.map((table, index) => {
+                const key = getNameFixKey(table, index);
+                const validation = validateTablePhysicalNames(table);
+                if (!validation.hasIssues) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={`${key}-${table.physicalTableName}`}
+                    className="flex items-start gap-3 p-2.5 rounded-md border bg-muted/20"
+                  >
+                    <Checkbox
+                      checked={nameFixCandidateKeys.has(key)}
+                      onCheckedChange={(checked) => {
+                        setNameFixCandidateKeys((prev) => {
+                          const next = new Set(prev);
+                          if (checked === true) {
+                            next.add(key);
+                          } else {
+                            next.delete(key);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        {table.logicalTableName || table.physicalTableName}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono truncate">
+                        {validation.tableNameCurrent || "(empty)"}
+                      </div>
+                      {validation.hasInvalidTableName && (
+                        <div className="text-[10px] text-amber-700 dark:text-amber-300 font-mono mt-1">
+                          {validation.tableNameCurrent || "(empty)"} {"->"} {validation.tableNameSuggested}
+                        </div>
+                      )}
+                      {validation.invalidColumns.length > 0 && (
+                        <div className="text-[10px] text-amber-700 dark:text-amber-300 mt-1">
+                          {t("ddl.namingFixColumnsSummary", { count: validation.invalidColumns.length })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={cancelNameFix}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="outline" onClick={() => resolveNameFix(false)}>
+              {t("ddl.continueWithoutFix")}
+            </Button>
+            <Button onClick={() => resolveNameFix(true)}>
+              {t("ddl.applySelectedFixes")}
             </Button>
           </DialogFooter>
         </DialogContent>

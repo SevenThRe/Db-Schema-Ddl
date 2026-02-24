@@ -39,7 +39,11 @@
     "parseError": "无法从此工作表中提取有效的表信息",
     "noTables": "此工作表中未找到表定义",
     "tablesFound": "在工作表中找到 {{count}} 个表",
-    "tablesParsedFromSelection": "从选择区域解析了 {{count}} 个表"
+    "tablesParsedFromSelection": "从选择区域解析了 {{count}} 个表",
+    "namingWarningBadge": "命名警告",
+    "namingWarningTitle": "检测到不合法的物理名。",
+    "namingWarningColumns": "{{count}} 个字段物理名不符合规范。",
+    "namingWarningSummary": "{{count}} 个表存在不合法物理名"
   },
   "ddl": {
     "output": "DDL 输出",
@@ -52,6 +56,14 @@
     "copy": "复制",
     "copied": "已复制",
     "copiedToClipboard": "已复制到剪贴板",
+    "namingWarningsFound": "{{count}} 个表存在命名警告",
+    "namingWarningBadge": "命名异常",
+    "invalidColumnsHint": "{{count}} 个字段名不合法",
+    "namingFixDialogTitle": "检测到不合法物理名",
+    "namingFixDialogDescription": "请在导出前选择需要自动修正的表。未勾选的表将保持原始命名。",
+    "namingFixColumnsSummary": "{{count}} 个字段将被规范化",
+    "continueWithoutFix": "不自动修正，继续",
+    "applySelectedFixes": "应用已选修正",
     "export": "导出",
     "exported": "DDL 已导出",
     "exportedAs": "已保存为 {{filename}}",

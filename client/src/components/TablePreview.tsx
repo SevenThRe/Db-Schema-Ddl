@@ -9,9 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { TableInfo, ColumnInfo } from "@shared/schema";
+import { validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import { useTranslation } from "react-i18next";
 import { useState, useMemo, useEffect, useCallback } from "react";
 
@@ -24,6 +24,13 @@ interface TablePreviewProps {
 // 单个表格预览组件
 function SingleTablePreview({ table }: { table: TableInfo }) {
   const { t } = useTranslation();
+  const validation = useMemo(() => validateTablePhysicalNames(table), [table]);
+  const invalidColumnIndexSet = useMemo(() => {
+    return new Set(validation.invalidColumns.map((item) => item.columnIndex));
+  }, [validation.invalidColumns]);
+  const invalidColumnMap = useMemo(() => {
+    return new Map(validation.invalidColumns.map((item) => [item.columnIndex, item]));
+  }, [validation.invalidColumns]);
 
   return (
     <div className="space-y-4">
@@ -34,11 +41,39 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
           <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground">
             {table.physicalTableName || "NO_PHYSICAL_NAME"}
           </Badge>
+          {validation.hasIssues && (
+            <Badge
+              variant="destructive"
+              className="h-5 px-2 py-0.5 font-normal text-xs leading-none"
+            >
+              {t("table.namingWarningBadge")}
+            </Badge>
+          )}
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {table.columns.length} {t("table.columns")}
         </p>
       </div>
+
+      {validation.hasIssues && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm">
+          <div className="font-medium text-amber-700 dark:text-amber-300">
+            {t("table.namingWarningTitle")}
+          </div>
+          <ul className="mt-1.5 list-disc pl-5 text-amber-700/90 dark:text-amber-200/90 space-y-1">
+            {validation.hasInvalidTableName && (
+              <li className="font-mono text-xs">
+                {validation.tableNameCurrent || "(empty)"} {"->"} {validation.tableNameSuggested}
+              </li>
+            )}
+            {validation.invalidColumns.length > 0 && (
+              <li>
+                {t("table.namingWarningColumns", { count: validation.invalidColumns.length })}
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
 
       {/* 表格容器 */}
       <div className="border border-border rounded-md overflow-hidden bg-card">
@@ -54,7 +89,7 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
         </div>
 
         {/* 表格行列表 */}
-        <ScrollArea className="max-h-[600px]">
+        <div>
           {table.columns.map((col, index) => (
             <div
               key={index}
@@ -69,8 +104,19 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
               <div className="font-medium text-foreground truncate" title={col.logicalName}>
                 {col.logicalName}
               </div>
-              <div className="font-mono text-xs text-muted-foreground truncate" title={col.physicalName}>
-                {col.physicalName}
+              <div
+                className={cn(
+                  "font-mono text-xs truncate",
+                  invalidColumnIndexSet.has(index) ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+                )}
+                title={col.physicalName}
+              >
+                <div>{col.physicalName}</div>
+                {invalidColumnIndexSet.has(index) && (
+                  <div className="text-[10px] leading-tight mt-0.5 opacity-90">
+                    {"->"} {invalidColumnMap.get(index)?.suggestedName}
+                  </div>
+                )}
               </div>
               <div>
                 <Badge variant="secondary" className="font-mono text-[10px] uppercase font-bold tracking-wider">
@@ -87,7 +133,7 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
               </div>
             </div>
           ))}
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
@@ -116,6 +162,11 @@ export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TableP
     if (!tables || tables.length === 0) return false;
     const names = tables.map((t: TableInfo) => t.physicalTableName);
     return new Set(names).size < names.length;
+  }, [tables]);
+
+  const tablesWithNamingWarnings = useMemo(() => {
+    if (!tables || tables.length === 0) return 0;
+    return tables.filter((table: TableInfo) => validateTablePhysicalNames(table).hasIssues).length;
   }, [tables]);
 
   // 为表生成显示名称（包含 Excel 范围）
@@ -187,6 +238,11 @@ export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TableP
           <p className="text-sm text-muted-foreground">
             {t("table.tablesFound", { count: tables.length })} <span className="font-medium text-foreground">{sheetName}</span>
           </p>
+          {tablesWithNamingWarnings > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+              {t("table.namingWarningSummary", { count: tablesWithNamingWarnings })}
+            </p>
+          )}
         </div>
 
         {/* 表格切换器 */}
@@ -209,11 +265,28 @@ export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TableP
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {tables.map((table: TableInfo, idx: number) => (
-                  <SelectItem key={idx} value={idx.toString()}>
-                    {getTableDisplayName(table, idx)}
-                  </SelectItem>
-                ))}
+                {tables.map((table: TableInfo, idx: number) => {
+                  const hasNameIssues = validateTablePhysicalNames(table).hasIssues;
+                  return (
+                    <SelectItem
+                      key={idx}
+                      value={idx.toString()}
+                      className={cn(
+                        hasNameIssues &&
+                          "bg-amber-50 text-amber-800 focus:bg-amber-100 focus:text-amber-900 dark:bg-amber-900/25 dark:text-amber-200 dark:focus:bg-amber-900/40",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="truncate">{getTableDisplayName(table, idx)}</span>
+                        {hasNameIssues && (
+                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                            {t("table.namingWarningBadge")}
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
 
