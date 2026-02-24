@@ -41,9 +41,26 @@ const customStorage = multer.diskStorage({
   }
 });
 
+// xlsx / xls のみ受け付けるフィルター（MIMEタイプと拡張子の両方を確認）
+const ALLOWED_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-excel',                                           // .xls
+  'application/octet-stream',                                           // 一部ブラウザでのフォールバック
+]);
+const ALLOWED_EXTENSIONS = new Set(['.xlsx', '.xls']);
+
 const upload = multer({
   storage: customStorage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB（合理的 Excel 文件大小限制）
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const ext = path.extname(decodedName).toLowerCase();
+    if (ALLOWED_MIME_TYPES.has(file.mimetype) && ALLOWED_EXTENSIONS.has(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Excel ファイル（.xlsx / .xls）のみアップロード可能です'));
+    }
+  },
 });
 
 export async function registerRoutes(
