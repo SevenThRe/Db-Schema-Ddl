@@ -27,5 +27,9 @@ attached_assets/*
 *.swo
 *~
 
+# Claude Code / OMC runtime state
+.omc/
+.mcp.json
+
 # OS
 Thumbs.db
