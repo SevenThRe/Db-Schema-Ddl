@@ -86,16 +86,8 @@ export async function registerRoutes(
           fs.unlinkSync(filePath);
           await storage.deleteUploadedFile(tempFile.id);
         } else {
-          // Update file entry with actual hash and size
-          // Since we can't update via storage interface easily, we'll work around it
-          // For now, delete and recreate
-          await storage.deleteUploadedFile(tempFile.id);
-          await storage.createUploadedFile({
-            filePath,
-            originalName: decodedName,
-            fileHash,
-            fileSize,
-          });
+          // ハッシュ計算完了後、ファイルレコードを実際の値で更新する
+          await storage.updateUploadedFile(tempFile.id, { fileHash, fileSize });
         }
       },
       onError: async (error) => {
