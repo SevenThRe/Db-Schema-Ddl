@@ -3,22 +3,23 @@ import os from "os";
 import path from "path";
 import { Worker } from "worker_threads";
 import { createLogger } from "./logger";
-import { getSheetNames, parseSheetRegion, parseTableDefinitions, type ParseOptions } from "./excel";
+import {
+  getSheetNames,
+  parseSheetRegion,
+  parseTableDefinitions,
+  parseWorkbookBundle,
+  type ParseOptions,
+  type SearchIndexItem,
+  type WorkbookBundle,
+} from "./excel";
 import type { TableInfo } from "@shared/schema";
-
-interface SearchIndexItem {
-  type: "sheet" | "table";
-  sheetName: string;
-  displayName: string;
-  physicalTableName?: string;
-  logicalTableName?: string;
-}
 
 type WorkerTaskType =
   | "listSheets"
   | "parseTableDefinitions"
   | "parseSheetRegion"
-  | "buildSearchIndex";
+  | "buildSearchIndex"
+  | "parseWorkbookBundle";
 
 interface WorkerRequest {
   id: string;
@@ -58,6 +59,34 @@ const logger = createLogger("excel-executor");
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_FALLBACK_POOL_SIZE = 2;
+const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_ELECTRON_CACHE_MAX_ENTRIES = 6;
+const DEFAULT_SERVER_CACHE_MAX_ENTRIES = 20;
+const DEFAULT_ELECTRON_CACHE_MAX_TOTAL_MB = 24;
+const DEFAULT_SERVER_CACHE_MAX_TOTAL_MB = 160;
+const DEFAULT_ELECTRON_CACHE_MAX_BUNDLE_MB = 8;
+const DEFAULT_SERVER_CACHE_MAX_BUNDLE_MB = 24;
+const DEFAULT_MAX_QUEUE_LENGTH = 200;
+
+export class ExcelExecutorQueueOverflowError extends Error {
+  readonly code = "EXCEL_EXECUTOR_QUEUE_OVERFLOW";
+
+  constructor(message = "Excel executor queue is full. Please retry later.") {
+    super(message);
+    this.name = "ExcelExecutorQueueOverflowError";
+  }
+}
+
+function mbToBytes(mb: number): number {
+  return Math.max(0, Math.floor(mb * 1024 * 1024));
+}
+
+function estimateStringBytes(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  return 24 + value.length * 2;
+}
 
 function isWorkerDisabled(): boolean {
   const raw = String(process.env.EXCEL_WORKER_DISABLED ?? "").toLowerCase();
@@ -78,6 +107,84 @@ function getTimeoutMs(): number {
     return raw;
   }
   return DEFAULT_TIMEOUT_MS;
+}
+
+function getCacheTtlMs(): number {
+  const raw = Number(process.env.EXCEL_CACHE_TTL_MS ?? "");
+  if (Number.isInteger(raw) && raw >= 1000) {
+    return raw;
+  }
+  return DEFAULT_CACHE_TTL_MS;
+}
+
+function getCacheMaxEntries(): number {
+  const inElectron = process.env.ELECTRON_MODE === "true";
+  const envName = inElectron
+    ? "EXCEL_CACHE_MAX_ENTRIES_ELECTRON"
+    : "EXCEL_CACHE_MAX_ENTRIES_SERVER";
+  const defaultValue = inElectron ? DEFAULT_ELECTRON_CACHE_MAX_ENTRIES : DEFAULT_SERVER_CACHE_MAX_ENTRIES;
+  const raw = Number(process.env[envName] ?? "");
+  if (Number.isInteger(raw) && raw > 0) {
+    return raw;
+  }
+  return defaultValue;
+}
+
+function getCacheMaxTotalBytes(): number {
+  const inElectron = process.env.ELECTRON_MODE === "true";
+  const envName = inElectron
+    ? "EXCEL_CACHE_MAX_TOTAL_MB_ELECTRON"
+    : "EXCEL_CACHE_MAX_TOTAL_MB_SERVER";
+  const defaultMb = inElectron ? DEFAULT_ELECTRON_CACHE_MAX_TOTAL_MB : DEFAULT_SERVER_CACHE_MAX_TOTAL_MB;
+  const raw = Number(process.env[envName] ?? "");
+  if (Number.isFinite(raw) && raw > 0) {
+    return mbToBytes(raw);
+  }
+  return mbToBytes(defaultMb);
+}
+
+function getCacheMaxBundleBytes(): number {
+  const inElectron = process.env.ELECTRON_MODE === "true";
+  const envName = inElectron
+    ? "EXCEL_CACHE_MAX_BUNDLE_MB_ELECTRON"
+    : "EXCEL_CACHE_MAX_BUNDLE_MB_SERVER";
+  const defaultMb = inElectron ? DEFAULT_ELECTRON_CACHE_MAX_BUNDLE_MB : DEFAULT_SERVER_CACHE_MAX_BUNDLE_MB;
+  const raw = Number(process.env[envName] ?? "");
+  if (Number.isFinite(raw) && raw > 0) {
+    return mbToBytes(raw);
+  }
+  return mbToBytes(defaultMb);
+}
+
+function getQueueMaxLength(): number {
+  const raw = Number(process.env.EXCEL_EXECUTOR_QUEUE_MAX ?? "");
+  if (Number.isInteger(raw) && raw > 0) {
+    return raw;
+  }
+  return DEFAULT_MAX_QUEUE_LENGTH;
+}
+
+function stableParseOptions(parseOptions?: ParseOptions): string {
+  const normalizedPkMarkers = Array.isArray(parseOptions?.pkMarkers)
+    ? [...(parseOptions?.pkMarkers ?? [])].sort()
+    : [];
+  return JSON.stringify({
+    maxConsecutiveEmptyRows: parseOptions?.maxConsecutiveEmptyRows ?? 10,
+    pkMarkers: normalizedPkMarkers,
+  });
+}
+
+function buildBundleCacheKey(filePath: string, parseOptions?: ParseOptions, fileHash?: string): string {
+  if (fileHash && fileHash.trim() !== "") {
+    return `${fileHash}::${stableParseOptions(parseOptions)}`;
+  }
+
+  try {
+    const stat = fs.statSync(filePath);
+    return `${filePath}:${stat.size}:${stat.mtimeMs}::${stableParseOptions(parseOptions)}`;
+  } catch {
+    return `${filePath}::${stableParseOptions(parseOptions)}`;
+  }
 }
 
 function getWorkerScriptConfig(): { scriptPath: string; execArgv?: string[] } {
@@ -137,12 +244,67 @@ function buildSearchIndexFallback(filePath: string, parseOptions?: ParseOptions)
   return searchIndex;
 }
 
+function estimateBundleBytes(bundle: WorkbookBundle): number {
+  let bytes = 1024;
+
+  bytes += bundle.sheetSummaries.length * 64;
+  for (const summary of bundle.sheetSummaries) {
+    bytes += estimateStringBytes(summary.name);
+  }
+
+  for (const [sheetName, tables] of Object.entries(bundle.tablesBySheet)) {
+    bytes += 96 + estimateStringBytes(sheetName);
+    bytes += tables.length * 128;
+    for (const table of tables) {
+      bytes += 256;
+      bytes += estimateStringBytes(table.logicalTableName);
+      bytes += estimateStringBytes(table.physicalTableName);
+      bytes += estimateStringBytes(table.excelRange);
+      bytes += table.columns.length * 160;
+      for (const col of table.columns) {
+        bytes += estimateStringBytes(String(col.no ?? ""));
+        bytes += estimateStringBytes(col.logicalName);
+        bytes += estimateStringBytes(col.physicalName);
+        bytes += estimateStringBytes(col.dataType);
+        bytes += estimateStringBytes(col.size);
+        bytes += estimateStringBytes(col.comment);
+      }
+    }
+  }
+
+  bytes += bundle.searchIndex.length * 96;
+  for (const item of bundle.searchIndex) {
+    bytes += estimateStringBytes(item.sheetName);
+    bytes += estimateStringBytes(item.displayName);
+    bytes += estimateStringBytes(item.physicalTableName);
+    bytes += estimateStringBytes(item.logicalTableName);
+  }
+
+  return bytes;
+}
+
+interface CachedBundleEntry {
+  key: string;
+  bundle: WorkbookBundle;
+  sizeEstimateBytes: number;
+  expiresAt: number;
+  lastAccessAt: number;
+}
+
 class ExcelExecutor {
   private readonly timeoutMs = getTimeoutMs();
   private readonly disabled = isWorkerDisabled();
+  private readonly cacheTtlMs = getCacheTtlMs();
+  private readonly cacheMaxEntries = getCacheMaxEntries();
+  private readonly cacheMaxTotalBytes = getCacheMaxTotalBytes();
+  private readonly cacheMaxBundleBytes = getCacheMaxBundleBytes();
+  private readonly queueMaxLength = getQueueMaxLength();
   private readonly queue: QueuedTask<any>[] = [];
   private readonly workers: WorkerSlot[] = [];
   private readonly inFlight = new Map<string, InFlightTask<any>>();
+  private readonly bundleCache = new Map<string, CachedBundleEntry>();
+  private bundleCacheBytes = 0;
+  private shuttingDown = false;
   private workerConfig: { scriptPath: string; execArgv?: string[] } | null = null;
 
   constructor() {
@@ -160,8 +322,99 @@ class ExcelExecutor {
     logger.info("Excel worker executor initialized", {
       poolSize,
       timeoutMs: this.timeoutMs,
+      cacheTtlMs: this.cacheTtlMs,
+      cacheMaxEntries: this.cacheMaxEntries,
+      cacheMaxTotalBytes: this.cacheMaxTotalBytes,
+      cacheMaxBundleBytes: this.cacheMaxBundleBytes,
+      queueMaxLength: this.queueMaxLength,
       workerScript: this.workerConfig.scriptPath,
     });
+  }
+
+  private pruneExpiredCache(): void {
+    const now = Date.now();
+    this.bundleCache.forEach((entry, key) => {
+      if (entry.expiresAt <= now) {
+        this.bundleCacheBytes = Math.max(0, this.bundleCacheBytes - entry.sizeEstimateBytes);
+        this.bundleCache.delete(key);
+      }
+    });
+  }
+
+  private removeBundleCacheKey(key: string): void {
+    const existing = this.bundleCache.get(key);
+    if (!existing) {
+      return;
+    }
+    this.bundleCacheBytes = Math.max(0, this.bundleCacheBytes - existing.sizeEstimateBytes);
+    this.bundleCache.delete(key);
+  }
+
+  private evictCacheIfNeeded(): void {
+    if (this.bundleCache.size === 0) {
+      return;
+    }
+
+    while (
+      this.bundleCache.size > this.cacheMaxEntries ||
+      this.bundleCacheBytes > this.cacheMaxTotalBytes
+    ) {
+      const lru = Array.from(this.bundleCache.values()).sort((a, b) => a.lastAccessAt - b.lastAccessAt)[0];
+      if (!lru) {
+        break;
+      }
+      this.removeBundleCacheKey(lru.key);
+    }
+  }
+
+  private setBundleCache(cacheKey: string, bundle: WorkbookBundle): void {
+    if (this.cacheMaxEntries <= 0) {
+      return;
+    }
+
+    this.pruneExpiredCache();
+
+    const sizeEstimateBytes = estimateBundleBytes(bundle);
+    if (sizeEstimateBytes > this.cacheMaxBundleBytes || sizeEstimateBytes > this.cacheMaxTotalBytes) {
+      logger.warn("Skip excel bundle cache due to size budget", {
+        cacheKey,
+        sheetCount: bundle.stats.sheetCount,
+        sizeEstimateBytes,
+        cacheMaxBundleBytes: this.cacheMaxBundleBytes,
+        cacheMaxTotalBytes: this.cacheMaxTotalBytes,
+      });
+      return;
+    }
+
+    const now = Date.now();
+    this.removeBundleCacheKey(cacheKey);
+    this.bundleCache.set(cacheKey, {
+      key: cacheKey,
+      bundle,
+      sizeEstimateBytes,
+      expiresAt: now + this.cacheTtlMs,
+      lastAccessAt: now,
+    });
+    this.bundleCacheBytes += sizeEstimateBytes;
+    this.evictCacheIfNeeded();
+  }
+
+  private getBundleCache(cacheKey: string): WorkbookBundle | null {
+    this.pruneExpiredCache();
+    const entry = this.bundleCache.get(cacheKey);
+    if (!entry) {
+      return null;
+    }
+
+    entry.lastAccessAt = Date.now();
+    const cachedBundle: WorkbookBundle = {
+      ...entry.bundle,
+      stats: {
+        ...entry.bundle.stats,
+        cacheHit: true,
+      },
+    };
+    return cachedBundle;
   }
 
   private createWorker(workerId: number): WorkerSlot {
@@ -193,8 +446,12 @@ class ExcelExecutor {
     });
 
     worker.on("exit", (code) => {
-      const shouldRespawn = code !== 0 && !this.disabled;
-      logger.warn("Excel worker exited", { workerId: slot.id, code, shouldRespawn });
+      const shouldRespawn = code !== 0 && !this.disabled && !this.shuttingDown;
+      if (this.shuttingDown) {
+        logger.debug("Excel worker exited during shutdown", { workerId: slot.id, code });
+      } else {
+        logger.warn("Excel worker exited", { workerId: slot.id, code, shouldRespawn });
+      }
       this.failActiveTaskForWorker(slot, new Error(`Worker exited unexpectedly with code ${code}`));
       slot.busy = false;
 
@@ -265,6 +522,18 @@ class ExcelExecutor {
 
   private enqueue<T>(type: WorkerTaskType, payload: Record<string, unknown>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      if (this.shuttingDown) {
+        reject(new Error("Excel executor is shutting down."));
+        return;
+      }
+      if (this.queue.length >= this.queueMaxLength) {
+        reject(
+          new ExcelExecutorQueueOverflowError(
+            `Excel executor queue limit reached (${this.queueMaxLength})`,
+          ),
+        );
+        return;
+      }
       const task: QueuedTask<T> = {
         id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
         type,
@@ -354,6 +623,11 @@ class ExcelExecutor {
             String(payload.filePath ?? ""),
             (payload.parseOptions ?? {}) as ParseOptions,
           ) as T;
+        case "parseWorkbookBundle":
+          return parseWorkbookBundle(
+            String(payload.filePath ?? ""),
+            (payload.parseOptions ?? {}) as ParseOptions,
+          ) as T;
         default:
           throw new Error(`Unsupported fallback task type: ${type}`);
       }
@@ -365,6 +639,56 @@ class ExcelExecutor {
       return this.runFallbackTask<string[]>("listSheets", { filePath });
     }
     return this.enqueue<string[]>("listSheets", { filePath });
+  }
+
+  async runParseWorkbookBundle(
+    filePath: string,
+    parseOptions?: ParseOptions,
+    fileHash?: string,
+  ): Promise<WorkbookBundle> {
+    const cacheKey = buildBundleCacheKey(filePath, parseOptions, fileHash);
+    const cached = this.getBundleCache(cacheKey);
+    if (cached) {
+      logger.debug("Excel bundle cache hit", {
+        filePath,
+        sheetCount: cached.stats.sheetCount,
+        parseMode: cached.stats.parseMode,
+      });
+      return cached;
+    }
+
+    const payload = {
+      filePath,
+      parseOptions: parseOptions ?? {},
+    };
+
+    let bundle: WorkbookBundle;
+    if (this.disabled) {
+      bundle = await this.runFallbackTask<WorkbookBundle>("parseWorkbookBundle", payload);
+    } else {
+      bundle = await this.enqueue<WorkbookBundle>("parseWorkbookBundle", payload);
+    }
+
+    const normalizedBundle: WorkbookBundle = {
+      ...bundle,
+      stats: {
+        ...bundle.stats,
+        cacheHit: false,
+      },
+    };
+    logger.info("Excel bundle parsed", {
+      filePath,
+      fileSize: normalizedBundle.stats.fileSize,
+      sheetCount: normalizedBundle.stats.sheetCount,
+      parseMode: normalizedBundle.stats.parseMode,
+      totalMs: Math.round(normalizedBundle.stats.totalMs),
+      xlsxReadMs: Math.round(normalizedBundle.stats.xlsxReadMs),
+      sheetJsonMs: Math.round(normalizedBundle.stats.sheetJsonMs),
+      extractMs: Math.round(normalizedBundle.stats.extractMs),
+      fallbackSheetCount: normalizedBundle.stats.fallbackSheetCount,
+    });
+    this.setBundleCache(cacheKey, normalizedBundle);
+    return normalizedBundle;
   }
 
   runParseTables(filePath: string, sheetName: string, parseOptions?: ParseOptions): Promise<TableInfo[]> {
@@ -400,11 +724,40 @@ class ExcelExecutor {
   }
 
   runBuildSearchIndex(filePath: string, parseOptions?: ParseOptions): Promise<SearchIndexItem[]> {
-    const payload = { filePath, parseOptions: parseOptions ?? {} };
-    if (this.disabled) {
-      return this.runFallbackTask<SearchIndexItem[]>("buildSearchIndex", payload);
-    }
-    return this.enqueue<SearchIndexItem[]>("buildSearchIndex", payload);
+    return this.runParseWorkbookBundle(filePath, parseOptions).then((bundle) => bundle.searchIndex);
+  }
+
+  async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    const shutdownError = new Error("Excel executor is shutting down.");
+    const closeTargets = [...this.workers];
+    this.workers.length = 0;
+
+    const queuedTasks = this.queue.splice(0, this.queue.length);
+    queuedTasks.forEach((task) => {
+      task.reject(shutdownError);
+    });
+
+    Array.from(this.inFlight.values()).forEach((task) => {
+      clearTimeout(task.timeout);
+      task.reject(shutdownError);
+    });
+    this.inFlight.clear();
+
+    this.bundleCache.clear();
+    this.bundleCacheBytes = 0;
+    await Promise.all(
+      closeTargets.map(async (slot) => {
+        try {
+          await slot.worker.terminate();
+        } catch (error) {
+          logger.warn("Failed to terminate excel worker", {
+            workerId: slot.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+    );
   }
 }
 
@@ -439,4 +792,16 @@ export function runBuildSearchIndex(
   parseOptions?: ParseOptions,
 ): Promise<SearchIndexItem[]> {
   return executor.runBuildSearchIndex(filePath, parseOptions);
+}
+
+export function runParseWorkbookBundle(
+  filePath: string,
+  parseOptions?: ParseOptions,
+  fileHash?: string,
+): Promise<WorkbookBundle> {
+  return executor.runParseWorkbookBundle(filePath, parseOptions, fileHash);
+}
+
+export async function shutdownExcelExecutor(): Promise<void> {
+  await executor.shutdown();
 }

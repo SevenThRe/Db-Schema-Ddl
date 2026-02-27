@@ -25,20 +25,20 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
     : sheets;
 
   return (
-    <div className="w-64 bg-background/50 border-r border-border flex flex-col h-full backdrop-blur-sm">
-      <div className="p-4 border-b border-border/50 bg-muted/20">
+    <div className="w-full bg-background border-r border-border/60 flex flex-col h-full min-w-0">
+      <div className="px-3 py-2 border-b border-border/60 bg-background/80">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
-            <Table className="w-4 h-4 text-primary" />
+          <h3 className="font-semibold text-xs tracking-wide uppercase flex items-center gap-1.5 text-foreground">
+            <Table className="w-3.5 h-3.5 text-primary" />
             {t("sheet.selectSheet")}
           </h3>
           <button
             onClick={() => setFilterUndefined(!filterUndefined)}
             className={cn(
-              "p-1.5 rounded-md transition-colors",
+              "h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors border",
               filterUndefined
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-muted text-muted-foreground"
+                ? "bg-primary text-primary-foreground border-primary/70"
+                : "hover:bg-muted text-muted-foreground border-transparent"
             )}
             title={t("sheet.filterUndefined")}
           >
@@ -48,13 +48,13 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+        <div className="p-1.5 space-y-0.5">
           {isLoading ? (
              <div className="flex items-center justify-center p-8 text-muted-foreground">
                <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t("sheet.loading")}
              </div>
           ) : isError ? (
-            <div className="p-4 text-red-500 text-sm flex items-center gap-2 bg-red-50 rounded-md m-2">
+            <div className="p-4 text-red-500 text-sm flex items-center gap-2">
               <AlertCircle className="w-4 h-4" /> {t("sheet.failed")}
             </div>
           ) : filteredSheets?.length === 0 ? (
@@ -71,12 +71,12 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
                   transition={{ delay: idx * 0.02 }}
                   onClick={() => onSelectSheet(sheet.name)}
                   className={cn(
-                    "w-full text-left px-3 py-2.5 rounded-md text-sm transition-all duration-200 flex items-center gap-2",
+                    "w-full text-left px-2.5 py-2 rounded-md text-xs transition-all duration-200 flex items-center gap-2 border",
                     selectedSheet === sheet.name
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-primary/10 border-primary/40 text-primary font-medium"
                       : !sheet.hasTableDefinitions
-                      ? "hover:bg-muted text-muted-foreground hover:text-foreground bg-amber-50/50 dark:bg-amber-950/20"
-                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                      ? "hover:bg-muted text-muted-foreground hover:text-foreground bg-amber-50/40 dark:bg-amber-950/20 border-amber-300/20 dark:border-amber-700/30"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground border-transparent"
                   )}
                 >
                   <div className={cn(

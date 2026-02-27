@@ -1,9 +1,29 @@
-import { type InsertUploadedFile, type UploadedFile, type DdlSettings, type ProcessingTask } from "@shared/schema";
-import { createRequire } from "module";
-
-const requireModule = createRequire(import.meta.url);
+import {
+  type InsertUploadedFile,
+  type UploadedFile,
+  type DdlSettings,
+  type ProcessingTask,
+  uploadedFiles as uploadedFilesTable,
+  ddlSettings as ddlSettingsTable,
+  processingTasks as processingTasksTable,
+} from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { db } from "./db";
 
 const DEFAULT_PK_MARKERS = ["\u3007"];
+const DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS = 20;
+const DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS = 40;
+const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS = 240;
+const DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT = 80;
+const DEFAULT_PREWARM_ENABLED = true;
+const DEFAULT_PREWARM_MAX_CONCURRENCY = 1;
+const DEFAULT_PREWARM_QUEUE_MAX = 12;
+const DEFAULT_PREWARM_MAX_FILE_MB = 20;
+const DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH = 200;
+const DEFAULT_TASK_MANAGER_STALE_PENDING_MS = 30 * 60 * 1000;
 
 function normalizePkMarkers(markers?: string[]): string[] {
   const source = Array.isArray(markers) ? markers : DEFAULT_PK_MARKERS;
@@ -76,6 +96,19 @@ export class MemoryStorage implements IStorage {
     mysqlBooleanMode: "tinyint(1)",
     pkMarkers: DEFAULT_PK_MARKERS,
     maxConsecutiveEmptyRows: 10,
+    uploadRateLimitWindowMs: DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
+    uploadRateLimitMaxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+    parseRateLimitWindowMs: DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS,
+    parseRateLimitMaxRequests: DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS,
+    globalProtectRateLimitWindowMs: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
+    globalProtectRateLimitMaxRequests: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
+    globalProtectMaxInFlight: DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
+    prewarmEnabled: DEFAULT_PREWARM_ENABLED,
+    prewarmMaxConcurrency: DEFAULT_PREWARM_MAX_CONCURRENCY,
+    prewarmQueueMax: DEFAULT_PREWARM_QUEUE_MAX,
+    prewarmMaxFileMb: DEFAULT_PREWARM_MAX_FILE_MB,
+    taskManagerMaxQueueLength: DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
+    taskManagerStalePendingMs: DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
   };
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -164,14 +197,13 @@ export class DatabaseStorage implements IStorage {
   private processingTasks: any;
 
   constructor() {
-    // Lazy load DB modules only if DATABASE_URL is set
-    const { db } = requireModule("./db");
-    const { uploadedFiles, ddlSettings, processingTasks } = requireModule("@shared/schema");
-    const { eq } = requireModule("drizzle-orm");
+    if (!db) {
+      throw new Error("DatabaseStorage requires configured database connection.");
+    }
     this.db = db;
-    this.uploadedFiles = uploadedFiles;
-    this.ddlSettings = ddlSettings;
-    this.processingTasks = processingTasks;
+    this.uploadedFiles = uploadedFilesTable;
+    this.ddlSettings = ddlSettingsTable;
+    this.processingTasks = processingTasksTable;
     this.eq = eq;
   }
 
@@ -198,6 +230,21 @@ export class DatabaseStorage implements IStorage {
       mysqlBooleanMode: row.mysqlBooleanMode,
       pkMarkers: parsePkMarkers(row.pkMarkers),
       maxConsecutiveEmptyRows: row.maxConsecutiveEmptyRows,
+      uploadRateLimitWindowMs: row.uploadRateLimitWindowMs ?? DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
+      uploadRateLimitMaxRequests: row.uploadRateLimitMaxRequests ?? DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+      parseRateLimitWindowMs: row.parseRateLimitWindowMs ?? DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS,
+      parseRateLimitMaxRequests: row.parseRateLimitMaxRequests ?? DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS,
+      globalProtectRateLimitWindowMs:
+        row.globalProtectRateLimitWindowMs ?? DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
+      globalProtectRateLimitMaxRequests:
+        row.globalProtectRateLimitMaxRequests ?? DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
+      globalProtectMaxInFlight: row.globalProtectMaxInFlight ?? DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
+      prewarmEnabled: row.prewarmEnabled ?? DEFAULT_PREWARM_ENABLED,
+      prewarmMaxConcurrency: row.prewarmMaxConcurrency ?? DEFAULT_PREWARM_MAX_CONCURRENCY,
+      prewarmQueueMax: row.prewarmQueueMax ?? DEFAULT_PREWARM_QUEUE_MAX,
+      prewarmMaxFileMb: row.prewarmMaxFileMb ?? DEFAULT_PREWARM_MAX_FILE_MB,
+      taskManagerMaxQueueLength: row.taskManagerMaxQueueLength ?? DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
+      taskManagerStalePendingMs: row.taskManagerStalePendingMs ?? DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
     };
   }
 
@@ -263,6 +310,19 @@ export class DatabaseStorage implements IStorage {
         mysqlBooleanMode: "tinyint(1)",
         pkMarkers: DEFAULT_PK_MARKERS,
         maxConsecutiveEmptyRows: 10,
+        uploadRateLimitWindowMs: DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
+        uploadRateLimitMaxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+        parseRateLimitWindowMs: DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS,
+        parseRateLimitMaxRequests: DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS,
+        globalProtectRateLimitWindowMs: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
+        globalProtectRateLimitMaxRequests: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
+        globalProtectMaxInFlight: DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
+        prewarmEnabled: DEFAULT_PREWARM_ENABLED,
+        prewarmMaxConcurrency: DEFAULT_PREWARM_MAX_CONCURRENCY,
+        prewarmQueueMax: DEFAULT_PREWARM_QUEUE_MAX,
+        prewarmMaxFileMb: DEFAULT_PREWARM_MAX_FILE_MB,
+        taskManagerMaxQueueLength: DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
+        taskManagerStalePendingMs: DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
       };
       const [created] = await this.db
         .insert(this.ddlSettings)
@@ -358,12 +418,13 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-// Auto-select storage based on environment
-const shouldUseDatabaseStorage =
-  Boolean(process.env.DATABASE_URL) ||
-  process.env.ELECTRON_MODE === "true" ||
-  process.env.USE_SQLITE_STORAGE === "true";
+// Auto-select storage based on actual database readiness.
+// - SQLite mode: db is initialized when USE_SQLITE_STORAGE / ELECTRON_MODE is enabled.
+// - PostgreSQL mode: db is initialized when DATABASE_URL is present.
+const shouldUseDatabaseStorage = Boolean(db);
 
 export const storage: IStorage = shouldUseDatabaseStorage
   ? new DatabaseStorage()
   : new MemoryStorage();
+
+console.info(`[storage] mode=${shouldUseDatabaseStorage ? "database" : "memory"}`);

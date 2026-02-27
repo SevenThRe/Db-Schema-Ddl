@@ -1,8 +1,58 @@
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
+import { performance } from 'node:perf_hooks';
 import type { TableInfo, ColumnInfo } from '../../shared/schema.ts';
 
 const DEFAULT_PK_MARKERS = ['〇'];
+
+export interface SearchIndexItem {
+  type: 'sheet' | 'table';
+  sheetName: string;
+  displayName: string;
+  physicalTableName?: string;
+  logicalTableName?: string;
+}
+
+export type WorkbookParseMode = 'fast' | 'fallback' | 'mixed';
+
+export interface WorkbookParseStats {
+  fileSize: number;
+  sheetCount: number;
+  parseMode: WorkbookParseMode;
+  readMode: 'fast' | 'compat';
+  readFallbackTriggered: boolean;
+  totalMs: number;
+  xlsxReadMs: number;
+  sheetJsonMs: number;
+  extractMs: number;
+  fallbackSheetCount: number;
+  fallbackSheets: string[];
+  cacheHit: boolean;
+}
+
+export interface WorkbookBundle {
+  sheetSummaries: Array<{
+    name: string;
+    hasTableDefinitions: boolean;
+  }>;
+  tablesBySheet: Record<string, TableInfo[]>;
+  searchIndex: SearchIndexItem[];
+  stats: WorkbookParseStats;
+}
+
+const FAST_WORKBOOK_READ_OPTIONS = {
+  type: 'buffer' as const,
+  dense: true,
+  cellFormula: false,
+  cellHTML: false,
+  cellNF: false,
+  cellStyles: false,
+  cellText: false,
+};
+
+const COMPAT_WORKBOOK_READ_OPTIONS = {
+  type: 'buffer' as const,
+};
 
 function normalizePkMarkers(pkMarkers?: string[]): string[] {
   const source = Array.isArray(pkMarkers) ? pkMarkers : DEFAULT_PK_MARKERS;
@@ -16,7 +66,15 @@ function normalizePkMarkers(pkMarkers?: string[]): string[] {
 
 export function getSheetNames(filePath: string): string[] {
   const fileBuffer = fs.readFileSync(filePath);
-  const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(fileBuffer, FAST_WORKBOOK_READ_OPTIONS);
+    if (!Array.isArray(workbook.SheetNames) || workbook.SheetNames.length === 0) {
+      throw new Error('No sheets from fast workbook read');
+    }
+  } catch {
+    workbook = XLSX.read(fileBuffer, COMPAT_WORKBOOK_READ_OPTIONS);
+  }
   return workbook.SheetNames;
 }
 
@@ -42,6 +100,29 @@ function colToLabel(col: number): string {
     num = Math.floor(num / 26) - 1;
   }
   return label;
+}
+
+function normalizeIdentifierSegment(raw: string): string {
+  let normalized = String(raw ?? '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+
+  if (!normalized) {
+    normalized = 'sheet';
+  }
+  if (/^\d/.test(normalized)) {
+    normalized = `s_${normalized}`;
+  }
+  return normalized;
+}
+
+function buildRegionPhysicalTableName(sheetName: string, startRow: number, startCol: number): string {
+  const sheetSegment = normalizeIdentifierSegment(sheetName);
+  return `region_${sheetSegment}_r${startRow + 1}_c${startCol + 1}`;
 }
 
 /**
@@ -874,9 +955,15 @@ export function parseSheetRegion(
     }
   }
 
+  const fallbackPhysicalTableName = buildRegionPhysicalTableName(
+    sheetName,
+    startRow,
+    tableStartCol,
+  );
+
   return [{
-    logicalTableName: logicalTableName || physicalTableName || 'Unknown',
-    physicalTableName: physicalTableName || logicalTableName || 'unknown',
+    logicalTableName: logicalTableName || physicalTableName || sheetName || 'Unknown',
+    physicalTableName: physicalTableName || fallbackPhysicalTableName,
     columns,
     columnRange: {
       startCol: tableStartCol,
@@ -899,18 +986,9 @@ export interface ParseOptions {
   pkMarkers?: string[];
 }
 
-export function parseTableDefinitions(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo[] {
+function parseTablesFromSheetData(sheetName: string, data: any[][], options: ParseOptions = {}): TableInfo[] {
   const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
   const pkMarkers = normalizePkMarkers(options.pkMarkers);
-
-  const fileBuffer = fs.readFileSync(filePath);
-  const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-  const worksheet = workbook.Sheets[sheetName];
-  if (!worksheet) {
-    throw new Error(`Sheet ${sheetName} not found`);
-  }
-
-  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
   const tables: TableInfo[] = [];
   const seen = new Set<string>();
 
@@ -953,6 +1031,196 @@ export function parseTableDefinitions(filePath: string, sheetName: string, optio
   }
 
   return tables;
+}
+
+function parseTableDefinitionsLegacyFromWorkbook(
+  workbook: XLSX.WorkBook,
+  sheetName: string,
+  options: ParseOptions = {},
+): TableInfo[] {
+  const worksheet = workbook.Sheets[sheetName];
+  if (!worksheet) {
+    throw new Error(`Sheet ${sheetName} not found`);
+  }
+
+  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  return parseTablesFromSheetData(sheetName, data, options);
+}
+
+function parseTableDefinitionsLegacy(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo[] {
+  const fileBuffer = fs.readFileSync(filePath);
+  const workbook = XLSX.read(fileBuffer, COMPAT_WORKBOOK_READ_OPTIONS);
+  return parseTableDefinitionsLegacyFromWorkbook(workbook, sheetName, options);
+}
+
+function shouldFallbackToLegacy(data: any[][], fastTables: TableInfo[]): boolean {
+  if (fastTables.length > 0) {
+    return false;
+  }
+
+  // Fast parser should have found something for explicit structured sheets with a valid header row.
+  if (!isFormatA(data) && !isFormatB(data)) {
+    return false;
+  }
+  return findHeaderRow(data, 0) !== -1;
+}
+
+function parseWorkbookBundleFromWorkbook(
+  fileBuffer: Buffer,
+  workbook: XLSX.WorkBook,
+  options: ParseOptions,
+  startedAt: number,
+  xlsxReadMs: number,
+  readMode: 'fast' | 'compat',
+  readFallbackTriggered: boolean,
+): WorkbookBundle {
+  const tablesBySheet: Record<string, TableInfo[]> = {};
+  const sheetSummaries: WorkbookBundle['sheetSummaries'] = [];
+  const searchIndex: SearchIndexItem[] = [];
+  const fallbackSheets: string[] = [];
+
+  let sheetJsonMs = 0;
+  let extractMs = 0;
+  let legacyWorkbook: XLSX.WorkBook | null = readMode === 'compat' ? workbook : null;
+
+  const parseLegacyForSheet = (sheetName: string): TableInfo[] => {
+    if (!legacyWorkbook) {
+      legacyWorkbook = XLSX.read(fileBuffer, COMPAT_WORKBOOK_READ_OPTIONS);
+    }
+    return parseTableDefinitionsLegacyFromWorkbook(legacyWorkbook, sheetName, options);
+  };
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) {
+      tablesBySheet[sheetName] = [];
+      sheetSummaries.push({ name: sheetName, hasTableDefinitions: false });
+      searchIndex.push({
+        type: 'sheet',
+        sheetName,
+        displayName: sheetName,
+      });
+      continue;
+    }
+
+    const convertStart = performance.now();
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+    sheetJsonMs += performance.now() - convertStart;
+
+    const parseStart = performance.now();
+    let tables = parseTablesFromSheetData(sheetName, data, options);
+    let usedFallback = false;
+
+    if (shouldFallbackToLegacy(data, tables)) {
+      try {
+        tables = parseLegacyForSheet(sheetName);
+        usedFallback = true;
+      } catch {
+        // Keep fast path result when fallback fails.
+      }
+    }
+
+    extractMs += performance.now() - parseStart;
+
+    if (usedFallback) {
+      fallbackSheets.push(sheetName);
+    }
+
+    tablesBySheet[sheetName] = tables;
+    const hasTableDefinitions = tables.length > 0;
+    sheetSummaries.push({
+      name: sheetName,
+      hasTableDefinitions,
+    });
+    searchIndex.push({
+      type: 'sheet',
+      sheetName,
+      displayName: sheetName,
+    });
+    tables.forEach((table) => {
+      searchIndex.push({
+        type: 'table',
+        sheetName,
+        displayName: `${table.physicalTableName} (${table.logicalTableName})`,
+        physicalTableName: table.physicalTableName,
+        logicalTableName: table.logicalTableName,
+      });
+    });
+  }
+
+  const totalMs = performance.now() - startedAt;
+  const fallbackSheetCount = fallbackSheets.length;
+  const parseMode: WorkbookParseMode = readMode === 'compat'
+    ? 'fallback'
+    : fallbackSheetCount === 0
+    ? 'fast'
+    : fallbackSheetCount === workbook.SheetNames.length
+    ? 'fallback'
+    : 'mixed';
+
+  return {
+    sheetSummaries,
+    tablesBySheet,
+    searchIndex,
+    stats: {
+      fileSize: fileBuffer.byteLength,
+      sheetCount: workbook.SheetNames.length,
+      parseMode,
+      readMode,
+      readFallbackTriggered,
+      totalMs,
+      xlsxReadMs,
+      sheetJsonMs,
+      extractMs,
+      fallbackSheetCount,
+      fallbackSheets,
+      cacheHit: false,
+    },
+  };
+}
+
+export function parseWorkbookBundle(filePath: string, options: ParseOptions = {}): WorkbookBundle {
+  const startedAt = performance.now();
+  const fileBuffer = fs.readFileSync(filePath);
+  let totalReadMs = 0;
+
+  try {
+    const readStart = performance.now();
+    const workbook = XLSX.read(fileBuffer, FAST_WORKBOOK_READ_OPTIONS);
+    totalReadMs += performance.now() - readStart;
+
+    if (!Array.isArray(workbook.SheetNames) || workbook.SheetNames.length === 0) {
+      throw new Error('Fast workbook read produced no sheets');
+    }
+
+    return parseWorkbookBundleFromWorkbook(
+      fileBuffer,
+      workbook,
+      options,
+      startedAt,
+      totalReadMs,
+      'fast',
+      false,
+    );
+  } catch {
+    const readStart = performance.now();
+    const workbook = XLSX.read(fileBuffer, COMPAT_WORKBOOK_READ_OPTIONS);
+    totalReadMs += performance.now() - readStart;
+
+    return parseWorkbookBundleFromWorkbook(
+      fileBuffer,
+      workbook,
+      options,
+      startedAt,
+      totalReadMs,
+      'compat',
+      true,
+    );
+  }
+}
+
+export function parseTableDefinitions(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo[] {
+  return parseTableDefinitionsLegacy(filePath, sheetName, options);
 }
 
 export function parseTableDefinition(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo {

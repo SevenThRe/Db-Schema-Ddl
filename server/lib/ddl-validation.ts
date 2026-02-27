@@ -38,6 +38,7 @@ const SUPPORTED_DATA_TYPES = new Set([
   "boolean",
   "bool",
   "blob",
+  "json",
 ]);
 
 const SIZE_RULES: Record<string, "none" | "integer" | "numeric"> = {
@@ -61,6 +62,7 @@ const SIZE_RULES: Record<string, "none" | "integer" | "numeric"> = {
   boolean: "none",
   bool: "none",
   blob: "none",
+  json: "none",
 };
 
 function normalizeToken(value?: string): string {

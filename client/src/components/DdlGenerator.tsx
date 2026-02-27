@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useGenerateDdl, useTableInfo, useSettings } from "@/hooks/use-ddl";
 import type { TableInfo } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 import { parseApiErrorResponse, translateApiError } from "@/lib/api-error";
 import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
 interface DdlGeneratorProps {
@@ -20,6 +19,8 @@ interface DdlGeneratorProps {
   sheetName: string | null;
   overrideTables?: TableInfo[] | null;
   currentTable?: TableInfo | null;
+  selectedTableNames?: Set<string>;
+  onSelectedTableNamesChange?: (next: Set<string>) => void;
 }
 
 type SqlTokenType = "plain" | "keyword" | "type" | "identifier" | "string" | "comment" | "number" | "operator";
@@ -239,12 +240,20 @@ function tokenizeSql(sqlText: string): SqlToken[] {
   return tokens;
 }
 
-export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }: DdlGeneratorProps) {
+export function DdlGenerator({
+  fileId,
+  sheetName,
+  overrideTables,
+  currentTable,
+  selectedTableNames,
+  onSelectedTableNamesChange,
+}: DdlGeneratorProps) {
+  const CONTROL_BUTTON_CLASS = "h-7 text-[11px]";
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [exportMode, setExportMode] = useState<"single" | "per-table">("single");
-  const [selectedTableNames, setSelectedTableNames] = useState<Set<string>>(new Set());
+  const [localSelectedTableNames, setLocalSelectedTableNames] = useState<Set<string>>(new Set());
   const [showTableSelector, setShowTableSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<"source" | "column" | "name">("source");
@@ -262,6 +271,43 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const { toast } = useToast();
   const { t } = useTranslation();
   const highlightedDdlTokens = useMemo(() => (generatedDdl ? tokenizeSql(generatedDdl) : []), [generatedDdl]);
+  const effectiveSelectedTableNames = selectedTableNames ?? localSelectedTableNames;
+
+  const commitSelectedTableNames = useCallback((next: Set<string>) => {
+    if (onSelectedTableNamesChange) {
+      onSelectedTableNamesChange(new Set(next));
+      return;
+    }
+    setLocalSelectedTableNames(new Set(next));
+  }, [onSelectedTableNamesChange]);
+
+  const updateSelectedTableNames = useCallback((updater: (previous: Set<string>) => Set<string>) => {
+    const next = updater(new Set(effectiveSelectedTableNames));
+    commitSelectedTableNames(next);
+  }, [commitSelectedTableNames, effectiveSelectedTableNames]);
+
+  useEffect(() => {
+    if (!tables || tables.length === 0) {
+      if (effectiveSelectedTableNames.size > 0) {
+        commitSelectedTableNames(new Set());
+      }
+      return;
+    }
+
+    const availableNames = new Set(
+      tables
+        .map((table: TableInfo) => table.physicalTableName)
+        .filter((name: string): name is string => Boolean(name && name.trim())),
+    );
+
+    const next = new Set(
+      Array.from(effectiveSelectedTableNames).filter((name) => availableNames.has(name)),
+    );
+
+    if (next.size !== effectiveSelectedTableNames.size) {
+      commitSelectedTableNames(next);
+    }
+  }, [tables, effectiveSelectedTableNames, commitSelectedTableNames]);
 
   const tablesWithNameIssues = useMemo(() => {
     return (tables ?? []).filter((table: TableInfo) => validateTablePhysicalNames(table).hasIssues);
@@ -438,14 +484,17 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
       );
     } else {
       // ZIP 模式：显示表格选择对话框
-      // 默认全选
-      setSelectedTableNames(new Set(tables.map((t: TableInfo) => t.physicalTableName)));
+      if (effectiveSelectedTableNames.size === 0) {
+        commitSelectedTableNames(
+          new Set(tables.map((table: TableInfo) => table.physicalTableName).filter(Boolean)),
+        );
+      }
       setShowTableSelector(true);
     }
   };
 
   const handleGenerateZip = async () => {
-    if (!tables || selectedTableNames.size === 0) {
+    if (!tables || effectiveSelectedTableNames.size === 0) {
       toast({
         title: t("ddl.noTableSelected"),
         description: t("ddl.pleaseSelectAtLeastOne"),
@@ -454,7 +503,9 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
       return;
     }
 
-    const selectedTables = tables.filter((t: TableInfo) => selectedTableNames.has(t.physicalTableName));
+    const selectedTables = tables.filter((table: TableInfo) =>
+      effectiveSelectedTableNames.has(table.physicalTableName),
+    );
     const tablesForExport = await askAutoFixIfNeeded(selectedTables);
     if (!tablesForExport) {
       return;
@@ -511,7 +562,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const toggleColumnSelection = (column: string, select: boolean) => {
     if (!tables) return;
 
-    const newSet = new Set(selectedTableNames);
+    const newSet = new Set(effectiveSelectedTableNames);
     tables.forEach((table: TableInfo) => {
       const tableCol = getColumnLetter(table);
       if (tableCol === column) {
@@ -522,7 +573,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
         }
       }
     });
-    setSelectedTableNames(newSet);
+    commitSelectedTableNames(newSet);
   };
 
   const copyToClipboard = () => {
@@ -582,21 +633,26 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   if (!tables || tables.length === 0) return null;
 
   return (
-    <div className="flex flex-col h-full bg-background border-l border-border">
-      <div className="p-4 border-b border-border bg-card/50 flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Code className="w-4 h-4 text-primary" />
-          <h3 className="font-semibold text-sm" data-testid="text-ddl-header">{t("ddl.output")}</h3>
+    <div className="flex flex-col h-full bg-background">
+      <div className="px-3 py-2 border-b border-border/60 bg-background/80 flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0 flex items-center gap-2">
+          <Code className="w-3.5 h-3.5 text-primary" />
+          <h3 className="font-semibold text-xs tracking-wide uppercase" data-testid="text-ddl-header">{t("ddl.output")}</h3>
+          {exportMode === "per-table" && (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              {t("ddl.selected")}: {effectiveSelectedTableNames.size}
+            </Badge>
+          )}
           {tablesWithNameIssues.length > 0 && (
-            <Badge variant="destructive" className="text-[10px]">
+            <Badge variant="destructive" className="h-5 text-[10px]">
               {t("ddl.namingWarningsFound", { count: tablesWithNameIssues.length })}
             </Badge>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
           <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
-            <SelectTrigger className="w-[110px] h-8 text-xs" data-testid="select-dialect">
+            <SelectTrigger className="w-[92px] sm:w-[100px] h-7 text-[11px] shrink-0" data-testid="select-dialect">
               <SelectValue placeholder="Dialect" />
             </SelectTrigger>
             <SelectContent>
@@ -606,7 +662,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
           </Select>
 
           <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
-            <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="select-export-mode">
+            <SelectTrigger className="w-[106px] sm:w-[118px] h-7 text-[11px] shrink-0" data-testid="select-export-mode">
               <SelectValue placeholder="Export Mode" />
             </SelectTrigger>
             <SelectContent>
@@ -619,7 +675,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
             size="sm"
             onClick={handleGenerate}
             disabled={isPending}
-            className="h-8 text-xs font-semibold shadow-sm"
+            className="h-7 text-[11px] font-semibold shadow-sm px-2.5 shrink-0"
             data-testid="button-generate"
           >
             {isPending ? t("ddl.generating") : (
@@ -631,7 +687,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden relative group bg-slate-950">
+      <div className="flex-1 overflow-hidden relative group bg-slate-950/95">
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
             <Database className="w-12 h-12 mb-4 opacity-20" />
@@ -645,50 +701,42 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
             )}
           </div>
         ) : (
-          <div className="absolute inset-0 overflow-auto custom-scrollbar">
-            <pre className="p-6 font-mono text-sm text-slate-200 leading-relaxed selection:bg-primary/30" data-testid="text-ddl-output">
-              <code>
-                {highlightedDdlTokens.map((token, tokenIndex) => (
-                  <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
-                    {token.text}
-                  </span>
-                ))}
-              </code>
-            </pre>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {generatedDdl && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="absolute top-4 right-4 flex gap-2"
-            >
+          <div className="h-full flex flex-col">
+            <div className="px-3 py-2 flex justify-end gap-1.5 border-b border-slate-800/70">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleExport}
-                className="shadow-lg bg-white/10 text-white border-none backdrop-blur-sm"
+                className={`${CONTROL_BUTTON_CLASS} shadow-sm bg-white/10 text-white border-none backdrop-blur-sm`}
                 data-testid="button-export"
               >
-                <Download className="w-4 h-4 mr-1" />
-                {t("ddl.export")}
+                <Download className="w-3.5 h-3.5 mr-1" />
+                <span className="hidden sm:inline">{t("ddl.export")}</span>
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={copyToClipboard}
-                className="shadow-lg bg-white/10 text-white border-none backdrop-blur-sm"
+                className={`${CONTROL_BUTTON_CLASS} shadow-sm bg-white/10 text-white border-none backdrop-blur-sm`}
                 data-testid="button-copy"
               >
-                {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
-                {copied ? t("ddl.copied") : t("ddl.copy")}
+                {copied ? <Check className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                <span className="hidden sm:inline">{copied ? t("ddl.copied") : t("ddl.copy")}</span>
               </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+            <div className="flex-1 overflow-auto custom-scrollbar">
+              <pre className="p-4 font-mono text-[12px] text-slate-200 leading-relaxed selection:bg-primary/30" data-testid="text-ddl-output">
+                <code>
+                  {highlightedDdlTokens.map((token, tokenIndex) => (
+                    <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
+                      {token.text}
+                    </span>
+                  ))}
+                </code>
+              </pre>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 表格选择对话框 (ZIP 模式) */}
@@ -731,19 +779,23 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedTableNames(new Set(filteredAndSortedTables?.map(t => t.physicalTableName) || []))}
+                onClick={() =>
+                  commitSelectedTableNames(
+                    new Set(filteredAndSortedTables?.map((table) => table.physicalTableName) || []),
+                  )
+                }
               >
                 {t("ddl.selectAll")}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedTableNames(new Set())}
+                onClick={() => commitSelectedTableNames(new Set())}
               >
                 {t("ddl.deselectAll")}
               </Button>
               <span className="text-sm text-muted-foreground ml-auto">
-                {t("ddl.selected")}: {selectedTableNames.size} / {filteredAndSortedTables?.length || 0}
+                {t("ddl.selected")}: {effectiveSelectedTableNames.size} / {filteredAndSortedTables?.length || 0}
               </span>
             </div>
 
@@ -753,7 +805,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
                 <span className="text-xs font-medium text-muted-foreground">{t("ddl.filterByColumn")}:</span>
                 {availableColumns.map(column => {
                   const columnTables = tables?.filter((t: TableInfo) => getColumnLetter(t) === column) || [];
-                  const selectedCount = columnTables.filter((t: TableInfo) => selectedTableNames.has(t.physicalTableName)).length;
+                  const selectedCount = columnTables.filter((t: TableInfo) => effectiveSelectedTableNames.has(t.physicalTableName)).length;
                   const allSelected = selectedCount === columnTables.length;
 
                   return (
@@ -790,15 +842,16 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
                         className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 transition-colors"
                       >
                         <Checkbox
-                          checked={selectedTableNames.has(table.physicalTableName)}
+                          checked={effectiveSelectedTableNames.has(table.physicalTableName)}
                           onCheckedChange={(checked) => {
-                            const newSet = new Set(selectedTableNames);
-                            if (checked) {
-                              newSet.add(table.physicalTableName);
-                            } else {
-                              newSet.delete(table.physicalTableName);
-                            }
-                            setSelectedTableNames(newSet);
+                            updateSelectedTableNames((previous) => {
+                              if (checked) {
+                                previous.add(table.physicalTableName);
+                              } else {
+                                previous.delete(table.physicalTableName);
+                              }
+                              return previous;
+                            });
                           }}
                         />
                         <div className="flex-1">
@@ -846,8 +899,8 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
             <Button variant="outline" onClick={() => setShowTableSelector(false)}>
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleGenerateZip} disabled={selectedTableNames.size === 0}>
-              {t("ddl.generateZip")} ({selectedTableNames.size})
+            <Button onClick={handleGenerateZip} disabled={effectiveSelectedTableNames.size === 0}>
+              {t("ddl.generateZip")} ({effectiveSelectedTableNames.size})
             </Button>
           </DialogFooter>
         </DialogContent>

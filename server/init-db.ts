@@ -44,6 +44,19 @@ export async function initializeDatabase() {
         mysql_boolean_mode TEXT NOT NULL DEFAULT 'tinyint(1)',
         pk_markers TEXT NOT NULL DEFAULT '["\\u3007"]',
         max_consecutive_empty_rows INTEGER NOT NULL DEFAULT 10,
+        upload_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000,
+        upload_rate_limit_max_requests INTEGER NOT NULL DEFAULT 20,
+        parse_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000,
+        parse_rate_limit_max_requests INTEGER NOT NULL DEFAULT 40,
+        global_protect_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000,
+        global_protect_rate_limit_max_requests INTEGER NOT NULL DEFAULT 240,
+        global_protect_max_inflight INTEGER NOT NULL DEFAULT 80,
+        prewarm_enabled INTEGER NOT NULL DEFAULT 1,
+        prewarm_max_concurrency INTEGER NOT NULL DEFAULT 1,
+        prewarm_queue_max INTEGER NOT NULL DEFAULT 12,
+        prewarm_max_file_mb INTEGER NOT NULL DEFAULT 20,
+        task_manager_max_queue_length INTEGER NOT NULL DEFAULT 200,
+        task_manager_stale_pending_ms INTEGER NOT NULL DEFAULT 1800000,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -59,6 +72,45 @@ export async function initializeDatabase() {
     }
     if (!ddlSettingsColumnNames.has("pk_markers")) {
       await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN pk_markers TEXT NOT NULL DEFAULT '["\\u3007"]'`);
+    }
+    if (!ddlSettingsColumnNames.has("upload_rate_limit_window_ms")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN upload_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000`);
+    }
+    if (!ddlSettingsColumnNames.has("upload_rate_limit_max_requests")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN upload_rate_limit_max_requests INTEGER NOT NULL DEFAULT 20`);
+    }
+    if (!ddlSettingsColumnNames.has("parse_rate_limit_window_ms")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN parse_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000`);
+    }
+    if (!ddlSettingsColumnNames.has("parse_rate_limit_max_requests")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN parse_rate_limit_max_requests INTEGER NOT NULL DEFAULT 40`);
+    }
+    if (!ddlSettingsColumnNames.has("global_protect_rate_limit_window_ms")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN global_protect_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000`);
+    }
+    if (!ddlSettingsColumnNames.has("global_protect_rate_limit_max_requests")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN global_protect_rate_limit_max_requests INTEGER NOT NULL DEFAULT 240`);
+    }
+    if (!ddlSettingsColumnNames.has("global_protect_max_inflight")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN global_protect_max_inflight INTEGER NOT NULL DEFAULT 80`);
+    }
+    if (!ddlSettingsColumnNames.has("prewarm_enabled")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN prewarm_enabled INTEGER NOT NULL DEFAULT 1`);
+    }
+    if (!ddlSettingsColumnNames.has("prewarm_max_concurrency")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN prewarm_max_concurrency INTEGER NOT NULL DEFAULT 1`);
+    }
+    if (!ddlSettingsColumnNames.has("prewarm_queue_max")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN prewarm_queue_max INTEGER NOT NULL DEFAULT 12`);
+    }
+    if (!ddlSettingsColumnNames.has("prewarm_max_file_mb")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN prewarm_max_file_mb INTEGER NOT NULL DEFAULT 20`);
+    }
+    if (!ddlSettingsColumnNames.has("task_manager_max_queue_length")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN task_manager_max_queue_length INTEGER NOT NULL DEFAULT 200`);
+    }
+    if (!ddlSettingsColumnNames.has("task_manager_stale_pending_ms")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN task_manager_stale_pending_ms INTEGER NOT NULL DEFAULT 1800000`);
     }
 
     await db.run(sql`
@@ -96,6 +148,19 @@ export async function initializeDatabase() {
         mysqlBooleanMode: "tinyint(1)",
         pkMarkers: "[\"\\u3007\"]",
         maxConsecutiveEmptyRows: 10,
+        uploadRateLimitWindowMs: 60000,
+        uploadRateLimitMaxRequests: 20,
+        parseRateLimitWindowMs: 60000,
+        parseRateLimitMaxRequests: 40,
+        globalProtectRateLimitWindowMs: 60000,
+        globalProtectRateLimitMaxRequests: 240,
+        globalProtectMaxInFlight: 80,
+        prewarmEnabled: true,
+        prewarmMaxConcurrency: 1,
+        prewarmQueueMax: 12,
+        prewarmMaxFileMb: 20,
+        taskManagerMaxQueueLength: 200,
+        taskManagerStalePendingMs: 1800000,
       });
       console.log("Default settings inserted");
     }

@@ -36,14 +36,12 @@ if (useSqlite) {
   db = drizzleSqlite(sqlite, { schema });
 } else {
   // PostgreSQL データベース接続（Web 版）
-  if (!process.env.DATABASE_URL) {
-    throw new Error(
-      "DATABASE_URL must be set. Did you forget to provision a database?",
-    );
+  if (process.env.DATABASE_URL) {
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    db = drizzlePg(pool, { schema });
+  } else {
+    db = null;
   }
-
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  db = drizzlePg(pool, { schema });
 }
 
 // データベース接続をクリーンアップする関数

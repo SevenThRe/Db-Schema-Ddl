@@ -11,6 +11,8 @@
     "collapseSidebar": "折叠侧边栏",
     "uploadExcel": "上传 Excel",
     "uploading": "上传中...",
+    "dropExcelToUpload": "Drop Excel file to upload",
+    "dropFileHint": "Support .xlsx / .xls",
     "definitionFiles": "定义文件",
     "noFilesYet": "暂无上传文件",
     "settings": "设置",

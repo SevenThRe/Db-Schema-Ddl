@@ -21,6 +21,19 @@ const DEFAULT_SETTINGS: DdlSettings = {
   mysqlBooleanMode: "tinyint(1)",
   pkMarkers: ["\u3007"],
   maxConsecutiveEmptyRows: 10,
+  uploadRateLimitWindowMs: 60000,
+  uploadRateLimitMaxRequests: 20,
+  parseRateLimitWindowMs: 60000,
+  parseRateLimitMaxRequests: 40,
+  globalProtectRateLimitWindowMs: 60000,
+  globalProtectRateLimitMaxRequests: 240,
+  globalProtectMaxInFlight: 80,
+  prewarmEnabled: true,
+  prewarmMaxConcurrency: 1,
+  prewarmQueueMax: 12,
+  prewarmMaxFileMb: 20,
+  taskManagerMaxQueueLength: 200,
+  taskManagerStalePendingMs: 1800000,
 };
 
 function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {
@@ -41,16 +54,51 @@ export function substituteFilenameSuffix(suffix: string, table: TableInfo, autho
 }
 
 export function generateDDL(request: GenerateDdlRequest): string {
+  const chunks: string[] = [];
+  let isFirst = true;
+  renderDDLChunks(request, (chunk) => {
+    if (!isFirst) {
+      chunks.push('\n\n');
+    }
+    chunks.push(chunk);
+    isFirst = false;
+  });
+  return chunks.join('');
+}
+
+function renderDDLChunks(
+  request: GenerateDdlRequest,
+  push: (ddlChunk: string) => void,
+): void {
   const { tables, dialect, settings = DEFAULT_SETTINGS } = request;
   validateGenerateDdlRequest({ tables, dialect });
-  const ddls = tables.map(table => {
+
+  tables.forEach((table) => {
     if (dialect === 'mysql') {
-      return generateMySQL(table, settings);
+      push(generateMySQL(table, settings));
     } else {
-      return generateOracle(table, settings);
+      push(generateOracle(table, settings));
     }
   });
-  return ddls.join('\n\n');
+}
+
+export async function streamDDL(
+  request: GenerateDdlRequest,
+  writeChunk: (ddlChunk: string) => void | Promise<void>,
+): Promise<void> {
+  let isFirst = true;
+  const { tables, dialect, settings = DEFAULT_SETTINGS } = request;
+  validateGenerateDdlRequest({ tables, dialect });
+  for (const table of tables) {
+    if (!isFirst) {
+      await writeChunk('\n\n');
+    }
+    const ddlChunk = dialect === 'mysql'
+      ? generateMySQL(table, settings)
+      : generateOracle(table, settings);
+    await writeChunk(ddlChunk);
+    isFirst = false;
+  }
 }
 
 function generateMySQL(table: TableInfo, settings: DdlSettings): string {

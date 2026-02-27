@@ -1,20 +1,19 @@
 import { parentPort } from "worker_threads";
-import { getSheetNames, parseSheetRegion, parseTableDefinitions, type ParseOptions } from "./excel.ts";
-import type { TableInfo } from "../../shared/schema.ts";
-
-export interface SearchIndexItem {
-  type: "sheet" | "table";
-  sheetName: string;
-  displayName: string;
-  physicalTableName?: string;
-  logicalTableName?: string;
-}
+import {
+  getSheetNames,
+  parseSheetRegion,
+  parseTableDefinitions,
+  parseWorkbookBundle,
+  type ParseOptions,
+  type SearchIndexItem,
+} from "./excel.ts";
 
 type WorkerTaskType =
   | "listSheets"
   | "parseTableDefinitions"
   | "parseSheetRegion"
-  | "buildSearchIndex";
+  | "buildSearchIndex"
+  | "parseWorkbookBundle";
 
 interface WorkerRequest {
   id: string;
@@ -37,33 +36,7 @@ interface WorkerErrorResponse {
 type WorkerResponse = WorkerSuccessResponse | WorkerErrorResponse;
 
 function buildSearchIndex(filePath: string, parseOptions?: ParseOptions): SearchIndexItem[] {
-  const sheetNames = getSheetNames(filePath);
-  const searchIndex: SearchIndexItem[] = [];
-
-  sheetNames.forEach((sheetName) => {
-    searchIndex.push({
-      type: "sheet",
-      sheetName,
-      displayName: sheetName,
-    });
-
-    try {
-      const tables = parseTableDefinitions(filePath, sheetName, parseOptions);
-      tables.forEach((table: TableInfo) => {
-        searchIndex.push({
-          type: "table",
-          sheetName,
-          displayName: `${table.physicalTableName} (${table.logicalTableName})`,
-          physicalTableName: table.physicalTableName,
-          logicalTableName: table.logicalTableName,
-        });
-      });
-    } catch {
-      // Ignore parsing errors per sheet to keep search available for partial content.
-    }
-  });
-
-  return searchIndex;
+  return parseWorkbookBundle(filePath, parseOptions).searchIndex;
 }
 
 function parseRequest(request: WorkerRequest): unknown {
@@ -92,6 +65,11 @@ function parseRequest(request: WorkerRequest): unknown {
       const filePath = String(request.payload.filePath ?? "");
       const parseOptions = (request.payload.parseOptions ?? {}) as ParseOptions;
       return buildSearchIndex(filePath, parseOptions);
+    }
+    case "parseWorkbookBundle": {
+      const filePath = String(request.payload.filePath ?? "");
+      const parseOptions = (request.payload.parseOptions ?? {}) as ParseOptions;
+      return parseWorkbookBundle(filePath, parseOptions);
     }
     default: {
       throw new Error(`Unknown worker task type: ${(request as { type?: string }).type ?? "undefined"}`);

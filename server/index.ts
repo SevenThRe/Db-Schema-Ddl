@@ -8,6 +8,23 @@ import { runUploadsBackfill } from "./lib/uploads-backfill";
 const app = express();
 const httpServer = createServer(app);
 
+const trustProxyConfig = process.env.TRUST_PROXY;
+if (trustProxyConfig != null && trustProxyConfig.trim() !== "") {
+  const normalized = trustProxyConfig.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    app.set("trust proxy", true);
+  } else if (
+    normalized === "0" ||
+    normalized === "false" ||
+    normalized === "no" ||
+    normalized === "off"
+  ) {
+    app.set("trust proxy", false);
+  } else {
+    app.set("trust proxy", trustProxyConfig);
+  }
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

@@ -52,6 +52,14 @@ function markersToInputValue(markers?: string[]): string {
   return source.join(", ");
 }
 
+function parseIntegerInput(value: string, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}
+
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
   const { mutate: updateSettings, isPending } = useUpdateSettings();
@@ -78,6 +86,19 @@ export default function Settings() {
     mysqlBooleanMode: "tinyint(1)",
     pkMarkers: DEFAULT_PK_MARKERS,
     maxConsecutiveEmptyRows: 10,
+    uploadRateLimitWindowMs: 60000,
+    uploadRateLimitMaxRequests: 20,
+    parseRateLimitWindowMs: 60000,
+    parseRateLimitMaxRequests: 40,
+    globalProtectRateLimitWindowMs: 60000,
+    globalProtectRateLimitMaxRequests: 240,
+    globalProtectMaxInFlight: 80,
+    prewarmEnabled: true,
+    prewarmMaxConcurrency: 1,
+    prewarmQueueMax: 12,
+    prewarmMaxFileMb: 20,
+    taskManagerMaxQueueLength: 200,
+    taskManagerStalePendingMs: 1800000,
   });
   const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
 
@@ -134,6 +155,16 @@ export default function Settings() {
 
   const handleChange = (field: keyof DdlSettings, value: string | boolean | number | undefined) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleNumberChange = (
+    field: keyof DdlSettings,
+    value: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ) => {
+    handleChange(field, parseIntegerInput(value, fallback, min, max));
   };
 
   // Electron 環境でのディレクトリ選択
@@ -622,6 +653,230 @@ export default function Settings() {
                 </li>
                 <li>{t("settings.developer.persistHint")}</li>
               </ul>
+            </div>
+
+            <div className="border border-border rounded-lg p-4 space-y-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Runtime Guard Tuning</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Advanced operational thresholds. Hard caps are still enforced server-side.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="uploadRateLimitWindowMs">Upload rate window (ms)</Label>
+                  <Input
+                    id="uploadRateLimitWindowMs"
+                    type="number"
+                    min="1000"
+                    max="300000"
+                    value={formData.uploadRateLimitWindowMs}
+                    onChange={(e) =>
+                      handleNumberChange("uploadRateLimitWindowMs", e.target.value, 60000, 1000, 300000)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="uploadRateLimitMaxRequests">Upload max requests</Label>
+                  <Input
+                    id="uploadRateLimitMaxRequests"
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={formData.uploadRateLimitMaxRequests}
+                    onChange={(e) =>
+                      handleNumberChange("uploadRateLimitMaxRequests", e.target.value, 20, 1, 500)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="parseRateLimitWindowMs">Parse rate window (ms)</Label>
+                  <Input
+                    id="parseRateLimitWindowMs"
+                    type="number"
+                    min="1000"
+                    max="300000"
+                    value={formData.parseRateLimitWindowMs}
+                    onChange={(e) =>
+                      handleNumberChange("parseRateLimitWindowMs", e.target.value, 60000, 1000, 300000)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="parseRateLimitMaxRequests">Parse max requests</Label>
+                  <Input
+                    id="parseRateLimitMaxRequests"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={formData.parseRateLimitMaxRequests}
+                    onChange={(e) =>
+                      handleNumberChange("parseRateLimitMaxRequests", e.target.value, 40, 1, 1000)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="globalProtectRateLimitWindowMs">Global protect window (ms)</Label>
+                  <Input
+                    id="globalProtectRateLimitWindowMs"
+                    type="number"
+                    min="1000"
+                    max="300000"
+                    value={formData.globalProtectRateLimitWindowMs}
+                    onChange={(e) =>
+                      handleNumberChange(
+                        "globalProtectRateLimitWindowMs",
+                        e.target.value,
+                        60000,
+                        1000,
+                        300000,
+                      )
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="globalProtectRateLimitMaxRequests">Global protect max requests</Label>
+                  <Input
+                    id="globalProtectRateLimitMaxRequests"
+                    type="number"
+                    min="10"
+                    max="5000"
+                    value={formData.globalProtectRateLimitMaxRequests}
+                    onChange={(e) =>
+                      handleNumberChange(
+                        "globalProtectRateLimitMaxRequests",
+                        e.target.value,
+                        240,
+                        10,
+                        5000,
+                      )
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="globalProtectMaxInFlight">Global protect max in-flight</Label>
+                  <Input
+                    id="globalProtectMaxInFlight"
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={formData.globalProtectMaxInFlight}
+                    onChange={(e) =>
+                      handleNumberChange("globalProtectMaxInFlight", e.target.value, 80, 1, 500)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="prewarmMaxConcurrency">Prewarm max concurrency</Label>
+                  <Input
+                    id="prewarmMaxConcurrency"
+                    type="number"
+                    min="1"
+                    max="8"
+                    value={formData.prewarmMaxConcurrency}
+                    onChange={(e) =>
+                      handleNumberChange("prewarmMaxConcurrency", e.target.value, 1, 1, 8)
+                    }
+                    disabled={!developerMode || !formData.prewarmEnabled}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="prewarmQueueMax">Prewarm queue max</Label>
+                  <Input
+                    id="prewarmQueueMax"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={formData.prewarmQueueMax}
+                    onChange={(e) =>
+                      handleNumberChange("prewarmQueueMax", e.target.value, 12, 1, 100)
+                    }
+                    disabled={!developerMode || !formData.prewarmEnabled}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="prewarmMaxFileMb">Prewarm max file (MB)</Label>
+                  <Input
+                    id="prewarmMaxFileMb"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={formData.prewarmMaxFileMb}
+                    onChange={(e) =>
+                      handleNumberChange("prewarmMaxFileMb", e.target.value, 20, 1, 100)
+                    }
+                    disabled={!developerMode || !formData.prewarmEnabled}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="taskManagerMaxQueueLength">Task queue max length</Label>
+                  <Input
+                    id="taskManagerMaxQueueLength"
+                    type="number"
+                    min="10"
+                    max="1000"
+                    value={formData.taskManagerMaxQueueLength}
+                    onChange={(e) =>
+                      handleNumberChange("taskManagerMaxQueueLength", e.target.value, 200, 10, 1000)
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="taskManagerStalePendingMs">Task stale pending timeout (ms)</Label>
+                  <Input
+                    id="taskManagerStalePendingMs"
+                    type="number"
+                    min="60000"
+                    max="3600000"
+                    value={formData.taskManagerStalePendingMs}
+                    onChange={(e) =>
+                      handleNumberChange(
+                        "taskManagerStalePendingMs",
+                        e.target.value,
+                        1800000,
+                        60000,
+                        3600000,
+                      )
+                    }
+                    disabled={!developerMode}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border rounded-md px-3 py-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="prewarmEnabled">Enable prewarm</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Disable to reduce background parse workload.
+                  </p>
+                </div>
+                <Switch
+                  id="prewarmEnabled"
+                  checked={formData.prewarmEnabled}
+                  onCheckedChange={(checked) => handleChange("prewarmEnabled", checked)}
+                  disabled={!developerMode}
+                />
+              </div>
             </div>
           </div>
 

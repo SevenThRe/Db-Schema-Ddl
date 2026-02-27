@@ -1,6 +1,6 @@
 {
   "name": "db-schema-excel-2-ddl",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Convert Japanese Excel database definition documents to SQL DDL statements for MySQL or Oracle",
   "author": "SevenThRe",
   "type": "module",
@@ -17,6 +17,9 @@
     "release": "npm run build && electron-builder --publish always",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
+    "bench:excel": "tsx script/benchmark-excel-parse.ts",
+    "bench:ddl": "tsx script/benchmark-ddl.ts",
+    "bench:all": "npm run bench:excel && npm run bench:ddl",
     "db:push": "drizzle-kit push",
     "mcp": "tsx mcp/index.ts",
     "mcp:debug": "cross-env MCP_DEBUG=1 tsx mcp/index.ts",
