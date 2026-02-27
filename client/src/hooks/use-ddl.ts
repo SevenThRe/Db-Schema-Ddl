@@ -7,7 +7,7 @@ import {
   type DdlSettings,
   type ProcessingTask
 } from "@shared/schema";
-import { useEffect } from "react";
+import { parseApiErrorResponse } from "@/lib/api-error";
 
 // --- Task Management ---
 
@@ -18,7 +18,12 @@ export function useTask(taskId: string | null) {
       if (!taskId) return null;
       const url = buildUrl(api.tasks.get.path, { id: taskId });
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch task");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch task",
+        });
+      }
       return api.tasks.get.responses[200].parse(await res.json());
     },
     enabled: !!taskId,
@@ -40,7 +45,12 @@ export function useFiles() {
     queryKey: [api.files.list.path],
     queryFn: async () => {
       const res = await fetch(api.files.list.path);
-      if (!res.ok) throw new Error("Failed to fetch files");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch files",
+        });
+      }
       return api.files.list.responses[200].parse(await res.json());
     },
   });
@@ -57,8 +67,10 @@ export function useUploadFile() {
       });
 
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to upload file");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to upload file",
+        });
       }
       return await res.json() as UploadedFile & { taskId?: string; processing?: boolean };
     },
@@ -75,6 +87,11 @@ export function useUploadFile() {
             } else if (task.status === 'processing' || task.status === 'pending') {
               setTimeout(pollTask, 500);
             }
+          } else {
+            throw await parseApiErrorResponse(taskRes, {
+              code: "REQUEST_FAILED",
+              message: "Failed to fetch task",
+            });
           }
         };
         pollTask();
@@ -88,15 +105,18 @@ export function useUploadFile() {
 // --- Sheet Management ---
 
 export function useSheets(fileId: number | null) {
-  const queryClient = useQueryClient();
-
   return useQuery({
     queryKey: [api.files.getSheets.path, fileId],
     queryFn: async () => {
       if (!fileId) return [];
       const url = buildUrl(api.files.getSheets.path, { id: fileId });
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch sheets");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch sheets",
+        });
+      }
       const data = await res.json();
 
       // Check if response is a task (for large files)
@@ -105,13 +125,18 @@ export function useSheets(fileId: number | null) {
         const pollTask = async (): Promise<any> => {
           const taskUrl = buildUrl(api.tasks.get.path, { id: data.taskId });
           const taskRes = await fetch(taskUrl);
-          if (!taskRes.ok) throw new Error("Failed to fetch task");
+          if (!taskRes.ok) {
+            throw await parseApiErrorResponse(taskRes, {
+              code: "REQUEST_FAILED",
+              message: "Failed to fetch task",
+            });
+          }
           const task = await taskRes.json() as ProcessingTask;
 
           if (task.status === 'completed' && task.result) {
             return task.result;
           } else if (task.status === 'failed') {
-            throw new Error(task.error || 'Task failed');
+            throw new Error(task.error || "Task failed");
           } else {
             // Still processing, wait and poll again
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -135,7 +160,12 @@ export function useSearchIndex(fileId: number | null) {
       if (!fileId) return [];
       const url = buildUrl(api.files.getSearchIndex.path, { id: fileId });
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch search index");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch search index",
+        });
+      }
       return api.files.getSearchIndex.responses[200].parse(await res.json());
     },
     enabled: !!fileId,
@@ -153,8 +183,10 @@ export function useTableInfo(fileId: number | null, sheetName: string | null) {
       const res = await fetch(url);
 
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to fetch table info");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch table info",
+        });
       }
 
       const data = await res.json();
@@ -165,13 +197,18 @@ export function useTableInfo(fileId: number | null, sheetName: string | null) {
         const pollTask = async (): Promise<any> => {
           const taskUrl = buildUrl(api.tasks.get.path, { id: data.taskId });
           const taskRes = await fetch(taskUrl);
-          if (!taskRes.ok) throw new Error("Failed to fetch task");
+          if (!taskRes.ok) {
+            throw await parseApiErrorResponse(taskRes, {
+              code: "REQUEST_FAILED",
+              message: "Failed to fetch task",
+            });
+          }
           const task = await taskRes.json() as ProcessingTask;
 
           if (task.status === 'completed' && task.result) {
             return task.result;
           } else if (task.status === 'failed') {
-            throw new Error(task.error || 'Task failed');
+            throw new Error(task.error || "Task failed");
           } else {
             // Still processing, wait and poll again
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -199,8 +236,10 @@ export function useGenerateDdl() {
       });
 
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to generate DDL");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to generate DDL",
+        });
       }
 
       return api.ddl.generate.responses[200].parse(await res.json());
@@ -216,8 +255,10 @@ export function useDeleteFile() {
     mutationFn: async (fileId: number) => {
       const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to delete file");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to delete file",
+        });
       }
       return res.json();
     },
@@ -235,7 +276,12 @@ export function useSheetData(fileId: number | null, sheetName: string | null) {
     queryFn: async () => {
       if (!fileId || !sheetName) return null;
       const res = await fetch(`/api/files/${fileId}/sheets/${encodeURIComponent(sheetName)}/data`);
-      if (!res.ok) throw new Error("Failed to fetch sheet data");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch sheet data",
+        });
+      }
       return (await res.json()) as any[][];
     },
     enabled: !!fileId && !!sheetName,
@@ -268,8 +314,10 @@ export function useParseRegion() {
         }),
       });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to parse region");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to parse region",
+        });
       }
       return (await res.json()) as TableInfo[];
     },
@@ -283,7 +331,12 @@ export function useSettings() {
     queryKey: [api.settings.get.path],
     queryFn: async () => {
       const res = await fetch(api.settings.get.path);
-      if (!res.ok) throw new Error("Failed to fetch settings");
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch settings",
+        });
+      }
       return api.settings.get.responses[200].parse(await res.json());
     },
   });
@@ -299,8 +352,10 @@ export function useUpdateSettings() {
         body: JSON.stringify(settings),
       });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to update settings");
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to update settings",
+        });
       }
       return api.settings.update.responses[200].parse(await res.json());
     },

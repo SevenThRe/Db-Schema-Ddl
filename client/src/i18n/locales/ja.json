@@ -63,7 +63,27 @@
     "applySelectedFixes": "選択した修正を適用",
     "export": "エクスポート",
     "exported": "DDL をエクスポートしました",
-    "exportedAs": "{{filename}} として保存しました"
+    "exportedAs": "{{filename}} として保存しました",
+    "exportFailed": "エクスポートに失敗しました",
+    "selectTables": "生成するテーブルを選択",
+    "selectTablesDescription": "DDL を生成するテーブルを選択してください。初期状態では現在のシートの全テーブルが選択されています。",
+    "selectAll": "すべて選択",
+    "deselectAll": "すべて解除",
+    "selected": "選択済み",
+    "generateZip": "ZIP を生成",
+    "noTableSelected": "テーブルが選択されていません",
+    "pleaseSelectTable": "テーブルプレビューでテーブルを1つ選択してください",
+    "pleaseSelectAtLeastOne": "少なくとも1つのテーブルを選択してください",
+    "searchTables": "テーブル名を検索...",
+    "sortBy": "並び順",
+    "sortBySource": "元シート順",
+    "sortByColumn": "列位置順 (A→Z)",
+    "sortByName": "テーブル名順",
+    "filterByColumn": "列で絞り込み",
+    "column": "列",
+    "selectColumn": "{{column}} 列を選択",
+    "deselectColumn": "{{column}} 列の選択を解除",
+    "exportedZip": "{{count}} 件のテーブルを ZIP としてエクスポートしました"
   },
   "view": {
     "autoParse": "自動解析",
@@ -115,7 +135,13 @@
       "charsetPlaceholder": "文字セットを選択",
       "collation": "照合順序",
       "collationDesc": "テーブルのデフォルト照合順序。デフォルト：utf8mb4_bin",
-      "collationPlaceholder": "照合順序を選択"
+      "collationPlaceholder": "照合順序を選択",
+      "dataTypeCase": "データ型の大文字/小文字",
+      "dataTypeCaseDesc": "MySQL カラム型を小文字または大文字で出力します（SQL キーワード自体は変更しません）。",
+      "dataTypeCasePlaceholder": "データ型の表記を選択",
+      "booleanMode": "BOOLEAN マッピング",
+      "booleanModeDesc": "boolean/bool を MySQL DDL で tinyint(1) にするか boolean にするかを選択します。",
+      "booleanModePlaceholder": "BOOLEAN の変換ルールを選択"
     },
     "varchar": {
       "title": "VARCHAR/CHAR 設定",
@@ -138,13 +164,34 @@
       "excelReadPath": "Excel 読み取りパス（デスクトップのみ）",
       "excelReadPathDesc": "Excel ファイルを読み取るデフォルトパス（オプション）"
     },
+    "parsing": {
+      "title": "Excel 解析設定",
+      "maxConsecutiveEmptyRows": "連続空行の許容数",
+      "maxConsecutiveEmptyRowsDesc": "テーブル解析時に連続空行を何行まで許容するかを設定します。範囲: 1-100、デフォルト: 10",
+      "pkMarkers": "PK マーカー一覧",
+      "pkMarkersDesc": "主キー列を識別するマーカー。カンマまたは改行で複数指定できます。デフォルト: 〇"
+    },
     "notInElectron": "デスクトップ版のみ利用可能",
-    "notInElectronDesc": "この機能は Electron デスクトップアプリケーションでのみ使用できます"
+    "notInElectronDesc": "この機能は Electron デスクトップアプリケーションでのみ使用できます",
+    "developer": {
+      "title": "開発者オプション",
+      "modeLabel": "開発者モード",
+      "modeDesc": "有効化すると、アプリでエラーが発生した際に詳細なスタック情報とコンポーネントスタックを表示します。無効時はユーザー向けの簡易メッセージのみ表示します。",
+      "shortcutTitle": "デバッグショートカット",
+      "shortcutF12": "開発者ツールを開く/閉じる（コンソールログとネットワークリクエストを確認）",
+      "persistHint": "開発者モード設定はローカルストレージに保存され、再起動後も有効です。",
+      "enabledTitle": "開発者モードを有効化しました",
+      "enabledDesc": "エラー発生時に詳細なスタック情報を表示します。",
+      "disabledTitle": "開発者モードを無効化しました",
+      "disabledDesc": "ユーザー向けの簡易エラーメッセージのみ表示します。"
+    }
   },
   "toast": {
     "fileUploaded": "ファイルが正常にアップロードされました",
     "uploadFailed": "アップロードに失敗しました",
-    "fileDeleted": "ファイルが削除されました"
+    "fileDeleted": "ファイルが削除されました",
+    "duplicateFile": "同一ファイルが既に存在します",
+    "duplicateFileDesc": "同じ内容のファイルが検出されたため、既存ファイルを再利用しました。"
   },
   "update": {
     "available": "新しいバージョンが利用可能です",
@@ -159,5 +206,136 @@
     "readyDesc": "バージョン {{version}} のダウンロードが完了しました。再起動後に自動でインストールされます。",
     "restartNow": "今すぐ再起動",
     "restartLater": "後で再起動"
+  },
+  "common": {
+    "cancel": "キャンセル"
+  },
+  "spreadsheet": {
+    "status": {
+      "selectSheet": "表示するシートを選択してください",
+      "loading": "シートデータを読み込み中...",
+      "loadFailed": "シートデータの読み込みに失敗しました",
+      "dragHint": "ドラッグで選択 → 自動解析"
+    }
+  },
+  "notFound": {
+    "title": "404 ページが見つかりません",
+    "description": "お探しのページは存在しません。",
+    "backHome": "ホームに戻る"
+  },
+  "errorBoundary": {
+    "title": "アプリケーションエラー",
+    "subtitle": "アプリの実行中に予期しないエラーが発生しました",
+    "solutionsTitle": "考えられる対処方法：",
+    "solutionReload": "下のボタンからアプリを再読み込みしてください",
+    "solutionRestart": "解消しない場合はアプリを再起動してください",
+    "solutionF12": "F12 で開発者ツールを開き、詳細エラーを確認してください",
+    "solutionDevMode": "開発者モードを有効にしてスタックを確認してください",
+    "reloadApp": "アプリを再読み込み",
+    "enableDeveloperMode": "開発者モードを有効化",
+    "disableDeveloperMode": "開発者モードを無効化",
+    "hintF12": "ヒント：F12 で開発者ツールを開いてコンソールログを確認できます",
+    "hintPersisted": "開発者モード設定はローカルストレージに保存され、再起動後も有効です",
+    "devTitle": "エラー詳細（開発者モード）",
+    "errorCode": "エラーコード：",
+    "requestId": "リクエスト ID：",
+    "errorMessage": "エラーメッセージ：",
+    "stackTrace": "スタックトレース：",
+    "componentStack": "コンポーネントスタック："
+  },
+  "errors": {
+    "common": {
+      "title": "処理に失敗しました",
+      "defaultDesc": "リクエストの処理に失敗しました。しばらくしてから再度お試しください。",
+      "issueFallback": "定義に問題があります。入力内容を確認してください。",
+      "moreIssues": "ほかに {{count}} 件の問題があります。"
+    },
+    "api": {
+      "BAD_REQUEST": {
+        "title": "不正なリクエストです",
+        "desc": "リクエスト内容が正しくありません。入力を確認してください。"
+      },
+      "INVALID_REQUEST": {
+        "title": "リクエストパラメータが不正です",
+        "desc": "パラメータ検証に失敗しました。入力を見直してください。"
+      },
+      "REQUEST_FAILED": {
+        "title": "リクエストに失敗しました",
+        "desc": "リクエストは完了しませんでした。しばらくして再試行してください。"
+      },
+      "NETWORK_ERROR": {
+        "title": "ネットワーク接続エラー",
+        "desc": "サービスに接続できません。ネットワーク状態を確認してください。"
+      },
+      "INTERNAL_SERVER_ERROR": {
+        "title": "システムエラー",
+        "desc": "サーバーでエラーが発生しました。時間をおいて再試行してください。"
+      },
+      "NO_FILE_UPLOADED": {
+        "title": "ファイルがアップロードされていません",
+        "desc": "Excel ファイルを選択してからアップロードしてください。"
+      },
+      "FILE_NOT_FOUND": {
+        "title": "ファイルが見つかりません",
+        "desc": "対象ファイルが見つかりません。削除されていないか確認してください。"
+      },
+      "FILE_DELETE_FAILED": {
+        "title": "ファイル削除に失敗しました",
+        "desc": "ファイルを削除できませんでした。時間をおいて再試行してください。"
+      },
+      "READ_SHEET_FAILED": {
+        "title": "シートの読み込みに失敗しました",
+        "desc": "シートデータを読み込めませんでした。ファイル形式を確認してください。"
+      },
+      "PARSE_REGION_FAILED": {
+        "title": "選択範囲の解析に失敗しました",
+        "desc": "選択範囲を有効なテーブル定義として解析できませんでした。範囲を調整してください。"
+      },
+      "READ_EXCEL_FAILED": {
+        "title": "Excel 読み込みに失敗しました",
+        "desc": "Excel 内容を読み取れませんでした。ファイルが破損していないか確認してください。"
+      },
+      "PARSE_SHEET_FAILED": {
+        "title": "シート解析に失敗しました",
+        "desc": "シートからテーブル定義を抽出できませんでした。フォーマットを確認してください。"
+      },
+      "TASK_NOT_FOUND": {
+        "title": "タスクが見つかりません",
+        "desc": "対象のバックグラウンドタスクが存在しません。再読み込みしてください。"
+      },
+      "SEARCH_INDEX_FAILED": {
+        "title": "検索インデックス生成に失敗しました",
+        "desc": "検索インデックスを作成できませんでした。時間をおいて再試行してください。"
+      },
+      "DDL_GENERATE_FAILED": {
+        "title": "DDL 生成に失敗しました",
+        "desc": "DDL 生成中にエラーが発生しました。定義内容を確認してください。"
+      },
+      "ZIP_GENERATE_FAILED": {
+        "title": "ZIP 生成に失敗しました",
+        "desc": "ZIP ファイル生成中にエラーが発生しました。時間をおいて再試行してください。"
+      },
+      "SETTINGS_GET_FAILED": {
+        "title": "設定の読み込みに失敗しました",
+        "desc": "現在の設定を取得できませんでした。時間をおいて再試行してください。"
+      },
+      "SETTINGS_UPDATE_FAILED": {
+        "title": "設定の保存に失敗しました",
+        "desc": "設定を更新できませんでした。入力内容を確認してください。"
+      }
+    },
+    "issue": {
+      "INVALID_TABLE_NAME": "テーブル「{{tableName}}」の物理名が不正です。英数字とアンダースコアを使用し、先頭は英字またはアンダースコアにしてください。",
+      "EMPTY_COLUMNS": "テーブル「{{tableName}}」にカラム定義が見つかりませんでした。",
+      "INVALID_COLUMN_NAME": "テーブル「{{tableName}}」のカラム「{{columnName}}」の物理名が不正です。",
+      "DUPLICATE_COLUMN_NAME": "テーブル「{{tableName}}」でカラム名「{{columnName}}」が重複しています。",
+      "MISSING_DATA_TYPE": "テーブル「{{tableName}}」のカラム「{{columnName}}」にデータ型が指定されていません。",
+      "UNSUPPORTED_DATA_TYPE": "テーブル「{{tableName}}」のカラム「{{columnName}}」のデータ型「{{dataType}}」はサポートされていません。",
+      "CONFLICTING_SIZE_DEFINITIONS": "テーブル「{{tableName}}」のカラム「{{columnName}}」で型とサイズ指定が競合しています。",
+      "INVALID_SIZE_FORMAT": "テーブル「{{tableName}}」のカラム「{{columnName}}」のサイズ形式「{{size}}」が不正です。",
+      "TYPE_MUST_NOT_INCLUDE_SIZE": "テーブル「{{tableName}}」のカラム「{{columnName}}」の型「{{dataType}}」ではサイズ指定できません。",
+      "TYPE_ONLY_ACCEPTS_INTEGER_SIZE": "テーブル「{{tableName}}」のカラム「{{columnName}}」の型「{{dataType}}」は整数サイズのみ許可されます。",
+      "DUPLICATE_TABLE_NAME": "テーブル物理名「{{tableName}}」が重複しています。"
+    }
   }
 }

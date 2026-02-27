@@ -7,10 +7,13 @@ import crypto from "crypto";
 import archiver from "archiver";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { getSheetNames, parseTableDefinitions, getSheetData, parseSheetRegion } from "./lib/excel";
+import { getSheetData } from "./lib/excel";
 import { generateDDL, substituteFilenameSuffix } from "./lib/ddl";
+import { DdlValidationError } from "./lib/ddl-validation";
 import { taskManager } from "./lib/task-manager";
+import { runBuildSearchIndex, runParseRegion } from "./lib/excel-executor";
 import { z } from "zod";
+import { sendApiError } from "./lib/api-error";
 
 // アップロードディレクトリの取得と作成
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 'uploads';
@@ -63,6 +66,8 @@ const upload = multer({
   },
 });
 
+const DEFAULT_PK_MARKERS = ["\u3007"];
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -75,7 +80,11 @@ export async function registerRoutes(
 
   app.post(api.files.upload.path, upload.single('file'), async (req, res) => {
     if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
+      return sendApiError(res, {
+        status: 400,
+        code: "NO_FILE_UPLOADED",
+        message: "No file uploaded",
+      });
     }
 
     // Use the decoded filename we stored in multer config
@@ -130,7 +139,11 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
     try {
       // アップロードディレクトリ内のファイルのみ削除
@@ -140,7 +153,11 @@ export async function registerRoutes(
       await storage.deleteUploadedFile(id);
       res.json({ message: 'File deleted' });
     } catch (err) {
-      res.status(500).json({ message: 'Failed to delete file' });
+      return sendApiError(res, {
+        status: 500,
+        code: "FILE_DELETE_FAILED",
+        message: "Failed to delete file",
+      });
     }
   });
 
@@ -150,13 +167,24 @@ export async function registerRoutes(
     const sheetName = decodeURIComponent(req.params.sheetName);
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
     try {
       const data = getSheetData(file.filePath, sheetName);
       res.json(data);
     } catch (err) {
-      res.status(400).json({ message: `Failed to read sheet: ${(err as Error).message}` });
+      return sendApiError(res, {
+        status: 400,
+        code: "READ_SHEET_FAILED",
+        message: `Failed to read sheet: ${(err as Error).message}`,
+        params: {
+          sheetName,
+        },
+      });
     }
   });
 
@@ -165,17 +193,26 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
     try {
       const { sheetName, startRow, endRow, startCol, endCol } = req.body;
       const settings = await storage.getSettings();
-      const tables = parseSheetRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol, {
-        maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+      const tables = await runParseRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol, {
+        maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
+        pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
       });
       res.json(tables);
     } catch (err) {
-      res.status(400).json({ message: `Failed to parse region: ${(err as Error).message}` });
+      return sendApiError(res, {
+        status: 400,
+        code: "PARSE_REGION_FAILED",
+        message: `Failed to parse region: ${(err as Error).message}`,
+      });
     }
   });
 
@@ -183,7 +220,11 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
 
     try {
@@ -193,7 +234,8 @@ export async function registerRoutes(
       // Always use background task to avoid blocking
       const task = taskManager.createTask('parse_sheets', file.filePath, {
         parseOptions: {
-          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
+          pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
         },
         onComplete: (result) => {
           // Task completed, frontend will poll for results
@@ -209,7 +251,11 @@ export async function registerRoutes(
         processing: true,
       });
     } catch (err) {
-      res.status(500).json({ message: 'Failed to read Excel file' });
+      return sendApiError(res, {
+        status: 500,
+        code: "READ_EXCEL_FAILED",
+        message: "Failed to read Excel file",
+      });
     }
   });
 
@@ -218,7 +264,11 @@ export async function registerRoutes(
     const sheetName = req.params.sheetName;
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
 
     try {
@@ -229,7 +279,8 @@ export async function registerRoutes(
       const task = taskManager.createTask('parse_table', file.filePath, {
         sheetName,
         parseOptions: {
-          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
+          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
+          pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
         },
         onComplete: (result) => {
           // Task completed, frontend will poll for results
@@ -245,7 +296,14 @@ export async function registerRoutes(
         processing: true,
       });
     } catch (err) {
-      res.status(400).json({ message: `Failed to parse sheet: ${(err as Error).message}` });
+      return sendApiError(res, {
+        status: 400,
+        code: "PARSE_SHEET_FAILED",
+        message: `Failed to parse sheet: ${(err as Error).message}`,
+        params: {
+          sheetName,
+        },
+      });
     }
   });
 
@@ -254,7 +312,11 @@ export async function registerRoutes(
     const id = req.params.id;
     const task = taskManager.getTask(id);
     if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "TASK_NOT_FOUND",
+        message: "Task not found",
+      });
     }
     res.json({
       id: task.id,
@@ -273,70 +335,75 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const file = await storage.getUploadedFile(id);
     if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+      return sendApiError(res, {
+        status: 404,
+        code: "FILE_NOT_FOUND",
+        message: "File not found",
+      });
     }
 
     try {
       const settings = await storage.getSettings();
-      const sheetNames = getSheetNames(file.filePath);
-      const searchIndex: Array<{
-        type: 'sheet' | 'table';
-        sheetName: string;
-        displayName: string;
-        physicalTableName?: string;
-        logicalTableName?: string;
-      }> = [];
-
-      // Add all sheets to the index
-      sheetNames.forEach(sheetName => {
-        searchIndex.push({
-          type: 'sheet',
-          sheetName,
-          displayName: sheetName,
-        });
-
-        // Try to parse tables from each sheet
-        try {
-          const tables = parseTableDefinitions(file.filePath, sheetName, {
-            maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10
-          });
-          tables.forEach(table => {
-            searchIndex.push({
-              type: 'table',
-              sheetName,
-              displayName: `${table.physicalTableName} (${table.logicalTableName})`,
-              physicalTableName: table.physicalTableName,
-              logicalTableName: table.logicalTableName,
-            });
-          });
-        } catch (err) {
-          // If parsing fails, just skip tables for this sheet
-        }
+      const searchIndex = await runBuildSearchIndex(file.filePath, {
+        maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
+        pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
       });
-
       res.json(searchIndex);
     } catch (err) {
-      res.status(500).json({ message: 'Failed to generate search index' });
+      return sendApiError(res, {
+        status: 500,
+        code: "SEARCH_INDEX_FAILED",
+        message: "Failed to generate search index",
+      });
     }
   });
 
   app.post(api.ddl.generate.path, async (req, res) => {
     try {
       const request = api.ddl.generate.input.parse(req.body);
-      const ddl = generateDDL(request);
+      const hasRequestSettings = req.body && typeof req.body === "object" && req.body.settings != null;
+
+      // 兼容直接调用 /api/generate-ddl 且未传 settings 的场景：
+      // 优先使用持久化设置，而不是仅使用代码内置默认值
+      const effectiveRequest = hasRequestSettings
+        ? request
+        : {
+            ...request,
+            settings: await storage.getSettings(),
+          };
+
+      const ddl = generateDDL(effectiveRequest);
       res.json({ ddl });
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.errors[0].message,
+        });
       }
-      res.status(500).json({ message: 'Failed to generate DDL' });
+      if (err instanceof DdlValidationError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.message,
+          issues: err.issues,
+        });
+      }
+      return sendApiError(res, {
+        status: 500,
+        code: "DDL_GENERATE_FAILED",
+        message: "Failed to generate DDL",
+      });
     }
   });
 
   app.post(api.ddl.exportZip.path, async (req, res) => {
     try {
       const request = api.ddl.exportZip.input.parse(req.body);
-      const { tables, dialect, settings } = request;
+      const hasRequestSettings = req.body && typeof req.body === "object" && req.body.settings != null;
+      const effectiveSettings = hasRequestSettings ? request.settings : await storage.getSettings();
+      const { tables, dialect } = request;
 
       // Create a zip archive
       const archive = archiver('zip', {
@@ -351,16 +418,16 @@ export async function registerRoutes(
       archive.pipe(res);
 
       // Generate individual DDL for each table and add to ZIP
-      const prefix = settings?.exportFilenamePrefix || "Crt_";
-      const suffixTemplate = settings?.exportFilenameSuffix || "";
-      const authorName = settings?.authorName || "ISI";
+      const prefix = effectiveSettings?.exportFilenamePrefix || "Crt_";
+      const suffixTemplate = effectiveSettings?.exportFilenameSuffix || "";
+      const authorName = effectiveSettings?.authorName || "ISI";
 
       tables.forEach((table) => {
         // Generate DDL for single table
         const singleTableDdl = generateDDL({
           tables: [table],
           dialect,
-          settings
+          settings: effectiveSettings
         });
 
         // Substitute variables in suffix for this specific table
@@ -383,11 +450,27 @@ export async function registerRoutes(
 
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.errors[0].message,
+        });
+      }
+      if (err instanceof DdlValidationError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.message,
+          issues: err.issues,
+        });
       }
       console.error('ZIP export error:', err);
       if (!res.headersSent) {
-        res.status(500).json({ message: 'Failed to generate ZIP' });
+        return sendApiError(res, {
+          status: 500,
+          code: "ZIP_GENERATE_FAILED",
+          message: "Failed to generate ZIP",
+        });
       }
     }
   });
@@ -398,7 +481,11 @@ export async function registerRoutes(
       const settings = await storage.getSettings();
       res.json(settings);
     } catch (err) {
-      res.status(500).json({ message: 'Failed to get settings' });
+      return sendApiError(res, {
+        status: 500,
+        code: "SETTINGS_GET_FAILED",
+        message: "Failed to get settings",
+      });
     }
   });
 
@@ -409,9 +496,17 @@ export async function registerRoutes(
       res.json(updated);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.errors[0].message,
+        });
       }
-      res.status(500).json({ message: 'Failed to update settings' });
+      return sendApiError(res, {
+        status: 500,
+        code: "SETTINGS_UPDATE_FAILED",
+        message: "Failed to update settings",
+      });
     }
   });
 

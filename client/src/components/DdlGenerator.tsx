@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { parseApiErrorResponse, translateApiError } from "@/lib/api-error";
 import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,6 +20,223 @@ interface DdlGeneratorProps {
   sheetName: string | null;
   overrideTables?: TableInfo[] | null;
   currentTable?: TableInfo | null;
+}
+
+type SqlTokenType = "plain" | "keyword" | "type" | "identifier" | "string" | "comment" | "number" | "operator";
+
+interface SqlToken {
+  text: string;
+  type: SqlTokenType;
+}
+
+const SQL_KEYWORDS = new Set([
+  "ADD",
+  "ALTER",
+  "AND",
+  "AS",
+  "AUTO_INCREMENT",
+  "BY",
+  "CASCADE",
+  "CHARACTER",
+  "CHECK",
+  "COLLATE",
+  "COMMENT",
+  "CONSTRAINT",
+  "CREATE",
+  "CURRENT_DATE",
+  "CURRENT_TIME",
+  "CURRENT_TIMESTAMP",
+  "DATABASE",
+  "DEFAULT",
+  "DELETE",
+  "DESC",
+  "DROP",
+  "ENGINE",
+  "EXISTS",
+  "FOREIGN",
+  "FROM",
+  "GENERATED",
+  "IF",
+  "IN",
+  "INDEX",
+  "INSERT",
+  "INTO",
+  "IS",
+  "KEY",
+  "NOT",
+  "NULL",
+  "ON",
+  "OR",
+  "ORDER",
+  "PRIMARY",
+  "REFERENCES",
+  "SET",
+  "TABLE",
+  "THEN",
+  "TO",
+  "TRIGGER",
+  "UNIQUE",
+  "UPDATE",
+  "USING",
+  "VALUES",
+  "VIEW",
+  "WHEN",
+  "WHERE",
+]);
+
+const SQL_TYPE_NAMES = new Set([
+  "BIGINT",
+  "BINARY",
+  "BIT",
+  "BLOB",
+  "BOOLEAN",
+  "CHAR",
+  "CLOB",
+  "DATE",
+  "DATETIME",
+  "DECIMAL",
+  "DOUBLE",
+  "FLOAT",
+  "INT",
+  "INTEGER",
+  "JSON",
+  "LONGTEXT",
+  "MEDIUMINT",
+  "MEDIUMTEXT",
+  "NCHAR",
+  "NCLOB",
+  "NUMBER",
+  "NUMERIC",
+  "NVARCHAR",
+  "NVARCHAR2",
+  "REAL",
+  "SERIAL",
+  "SMALLINT",
+  "TEXT",
+  "TIME",
+  "TIMESTAMP",
+  "TINYINT",
+  "UUID",
+  "VARCHAR",
+  "VARCHAR2",
+]);
+
+const SQL_TOKEN_CLASS_MAP: Record<SqlTokenType, string> = {
+  plain: "text-slate-200",
+  keyword: "text-cyan-300 font-semibold",
+  type: "text-sky-300",
+  identifier: "text-amber-300",
+  string: "text-emerald-300",
+  comment: "text-slate-400 italic",
+  number: "text-violet-300",
+  operator: "text-slate-300",
+};
+
+function classifyWord(word: string): SqlTokenType {
+  const normalizedWord = word.toUpperCase();
+  if (SQL_KEYWORDS.has(normalizedWord)) {
+    return "keyword";
+  }
+  if (SQL_TYPE_NAMES.has(normalizedWord)) {
+    return "type";
+  }
+  return "plain";
+}
+
+function tokenizeSql(sqlText: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+  const length = sqlText.length;
+  let index = 0;
+
+  const isWordStart = (ch: string) => /[A-Za-z_]/.test(ch);
+  const isWordPart = (ch: string) => /[A-Za-z0-9_$]/.test(ch);
+  const isDigit = (ch: string) => /[0-9]/.test(ch);
+
+  while (index < length) {
+    const current = sqlText[index];
+    const next = sqlText[index + 1];
+
+    if (current === "-" && next === "-") {
+      let end = index + 2;
+      while (end < length && sqlText[end] !== "\n") {
+        end += 1;
+      }
+      tokens.push({ text: sqlText.slice(index, end), type: "comment" });
+      index = end;
+      continue;
+    }
+
+    if (current === "/" && next === "*") {
+      let end = index + 2;
+      while (end < length - 1 && !(sqlText[end] === "*" && sqlText[end + 1] === "/")) {
+        end += 1;
+      }
+      end = end < length - 1 ? end + 2 : length;
+      tokens.push({ text: sqlText.slice(index, end), type: "comment" });
+      index = end;
+      continue;
+    }
+
+    if (current === "'" || current === '"' || current === "`") {
+      const quote = current;
+      let end = index + 1;
+      while (end < length) {
+        const char = sqlText[end];
+        if (char === quote) {
+          if (quote === "'" && sqlText[end + 1] === "'") {
+            end += 2;
+            continue;
+          }
+          end += 1;
+          break;
+        }
+        if (char === "\\" && quote !== "'" && end + 1 < length) {
+          end += 2;
+          continue;
+        }
+        end += 1;
+      }
+      tokens.push({ text: sqlText.slice(index, end), type: quote === "`" ? "identifier" : "string" });
+      index = end;
+      continue;
+    }
+
+    if (/\s/.test(current)) {
+      let end = index + 1;
+      while (end < length && /\s/.test(sqlText[end])) {
+        end += 1;
+      }
+      tokens.push({ text: sqlText.slice(index, end), type: "plain" });
+      index = end;
+      continue;
+    }
+
+    if (isDigit(current)) {
+      let end = index + 1;
+      while (end < length && /[0-9._]/.test(sqlText[end])) {
+        end += 1;
+      }
+      tokens.push({ text: sqlText.slice(index, end), type: "number" });
+      index = end;
+      continue;
+    }
+
+    if (isWordStart(current)) {
+      let end = index + 1;
+      while (end < length && isWordPart(sqlText[end])) {
+        end += 1;
+      }
+      const word = sqlText.slice(index, end);
+      tokens.push({ text: word, type: classifyWord(word) });
+      index = end;
+      continue;
+    }
+
+    tokens.push({ text: current, type: "operator" });
+    index += 1;
+  }
+
+  return tokens;
 }
 
 export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }: DdlGeneratorProps) {
@@ -34,6 +252,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const [pendingNameFixTables, setPendingNameFixTables] = useState<TableInfo[]>([]);
   const [nameFixCandidateKeys, setNameFixCandidateKeys] = useState<Set<string>>(new Set());
   const [generatedTables, setGeneratedTables] = useState<TableInfo[] | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const nameFixResolverRef = useRef<((tables: TableInfo[] | null) => void) | null>(null);
 
   const { data: autoTables } = useTableInfo(fileId, sheetName);
@@ -42,6 +261,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
   const { data: settings } = useSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const highlightedDdlTokens = useMemo(() => (generatedDdl ? tokenizeSql(generatedDdl) : []), [generatedDdl]);
 
   const tablesWithNameIssues = useMemo(() => {
     return (tables ?? []).filter((table: TableInfo) => validateTablePhysicalNames(table).hasIssues);
@@ -171,6 +391,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
 
   const handleGenerate = async () => {
     if (!tables || tables.length === 0) return;
+    setGenerationError(null);
 
     // 单文件模式：只生成当前表
     if (exportMode === "single") {
@@ -196,6 +417,7 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
           onSuccess: (data) => {
             setGeneratedDdl(data.ddl);
             setGeneratedTables(tablesForGeneration);
+            setGenerationError(null);
             toast({
               title: t("ddl.generated"),
               description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
@@ -203,9 +425,12 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
           },
           onError: (error) => {
             setGeneratedTables(null);
+            const translated = translateApiError(error, t);
+            const friendlyDescription = translated.description;
+            setGenerationError(friendlyDescription);
             toast({
-              title: t("ddl.generationFailed"),
-              description: error.message,
+              title: translated.title || t("ddl.generationFailed"),
+              description: friendlyDescription,
               variant: "destructive",
             });
           },
@@ -249,8 +474,10 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        throw new Error(errorData.message || "Failed to generate ZIP");
+        throw await parseApiErrorResponse(response, {
+          code: "REQUEST_FAILED",
+          message: "Failed to generate ZIP",
+        });
       }
 
       const blob = await response.blob();
@@ -265,15 +492,16 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
 
       toast({
         title: t("ddl.exported"),
-        description: `Exported ${tablesForExport.length} tables as ZIP file`,
+        description: t("ddl.exportedZip", { count: tablesForExport.length }),
       });
 
       setShowTableSelector(false);
     } catch (error) {
       console.error('ZIP export error:', error);
+      const translated = translateApiError(error, t);
       toast({
-        title: t("ddl.exportFailed"),
-        description: (error as Error).message,
+        title: translated.title || t("ddl.exportFailed"),
+        description: translated.description,
         variant: "destructive",
       });
     }
@@ -407,12 +635,25 @@ export function DdlGenerator({ fileId, sheetName, overrideTables, currentTable }
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
             <Database className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-sm">{t("ddl.readyToGenerate")}</p>
+            {generationError ? (
+              <div className="max-w-[90%] rounded-md border border-red-500/40 bg-red-500/10 p-4 text-left">
+                <p className="text-sm font-semibold text-red-200">{t("ddl.generationFailed")}</p>
+                <pre className="mt-2 whitespace-pre-wrap text-xs text-red-100/90">{generationError}</pre>
+              </div>
+            ) : (
+              <p className="text-sm">{t("ddl.readyToGenerate")}</p>
+            )}
           </div>
         ) : (
           <div className="absolute inset-0 overflow-auto custom-scrollbar">
             <pre className="p-6 font-mono text-sm text-slate-200 leading-relaxed selection:bg-primary/30" data-testid="text-ddl-output">
-              <code>{generatedDdl}</code>
+              <code>
+                {highlightedDdlTokens.map((token, tokenIndex) => (
+                  <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
+                    {token.text}
+                  </span>
+                ))}
+              </code>
             </pre>
           </div>
         )}

@@ -40,10 +40,26 @@ export async function initializeDatabase() {
         excel_read_path TEXT,
         custom_header_template TEXT,
         use_custom_header INTEGER NOT NULL DEFAULT 0,
+        mysql_data_type_case TEXT NOT NULL DEFAULT 'lower',
+        mysql_boolean_mode TEXT NOT NULL DEFAULT 'tinyint(1)',
+        pk_markers TEXT NOT NULL DEFAULT '["\\u3007"]',
         max_consecutive_empty_rows INTEGER NOT NULL DEFAULT 10,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // 旧版本兼容：如果历史表缺少新列则补齐
+    const ddlSettingsColumns = await db.all(sql`PRAGMA table_info(ddl_settings)`) as Array<{ name: string }>;
+    const ddlSettingsColumnNames = new Set(ddlSettingsColumns.map((col) => col.name));
+    if (!ddlSettingsColumnNames.has("mysql_data_type_case")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN mysql_data_type_case TEXT NOT NULL DEFAULT 'lower'`);
+    }
+    if (!ddlSettingsColumnNames.has("mysql_boolean_mode")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN mysql_boolean_mode TEXT NOT NULL DEFAULT 'tinyint(1)'`);
+    }
+    if (!ddlSettingsColumnNames.has("pk_markers")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN pk_markers TEXT NOT NULL DEFAULT '["\\u3007"]'`);
+    }
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS processing_tasks (
@@ -76,6 +92,9 @@ export async function initializeDatabase() {
         authorName: "ISI",
         includeSetNames: true,
         includeDropTable: true,
+        mysqlDataTypeCase: "lower",
+        mysqlBooleanMode: "tinyint(1)",
+        pkMarkers: "[\"\\u3007\"]",
         maxConsecutiveEmptyRows: 10,
       });
       console.log("Default settings inserted");

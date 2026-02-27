@@ -1,4 +1,37 @@
 import { type InsertUploadedFile, type UploadedFile, type DdlSettings, type ProcessingTask } from "@shared/schema";
+import { createRequire } from "module";
+
+const requireModule = createRequire(import.meta.url);
+
+const DEFAULT_PK_MARKERS = ["\u3007"];
+
+function normalizePkMarkers(markers?: string[]): string[] {
+  const source = Array.isArray(markers) ? markers : DEFAULT_PK_MARKERS;
+  const cleaned = source
+    .map((marker) => String(marker ?? "").trim())
+    .filter((marker) => marker.length > 0);
+  const unique = Array.from(new Set(cleaned));
+  return unique.length > 0 ? unique : DEFAULT_PK_MARKERS;
+}
+
+function parsePkMarkers(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return normalizePkMarkers(raw as string[]);
+  }
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return DEFAULT_PK_MARKERS;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return normalizePkMarkers(Array.isArray(parsed) ? parsed.map((item) => String(item)) : undefined);
+  } catch {
+    return DEFAULT_PK_MARKERS;
+  }
+}
+
+function serializePkMarkers(markers?: string[]): string {
+  return JSON.stringify(normalizePkMarkers(markers));
+}
 
 export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
@@ -39,6 +72,9 @@ export class MemoryStorage implements IStorage {
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
     useCustomHeader: false,
+    mysqlDataTypeCase: "lower",
+    mysqlBooleanMode: "tinyint(1)",
+    pkMarkers: DEFAULT_PK_MARKERS,
     maxConsecutiveEmptyRows: 10,
   };
 
@@ -79,11 +115,17 @@ export class MemoryStorage implements IStorage {
   }
 
   async getSettings(): Promise<DdlSettings> {
-    return this.settings;
+    return {
+      ...this.settings,
+      pkMarkers: normalizePkMarkers(this.settings.pkMarkers),
+    };
   }
 
   async updateSettings(settings: DdlSettings): Promise<DdlSettings> {
-    this.settings = settings;
+    this.settings = {
+      ...settings,
+      pkMarkers: normalizePkMarkers(settings.pkMarkers),
+    };
     return this.settings;
   }
 
@@ -123,9 +165,9 @@ export class DatabaseStorage implements IStorage {
 
   constructor() {
     // Lazy load DB modules only if DATABASE_URL is set
-    const { db } = require("./db");
-    const { uploadedFiles, ddlSettings, processingTasks } = require("@shared/schema");
-    const { eq } = require("drizzle-orm");
+    const { db } = requireModule("./db");
+    const { uploadedFiles, ddlSettings, processingTasks } = requireModule("@shared/schema");
+    const { eq } = requireModule("drizzle-orm");
     this.db = db;
     this.uploadedFiles = uploadedFiles;
     this.ddlSettings = ddlSettings;
@@ -134,6 +176,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   private eq: any;
+
+  private mapDbSettings(row: any): DdlSettings {
+    return {
+      mysqlEngine: row.mysqlEngine,
+      mysqlCharset: row.mysqlCharset,
+      mysqlCollate: row.mysqlCollate,
+      varcharCharset: row.varcharCharset,
+      varcharCollate: row.varcharCollate,
+      exportFilenamePrefix: row.exportFilenamePrefix,
+      exportFilenameSuffix: row.exportFilenameSuffix,
+      includeCommentHeader: row.includeCommentHeader,
+      authorName: row.authorName,
+      includeSetNames: row.includeSetNames,
+      includeDropTable: row.includeDropTable,
+      downloadPath: row.downloadPath,
+      excelReadPath: row.excelReadPath,
+      customHeaderTemplate: row.customHeaderTemplate,
+      useCustomHeader: row.useCustomHeader,
+      mysqlDataTypeCase: row.mysqlDataTypeCase,
+      mysqlBooleanMode: row.mysqlBooleanMode,
+      pkMarkers: parsePkMarkers(row.pkMarkers),
+      maxConsecutiveEmptyRows: row.maxConsecutiveEmptyRows,
+    };
+  }
+
+  private toDbSettingsInput(settings: DdlSettings): Record<string, unknown> {
+    return {
+      ...settings,
+      pkMarkers: serializePkMarkers(settings.pkMarkers),
+    };
+  }
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
     const [file] = await this.db.insert(this.uploadedFiles).values(insertFile).returning();
@@ -170,7 +243,6 @@ export class DatabaseStorage implements IStorage {
   async getSettings(): Promise<DdlSettings> {
     const [settings] = await this.db.select().from(this.ddlSettings).limit(1);
     if (!settings) {
-      // Create default settings if none exist
       const defaultSettings: DdlSettings = {
         mysqlEngine: "InnoDB",
         mysqlCharset: "utf8mb4",
@@ -187,94 +259,43 @@ export class DatabaseStorage implements IStorage {
         excelReadPath: undefined,
         customHeaderTemplate: undefined,
         useCustomHeader: false,
+        mysqlDataTypeCase: "lower",
+        mysqlBooleanMode: "tinyint(1)",
+        pkMarkers: DEFAULT_PK_MARKERS,
         maxConsecutiveEmptyRows: 10,
       };
-      const [created] = await this.db.insert(this.ddlSettings).values(defaultSettings).returning();
-      return {
-        mysqlEngine: created.mysqlEngine,
-        mysqlCharset: created.mysqlCharset,
-        mysqlCollate: created.mysqlCollate,
-        varcharCharset: created.varcharCharset,
-        varcharCollate: created.varcharCollate,
-        exportFilenamePrefix: created.exportFilenamePrefix,
-        exportFilenameSuffix: created.exportFilenameSuffix,
-        includeCommentHeader: created.includeCommentHeader,
-        authorName: created.authorName,
-        includeSetNames: created.includeSetNames,
-        includeDropTable: created.includeDropTable,
-        downloadPath: created.downloadPath,
-        excelReadPath: created.excelReadPath,
-        customHeaderTemplate: created.customHeaderTemplate,
-        useCustomHeader: created.useCustomHeader,
-        maxConsecutiveEmptyRows: created.maxConsecutiveEmptyRows,
-      };
+      const [created] = await this.db
+        .insert(this.ddlSettings)
+        .values(this.toDbSettingsInput(defaultSettings))
+        .returning();
+      return this.mapDbSettings(created);
     }
-    return {
-      mysqlEngine: settings.mysqlEngine,
-      mysqlCharset: settings.mysqlCharset,
-      mysqlCollate: settings.mysqlCollate,
-      varcharCharset: settings.varcharCharset,
-      varcharCollate: settings.varcharCollate,
-      exportFilenamePrefix: settings.exportFilenamePrefix,
-      exportFilenameSuffix: settings.exportFilenameSuffix,
-      includeCommentHeader: settings.includeCommentHeader,
-      authorName: settings.authorName,
-      includeSetNames: settings.includeSetNames,
-      includeDropTable: settings.includeDropTable,
-      downloadPath: settings.downloadPath,
-      excelReadPath: settings.excelReadPath,
-      customHeaderTemplate: settings.customHeaderTemplate,
-      useCustomHeader: settings.useCustomHeader,
-      maxConsecutiveEmptyRows: settings.maxConsecutiveEmptyRows,
-    };
+    return this.mapDbSettings(settings);
   }
 
   async updateSettings(newSettings: DdlSettings): Promise<DdlSettings> {
     const [existing] = await this.db.select().from(this.ddlSettings).limit(1);
+    const normalizedSettings: DdlSettings = {
+      ...newSettings,
+      pkMarkers: normalizePkMarkers(newSettings.pkMarkers),
+    };
     if (!existing) {
-      const [created] = await this.db.insert(this.ddlSettings).values(newSettings).returning();
-      return {
-        mysqlEngine: created.mysqlEngine,
-        mysqlCharset: created.mysqlCharset,
-        mysqlCollate: created.mysqlCollate,
-        varcharCharset: created.varcharCharset,
-        varcharCollate: created.varcharCollate,
-        exportFilenamePrefix: created.exportFilenamePrefix,
-        exportFilenameSuffix: created.exportFilenameSuffix,
-        includeCommentHeader: created.includeCommentHeader,
-        authorName: created.authorName,
-        includeSetNames: created.includeSetNames,
-        includeDropTable: created.includeDropTable,
-        downloadPath: created.downloadPath,
-        excelReadPath: created.excelReadPath,
-        customHeaderTemplate: created.customHeaderTemplate,
-        useCustomHeader: created.useCustomHeader,
-        maxConsecutiveEmptyRows: created.maxConsecutiveEmptyRows,
-      };
+      const [created] = await this.db
+        .insert(this.ddlSettings)
+        .values(this.toDbSettingsInput(normalizedSettings))
+        .returning();
+      return this.mapDbSettings(created);
     }
+    const dbUpdatePayload = {
+      ...this.toDbSettingsInput(normalizedSettings),
+      updatedAt: new Date().toISOString(),
+    };
     const [updated] = await this.db
       .update(this.ddlSettings)
-      .set({ ...newSettings, updatedAt: new Date().toISOString() })
+      .set(dbUpdatePayload)
       .where(this.eq(this.ddlSettings.id, existing.id))
       .returning();
-    return {
-      mysqlEngine: updated.mysqlEngine,
-      mysqlCharset: updated.mysqlCharset,
-      mysqlCollate: updated.mysqlCollate,
-      varcharCharset: updated.varcharCharset,
-      varcharCollate: updated.varcharCollate,
-      exportFilenamePrefix: updated.exportFilenamePrefix,
-      exportFilenameSuffix: updated.exportFilenameSuffix,
-      includeCommentHeader: updated.includeCommentHeader,
-      authorName: updated.authorName,
-      includeSetNames: updated.includeSetNames,
-      includeDropTable: updated.includeDropTable,
-      downloadPath: updated.downloadPath,
-      excelReadPath: updated.excelReadPath,
-      customHeaderTemplate: updated.customHeaderTemplate,
-      useCustomHeader: updated.useCustomHeader,
-      maxConsecutiveEmptyRows: updated.maxConsecutiveEmptyRows,
-    };
+    return this.mapDbSettings(updated);
   }
 
   async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {
@@ -338,6 +359,11 @@ export class DatabaseStorage implements IStorage {
 }
 
 // Auto-select storage based on environment
-export const storage: IStorage = process.env.DATABASE_URL
+const shouldUseDatabaseStorage =
+  Boolean(process.env.DATABASE_URL) ||
+  process.env.ELECTRON_MODE === "true" ||
+  process.env.USE_SQLITE_STORAGE === "true";
+
+export const storage: IStorage = shouldUseDatabaseStorage
   ? new DatabaseStorage()
   : new MemoryStorage();

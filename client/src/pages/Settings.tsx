@@ -17,6 +17,7 @@ import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText, Code2 
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
+import { translateApiError } from "@/lib/api-error";
 import {
   MYSQL_ENGINES,
   MYSQL_CHARSETS,
@@ -24,6 +25,32 @@ import {
   UTF8_COLLATIONS,
   DEFAULT_HEADER_TEMPLATE,
 } from "@shared/mysql-constants";
+
+const MYSQL_DATA_TYPE_CASE_OPTIONS = [
+  { value: "lower", label: "lowercase (varchar, bigint, datetime)" },
+  { value: "upper", label: "UPPERCASE (VARCHAR, BIGINT, DATETIME)" },
+] as const;
+
+const MYSQL_BOOLEAN_MODE_OPTIONS = [
+  { value: "tinyint(1)", label: "tinyint(1)" },
+  { value: "boolean", label: "boolean" },
+] as const;
+
+const DEFAULT_PK_MARKERS = ["\u3007"];
+
+function normalizePkMarkersInput(input: string): string[] {
+  const markers = input
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  const uniqueMarkers = Array.from(new Set(markers));
+  return uniqueMarkers.length > 0 ? uniqueMarkers : DEFAULT_PK_MARKERS;
+}
+
+function markersToInputValue(markers?: string[]): string {
+  const source = Array.isArray(markers) && markers.length > 0 ? markers : DEFAULT_PK_MARKERS;
+  return source.join(", ");
+}
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
@@ -47,8 +74,12 @@ export default function Settings() {
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
     useCustomHeader: false,
+    mysqlDataTypeCase: "lower",
+    mysqlBooleanMode: "tinyint(1)",
+    pkMarkers: DEFAULT_PK_MARKERS,
     maxConsecutiveEmptyRows: 10,
   });
+  const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
 
   // 开发者模式状态（localStorage）
   const [developerMode, setDeveloperMode] = useState(() => {
@@ -59,32 +90,42 @@ export default function Settings() {
     localStorage.setItem("developerMode", String(enabled));
     setDeveloperMode(enabled);
     toast({
-      title: enabled ? "已启用开发者模式" : "已关闭开发者模式",
+      title: enabled
+        ? t("settings.developer.enabledTitle")
+        : t("settings.developer.disabledTitle"),
       description: enabled
-        ? "现在当应用出错时会显示详细的错误堆栈信息"
-        : "现在只显示用户友好的错误提示",
+        ? t("settings.developer.enabledDesc")
+        : t("settings.developer.disabledDesc"),
     });
   };
 
   useEffect(() => {
     if (settings) {
       setFormData(settings);
+      setPkMarkersInput(markersToInputValue(settings.pkMarkers));
     }
   }, [settings]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings(formData, {
+    const normalizedPkMarkers = normalizePkMarkersInput(pkMarkersInput);
+    const payload: DdlSettings = {
+      ...formData,
+      pkMarkers: normalizedPkMarkers,
+    };
+    updateSettings(payload, {
       onSuccess: () => {
+        setPkMarkersInput(markersToInputValue(normalizedPkMarkers));
         toast({
           title: t("settings.saved"),
           description: t("settings.savedSuccess"),
         });
       },
       onError: (error) => {
+        const translated = translateApiError(error, t, { includeIssues: false });
         toast({
-          title: t("settings.saveFailed"),
-          description: error.message,
+          title: translated.title || t("settings.saveFailed"),
+          description: translated.description,
           variant: "destructive",
         });
       },
@@ -328,6 +369,50 @@ export default function Settings() {
                 {t("settings.mysql.collationDesc")}
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mysqlDataTypeCase">{t("settings.mysql.dataTypeCase")}</Label>
+              <Select
+                value={formData.mysqlDataTypeCase}
+                onValueChange={(value) => handleChange("mysqlDataTypeCase", value as DdlSettings["mysqlDataTypeCase"])}
+              >
+                <SelectTrigger id="mysqlDataTypeCase">
+                  <SelectValue placeholder={t("settings.mysql.dataTypeCasePlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {MYSQL_DATA_TYPE_CASE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.mysql.dataTypeCaseDesc")}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mysqlBooleanMode">{t("settings.mysql.booleanMode")}</Label>
+              <Select
+                value={formData.mysqlBooleanMode}
+                onValueChange={(value) => handleChange("mysqlBooleanMode", value as DdlSettings["mysqlBooleanMode"])}
+              >
+                <SelectTrigger id="mysqlBooleanMode">
+                  <SelectValue placeholder={t("settings.mysql.booleanModePlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {MYSQL_BOOLEAN_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.mysql.booleanModeDesc")}
+              </p>
+            </div>
           </div>
 
           {/* VARCHAR Settings */}
@@ -490,20 +575,34 @@ export default function Settings() {
                 {t("settings.parsing.maxConsecutiveEmptyRowsDesc")}
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pkMarkers">{t("settings.parsing.pkMarkers")}</Label>
+              <Textarea
+                id="pkMarkers"
+                value={pkMarkersInput}
+                onChange={(e) => setPkMarkersInput(e.target.value)}
+                rows={2}
+                placeholder="〇, ○, Y, 1"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("settings.parsing.pkMarkersDesc")}
+              </p>
+            </div>
           </div>
 
           {/* Developer Mode */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-5">
             <div className="flex items-center gap-3 mb-4">
               <Code2 className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-semibold">开发者选项</h2>
+              <h2 className="text-lg font-semibold">{t("settings.developer.title")}</h2>
             </div>
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="developerMode">开发者模式</Label>
+                <Label htmlFor="developerMode">{t("settings.developer.modeLabel")}</Label>
                 <p className="text-xs text-muted-foreground">
-                  启用后，当应用出错时会显示详细的错误堆栈信息和组件堆栈，方便调试问题。关闭后只显示用户友好的错误提示。
+                  {t("settings.developer.modeDesc")}
                 </p>
               </div>
               <Switch
@@ -514,10 +613,14 @@ export default function Settings() {
             </div>
 
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <p className="text-sm font-medium text-foreground">调试快捷键</p>
+              <p className="text-sm font-medium text-foreground">{t("settings.developer.shortcutTitle")}</p>
               <ul className="text-xs text-muted-foreground space-y-1">
-                <li><kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F12</kbd> - 打开/关闭开发者工具（查看控制台日志和网络请求）</li>
-                <li>开发者模式设置保存在本地存储，重启应用后仍然有效</li>
+                <li>
+                  <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F12</kbd>
+                  {" "}
+                  - {t("settings.developer.shortcutF12")}
+                </li>
+                <li>{t("settings.developer.persistHint")}</li>
               </ul>
             </div>
           </div>

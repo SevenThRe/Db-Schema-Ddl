@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { translateApiError } from "@/lib/api-error";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -46,7 +47,12 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
         }
       },
       onError: (error) => {
-        toast({ title: t("toast.uploadFailed"), description: error.message, variant: "destructive" });
+        const translated = translateApiError(error, t, { includeIssues: false });
+        toast({
+          title: t("toast.uploadFailed"),
+          description: translated.description,
+          variant: "destructive",
+        });
       },
     });
     e.target.value = "";
@@ -155,55 +161,57 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               files?.map((file) => (
                 <Tooltip key={file.id}>
                   <TooltipTrigger asChild>
-                    <button
-                      onClick={() => onSelectFile(file.id)}
+                    <div
                       onMouseEnter={() => setHoverFileId(file.id)}
                       onMouseLeave={() => setHoverFileId(null)}
-                      className={cn(
-                        "w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200 group relative",
-                        selectedFileId === file.id
-                          ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                          : "hover:bg-muted text-foreground"
-                      )}
+                      className="relative group"
                     >
-                      <FileSpreadsheet className={cn(
-                        "w-4 h-4 shrink-0 transition-colors",
-                        selectedFileId === file.id ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
-                      )} />
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <p className="text-xs font-medium truncate leading-tight mb-0.5">
-                          {file.originalName}
-                        </p>
-                        <p className={cn(
-                          "text-[10px]",
-                          selectedFileId === file.id ? "text-primary-foreground/70" : "text-muted-foreground"
-                        )}>
-                          {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : ""}
-                        </p>
-                      </div>
-                      {/* Delete button */}
-                      {hoverFileId === file.id && selectedFileId !== file.id && (
-                        <button
-                          onClick={(e) => handleDelete(e, file.id)}
-                          className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
-                          title={t("sidebar.deleteFile")}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                      {selectedFileId === file.id && hoverFileId === file.id && (
-                        <button
-                          onClick={(e) => handleDelete(e, file.id)}
-                          className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/20 text-primary-foreground/70 hover:text-red-200 transition-colors"
-                          title={t("sidebar.deleteFile")}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                      {selectedFileId === file.id && hoverFileId !== file.id && (
-                        <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/70 shrink-0" />
-                      )}
-                    </button>
+                      <button
+                        onClick={() => onSelectFile(file.id)}
+                        className={cn(
+                          "w-full text-left flex items-center gap-2.5 px-2.5 py-2 pr-10 rounded-lg transition-all duration-200",
+                          selectedFileId === file.id
+                            ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                            : "hover:bg-muted text-foreground"
+                        )}
+                      >
+                        <FileSpreadsheet className={cn(
+                          "w-4 h-4 shrink-0 transition-colors",
+                          selectedFileId === file.id ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+                        )} />
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <p className="text-xs font-medium truncate leading-tight mb-0.5">
+                            {file.originalName}
+                          </p>
+                          <p className={cn(
+                            "text-[10px]",
+                            selectedFileId === file.id ? "text-primary-foreground/70" : "text-muted-foreground"
+                          )}>
+                            {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : ""}
+                          </p>
+                        </div>
+                        {selectedFileId === file.id && (
+                          <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/70 shrink-0" />
+                        )}
+                      </button>
+
+                      <button
+                        onClick={(e) => handleDelete(e, file.id)}
+                        className={cn(
+                          "absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded transition-all",
+                          selectedFileId === file.id
+                            ? "text-primary-foreground/70 hover:text-red-200 hover:bg-red-500/20"
+                            : "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
+                          hoverFileId === file.id || selectedFileId === file.id
+                            ? "opacity-100"
+                            : "opacity-70"
+                        )}
+                        title={t("sidebar.deleteFile")}
+                        aria-label={t("sidebar.deleteFile")}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-[320px] break-all text-xs">
                     {file.originalName}

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema, ddlSettingsSchema, processingTaskSchema } from './schema';
+import { apiErrorSchema } from "./error-codes";
 
 export const api = {
   files: {
@@ -16,7 +17,7 @@ export const api = {
       // Input is FormData
       responses: {
         201: z.custom<typeof uploadedFiles.$inferSelect>(),
-        400: z.object({ message: z.string() }),
+        400: apiErrorSchema,
       },
     },
     getSheets: {
@@ -27,7 +28,7 @@ export const api = {
           name: z.string(),
           hasTableDefinitions: z.boolean(),
         })),
-        404: z.object({ message: z.string() }),
+        404: apiErrorSchema,
       },
     },
     getTableInfo: {
@@ -35,8 +36,8 @@ export const api = {
       path: '/api/files/:id/sheets/:sheetName' as const,
       responses: {
         200: z.array(tableInfoSchema),
-        404: z.object({ message: z.string() }),
-        400: z.object({ message: z.string() }),
+        404: apiErrorSchema,
+        400: apiErrorSchema,
       },
     },
     getSearchIndex: {
@@ -50,7 +51,7 @@ export const api = {
           physicalTableName: z.string().optional(),
           logicalTableName: z.string().optional(),
         })),
-        404: z.object({ message: z.string() }),
+        404: apiErrorSchema,
       },
     },
   },
@@ -61,7 +62,7 @@ export const api = {
       input: generateDdlRequestSchema,
       responses: {
         200: z.object({ ddl: z.string() }),
-        400: z.object({ message: z.string() }),
+        400: apiErrorSchema,
       },
     },
     exportZip: {
@@ -70,7 +71,7 @@ export const api = {
       input: generateDdlRequestSchema,
       responses: {
         200: z.custom<Blob>(), // Binary response (ZIP file)
-        400: z.object({ message: z.string() }),
+        400: apiErrorSchema,
       },
     },
   },
@@ -80,7 +81,7 @@ export const api = {
       path: '/api/tasks/:id' as const,
       responses: {
         200: processingTaskSchema,
-        404: z.object({ message: z.string() }),
+        404: apiErrorSchema,
       },
     },
   },
@@ -98,7 +99,7 @@ export const api = {
       input: ddlSettingsSchema,
       responses: {
         200: ddlSettingsSchema,
-        400: z.object({ message: z.string() }),
+        400: apiErrorSchema,
       },
     },
   },

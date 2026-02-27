@@ -2,7 +2,9 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useSheetData, useParseRegion } from "@/hooks/use-ddl";
 import { Loader2, Grid3X3, MousePointerSquareDashed } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { translateApiError } from "@/lib/api-error";
 import type { TableInfo } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 type CellCoord = { row: number; col: number };
 type SelectionRange = { start: CellCoord; end: CellCoord };
@@ -34,6 +36,11 @@ function rangeLabel(sel: SelectionRange): string {
 export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: SpreadsheetViewerProps) {
   const { data: sheetData, isLoading, error } = useSheetData(fileId, sheetName);
   const { mutate: parseRegion, isPending: isParsing } = useParseRegion();
+  const { t } = useTranslation();
+  const translatedError = useMemo(
+    () => (error ? translateApiError(error, t, { includeIssues: false }) : null),
+    [error, t],
+  );
 
   const [selection, setSelection] = useState<SelectionRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -117,7 +124,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
         <Grid3X3 className="w-10 h-10 mb-4 opacity-20" />
-        <p className="text-sm">Select a sheet to view</p>
+        <p className="text-sm">{t("spreadsheet.status.selectSheet")}</p>
       </div>
     );
   }
@@ -126,7 +133,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
         <Loader2 className="w-6 h-6 animate-spin mb-3 text-primary" />
-        <p className="text-sm">Loading sheet data...</p>
+        <p className="text-sm">{t("spreadsheet.status.loading")}</p>
       </div>
     );
   }
@@ -134,7 +141,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
   if (error || !sheetData) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
-        <p className="text-sm text-red-500">Failed to load sheet data</p>
+        <p className="text-sm text-red-500">{translatedError?.description || t("spreadsheet.status.loadFailed")}</p>
       </div>
     );
   }
@@ -145,7 +152,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
       <div className="px-3 py-2 border-b border-border bg-card/50 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <MousePointerSquareDashed className="w-3.5 h-3.5" />
-          <span>ドラッグで選択 → 自動解析</span>
+          <span>{t("spreadsheet.status.dragHint")}</span>
         </div>
         <div className="flex items-center gap-2">
           {selection && (

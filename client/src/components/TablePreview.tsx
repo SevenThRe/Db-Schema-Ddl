@@ -12,12 +12,15 @@ import {
 import { cn } from "@/lib/utils";
 import type { TableInfo, ColumnInfo } from "@shared/schema";
 import { validateTablePhysicalNames } from "@/lib/physical-name-utils";
+import { translateApiError } from "@/lib/api-error";
 import { useTranslation } from "react-i18next";
 import { useState, useMemo, useEffect, useCallback } from "react";
 
 interface TablePreviewProps {
   fileId: number | null;
   sheetName: string | null;
+  jumpToPhysicalTableName?: string | null;
+  jumpToken?: number;
   onCurrentTableChange?: (table: TableInfo | null, index: number) => void;
 }
 
@@ -139,10 +142,24 @@ function SingleTablePreview({ table }: { table: TableInfo }) {
   );
 }
 
-export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TablePreviewProps) {
+export function TablePreview({
+  fileId,
+  sheetName,
+  jumpToPhysicalTableName,
+  jumpToken,
+  onCurrentTableChange,
+}: TablePreviewProps) {
   const { data: tables, isLoading, error } = useTableInfo(fileId, sheetName);
   const { t } = useTranslation();
+  const translatedError = useMemo(
+    () => (error ? translateApiError(error, t, { includeIssues: true, maxIssues: 2 }) : null),
+    [error, t],
+  );
   const [currentTableIndex, setCurrentTableIndex] = useState(0);
+
+  useEffect(() => {
+    setCurrentTableIndex(0);
+  }, [sheetName]);
 
   // 当前选中的表
   const currentTable = useMemo(() => {
@@ -156,6 +173,25 @@ export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TableP
       onCurrentTableChange(currentTable, currentTableIndex);
     }
   }, [currentTable, currentTableIndex, onCurrentTableChange]);
+
+  useEffect(() => {
+    if (!jumpToPhysicalTableName || !tables || tables.length === 0) {
+      return;
+    }
+
+    const target = jumpToPhysicalTableName.trim().toLowerCase();
+    if (!target) {
+      return;
+    }
+
+    const targetIndex = tables.findIndex((table: TableInfo) => {
+      return (table.physicalTableName || "").trim().toLowerCase() === target;
+    });
+
+    if (targetIndex >= 0) {
+      setCurrentTableIndex(targetIndex);
+    }
+  }, [tables, jumpToPhysicalTableName, jumpToken]);
 
   // 检测是否有重复的表名（同一个表的多个版本）
   const hasDuplicateTableNames = useMemo(() => {
@@ -215,7 +251,7 @@ export function TablePreview({ fileId, sheetName, onCurrentTableChange }: TableP
         </div>
         <h3 className="text-lg font-semibold text-foreground mb-2">{t("table.invalidDefinition")}</h3>
         <p className="text-muted-foreground text-sm">
-          {error.message || t("table.parseError")}
+          {translatedError?.description || t("table.parseError")}
         </p>
       </div>
     );

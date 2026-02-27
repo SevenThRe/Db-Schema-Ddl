@@ -60,6 +60,21 @@ async function buildAll() {
     logLevel: "info",
   });
 
+  console.log("building excel worker...");
+  await esbuild({
+    entryPoints: ["server/lib/excel-worker.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/excel-worker.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
+
   console.log("building electron main process...");
   await esbuild({
     entryPoints: ["electron/main.ts"],

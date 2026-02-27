@@ -1,6 +1,18 @@
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
-import { type TableInfo, type ColumnInfo } from '@shared/schema';
+import type { TableInfo, ColumnInfo } from '../../shared/schema.ts';
+
+const DEFAULT_PK_MARKERS = ['〇'];
+
+function normalizePkMarkers(pkMarkers?: string[]): string[] {
+  const source = Array.isArray(pkMarkers) ? pkMarkers : DEFAULT_PK_MARKERS;
+  const cleaned = source
+    .map((marker) => String(marker ?? '').trim())
+    .filter((marker) => marker.length > 0);
+
+  const unique = Array.from(new Set(cleaned));
+  return unique.length > 0 ? unique : DEFAULT_PK_MARKERS;
+}
 
 export function getSheetNames(filePath: string): string[] {
   const fileBuffer = fs.readFileSync(filePath);
@@ -57,7 +69,14 @@ function isFormatA(data: any[][]): boolean {
  * Parse a Format A table block starting at a given column offset.
  * Handles standalone Format A sheets AND horizontal table blocks in Format B sheets.
  */
-function parseFormatABlock(data: any[][], colOffset: number, startRow: number, endRow?: number, maxConsecutiveEmpty: number = 10): TableInfo | null {
+function parseFormatABlock(
+  data: any[][],
+  colOffset: number,
+  startRow: number,
+  endRow?: number,
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
+): TableInfo | null {
   const maxRow = endRow ?? data.length;
 
   let logicalTableName = '';
@@ -132,7 +151,7 @@ function parseFormatABlock(data: any[][], colOffset: number, startRow: number, e
     }
   }
 
-  const columns = parseColumnsGeneric(data, headerRowIdx + 1, maxRow, colMap, maxConsecutiveEmpty);
+  const columns = parseColumnsGeneric(data, headerRowIdx + 1, maxRow, colMap, maxConsecutiveEmpty, pkMarkers);
 
   // Determine actual data end row
   const dataEndRow = columns.length > 0 ? headerRowIdx + columns.length : headerRowIdx + 1;
@@ -168,7 +187,11 @@ function isFormatB(data: any[][]): boolean {
 /**
  * Find all vertical table blocks in a Format B sheet (at columns 0-14).
  */
-function* findFormatBVerticalTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
+function* findFormatBVerticalTables(
+  data: any[][],
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
+): Generator<TableInfo> {
   const totalRows = data.length;
   let cursor = 0;
 
@@ -264,7 +287,14 @@ function* findFormatBVerticalTables(data: any[][], maxConsecutiveEmpty: number =
       }
     }
 
-    const columns = parseColumnsGeneric(data, colHeaderIdx + 1, nextTableHeader, colMap, maxConsecutiveEmpty);
+    const columns = parseColumnsGeneric(
+      data,
+      colHeaderIdx + 1,
+      nextTableHeader,
+      colMap,
+      maxConsecutiveEmpty,
+      pkMarkers,
+    );
 
     if (columns.length > 0) {
       yield {
@@ -293,7 +323,11 @@ function* findFormatBVerticalTables(data: any[][], maxConsecutiveEmpty: number =
  * Find all horizontal Format A table blocks embedded in a Format B sheet.
  * These appear as "テーブル情報" markers at column offsets >= 10.
  */
-function* findFormatBHorizontalTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
+function* findFormatBHorizontalTables(
+  data: any[][],
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
+): Generator<TableInfo> {
   const foundBlocks = new Set<string>();
 
   for (let i = 0; i < data.length; i++) {
@@ -315,7 +349,7 @@ function* findFormatBHorizontalTables(data: any[][], maxConsecutiveEmpty: number
           }
         }
 
-        const table = parseFormatABlock(data, j, i, endRow, maxConsecutiveEmpty);
+        const table = parseFormatABlock(data, j, i, endRow, maxConsecutiveEmpty, pkMarkers);
         if (table && table.columns.length > 0) {
           yield table;
         }
@@ -328,7 +362,11 @@ function* findFormatBHorizontalTables(data: any[][], maxConsecutiveEmpty: number
  * Detect multiple tables arranged side-by-side horizontally.
  * Scans for multiple '物理テーブル名' labels in the same row range.
  */
-function* findSideBySideTables(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
+function* findSideBySideTables(
+  data: any[][],
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
+): Generator<TableInfo> {
   const totalRows = data.length;
   const processedRanges = new Set<string>();
 
@@ -441,7 +479,14 @@ function* findSideBySideTables(data: any[][], maxConsecutiveEmpty: number = 10):
           if (endRow !== totalRows) break;
         }
 
-        const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow, totalRows), colMap, maxConsecutiveEmpty);
+        const columns = parseColumnsGeneric(
+          data,
+          headerRowIdx + 1,
+          Math.min(endRow, totalRows),
+          colMap,
+          maxConsecutiveEmpty,
+          pkMarkers,
+        );
 
         if (columns.length > 0) {
           yield {
@@ -493,7 +538,8 @@ function parseColumnsGeneric(
   startRow: number,
   endRow: number,
   colMap: Record<string, number>,
-  maxConsecutiveEmpty: number = 10
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
 ): ColumnInfo[] {
   const idxNo       = resolveColumn(colMap, 'no');
   const idxLogical  = resolveColumn(colMap, 'logicalName');
@@ -503,6 +549,7 @@ function parseColumnsGeneric(
   const idxNotNull  = resolveColumn(colMap, 'notNull');
   const idxPk       = resolveColumn(colMap, 'pk');
   const idxComment  = resolveColumn(colMap, 'comment');
+  const pkMarkerSet = new Set(normalizePkMarkers(pkMarkers));
 
   const columns: ColumnInfo[] = [];
   let consecutiveEmpty = 0;
@@ -542,7 +589,7 @@ function parseColumnsGeneric(
       dataType: idxType !== undefined ? str(row[idxType]) || undefined : undefined,
       size: idxSize !== undefined && !isEmpty(row[idxSize]) ? str(row[idxSize]) : undefined,
       notNull: idxNotNull !== undefined ? str(row[idxNotNull]).toLowerCase().includes('not null') : false,
-      isPk: idxPk !== undefined ? str(row[idxPk]) === '〇' : false,
+      isPk: idxPk !== undefined ? pkMarkerSet.has(str(row[idxPk])) : false,
       comment: idxComment !== undefined ? str(row[idxComment]) || undefined : undefined,
     };
 
@@ -599,7 +646,11 @@ function buildColumnMap(headerRow: any[]): Record<string, number> {
   return colMap;
 }
 
-function* findTablesInSheet(data: any[][], maxConsecutiveEmpty: number = 10): Generator<TableInfo> {
+function* findTablesInSheet(
+  data: any[][],
+  maxConsecutiveEmpty: number = 10,
+  pkMarkers: string[] = DEFAULT_PK_MARKERS
+): Generator<TableInfo> {
   const totalRows = data.length;
   let cursor = 0;
 
@@ -647,7 +698,14 @@ function* findTablesInSheet(data: any[][], maxConsecutiveEmpty: number = 10): Ge
     const nextTableStart = findCellRow(data, headerRowIndex + 1, '論理テーブル名');
     const boundary = nextTableStart !== -1 ? nextTableStart : totalRows;
 
-    const columns = parseColumnsGeneric(data, headerRowIndex + 1, boundary, colMap, maxConsecutiveEmpty);
+    const columns = parseColumnsGeneric(
+      data,
+      headerRowIndex + 1,
+      boundary,
+      colMap,
+      maxConsecutiveEmpty,
+      pkMarkers,
+    );
 
     yield {
       logicalTableName: String(logicalTableName || ''),
@@ -692,6 +750,7 @@ export function parseSheetRegion(
   options: ParseOptions = {}
 ): TableInfo[] {
   const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
+  const pkMarkers = normalizePkMarkers(options.pkMarkers);
   const data = getSheetData(filePath, sheetName);
 
   let logicalTableName = '';
@@ -782,7 +841,14 @@ export function parseSheetRegion(
     if (v !== '') colMap[v] = j;
   }
 
-  const columns = parseColumnsGeneric(data, headerRowIdx + 1, Math.min(endRow + 1, data.length), colMap, maxConsecutiveEmpty);
+  const columns = parseColumnsGeneric(
+    data,
+    headerRowIdx + 1,
+    Math.min(endRow + 1, data.length),
+    colMap,
+    maxConsecutiveEmpty,
+    pkMarkers,
+  );
 
   if (columns.length === 0) return [];
 
@@ -830,10 +896,12 @@ export function parseSheetRegion(
 
 export interface ParseOptions {
   maxConsecutiveEmptyRows?: number;
+  pkMarkers?: string[];
 }
 
 export function parseTableDefinitions(filePath: string, sheetName: string, options: ParseOptions = {}): TableInfo[] {
   const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
+  const pkMarkers = normalizePkMarkers(options.pkMarkers);
 
   const fileBuffer = fs.readFileSync(filePath);
   const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -856,30 +924,30 @@ export function parseTableDefinitions(filePath: string, sheetName: string, optio
 
   if (isFormatA(data)) {
     // Format A: single table per sheet (most common — 136 sheets)
-    const table = parseFormatABlock(data, 0, 0, undefined, maxConsecutiveEmpty);
+    const table = parseFormatABlock(data, 0, 0, undefined, maxConsecutiveEmpty, pkMarkers);
     if (table) addTable(table);
   } else if (isFormatB(data)) {
     // Format B: multi-table sheet (e.g. テーブル定義-社会)
-    const vertGen = findFormatBVerticalTables(data, maxConsecutiveEmpty);
+    const vertGen = findFormatBVerticalTables(data, maxConsecutiveEmpty, pkMarkers);
     let vertNext = vertGen.next();
     while (!vertNext.done) { addTable(vertNext.value); vertNext = vertGen.next(); }
 
-    const horizGen = findFormatBHorizontalTables(data, maxConsecutiveEmpty);
+    const horizGen = findFormatBHorizontalTables(data, maxConsecutiveEmpty, pkMarkers);
     let horizNext = horizGen.next();
     while (!horizNext.done) { addTable(horizNext.value); horizNext = horizGen.next(); }
 
     // Check for side-by-side tables
-    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty);
+    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty, pkMarkers);
     let sbNext = sideBySideGen.next();
     while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   } else {
     // Fallback: flexible scanner for unknown layouts
-    const fallbackGen = findTablesInSheet(data, maxConsecutiveEmpty);
+    const fallbackGen = findTablesInSheet(data, maxConsecutiveEmpty, pkMarkers);
     let fbNext = fallbackGen.next();
     while (!fbNext.done) { addTable(fbNext.value); fbNext = fallbackGen.next(); }
 
     // Also check for side-by-side tables in unknown formats
-    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty);
+    const sideBySideGen = findSideBySideTables(data, maxConsecutiveEmpty, pkMarkers);
     let sbNext = sideBySideGen.next();
     while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
   }

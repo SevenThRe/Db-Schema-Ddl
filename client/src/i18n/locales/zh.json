@@ -85,7 +85,8 @@
     "filterByColumn": "按列筛选",
     "column": "列",
     "selectColumn": "选择 {{column}} 列",
-    "deselectColumn": "取消 {{column}} 列"
+    "deselectColumn": "取消 {{column}} 列",
+    "exportedZip": "已导出 {{count}} 张表为 ZIP 文件"
   },
   "view": {
     "autoParse": "自动解析",
@@ -137,7 +138,13 @@
       "charsetPlaceholder": "选择字符集",
       "collation": "排序规则",
       "collationDesc": "表的默认排序规则。默认：utf8mb4_bin",
-      "collationPlaceholder": "选择排序规则"
+      "collationPlaceholder": "选择排序规则",
+      "dataTypeCase": "数据类型大小写",
+      "dataTypeCaseDesc": "控制 MySQL 字段类型输出为小写或大写（仅影响数据类型，不影响 SQL 关键字）。",
+      "dataTypeCasePlaceholder": "选择数据类型大小写",
+      "booleanMode": "BOOLEAN 映射",
+      "booleanModeDesc": "控制 boolean/bool 在 MySQL DDL 中是输出为 tinyint(1) 还是 boolean。",
+      "booleanModePlaceholder": "选择 BOOLEAN 映射规则"
     },
     "varchar": {
       "title": "VARCHAR/CHAR 设置",
@@ -163,15 +170,31 @@
     "parsing": {
       "title": "Excel 解析设置",
       "maxConsecutiveEmptyRows": "连续空行容忍度",
-      "maxConsecutiveEmptyRowsDesc": "解析表格时，遇到多少连续空行后停止解析。如果表格中间有大量空行，请增加此值。范围：1-100，默认：10"
+      "maxConsecutiveEmptyRowsDesc": "解析表格时，遇到多少连续空行后停止解析。如果表格中间有大量空行，请增加此值。范围：1-100，默认：10",
+      "pkMarkers": "PK 标记列表",
+      "pkMarkersDesc": "用于识别主键列的标记，支持逗号或换行分隔，默认：〇"
     },
     "notInElectron": "仅桌面版可用",
-    "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用"
+    "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用",
+    "developer": {
+      "title": "开发者选项",
+      "modeLabel": "开发者模式",
+      "modeDesc": "启用后，应用出错时会显示详细的错误堆栈信息和组件堆栈，方便调试。关闭后仅显示用户友好提示。",
+      "shortcutTitle": "调试快捷键",
+      "shortcutF12": "打开/关闭开发者工具（查看控制台日志和网络请求）",
+      "persistHint": "开发者模式设置会保存在本地存储，重启应用后仍然有效。",
+      "enabledTitle": "已启用开发者模式",
+      "enabledDesc": "当应用出错时，现在会显示详细的错误堆栈信息。",
+      "disabledTitle": "已关闭开发者模式",
+      "disabledDesc": "当前仅显示用户友好错误提示。"
+    }
   },
   "toast": {
     "fileUploaded": "文件上传成功",
     "uploadFailed": "上传失败",
-    "fileDeleted": "文件已删除"
+    "fileDeleted": "文件已删除",
+    "duplicateFile": "文件已存在",
+    "duplicateFileDesc": "检测到同内容文件，已复用旧文件。"
   },
   "update": {
     "available": "发现新版本",
@@ -186,5 +209,133 @@
     "readyDesc": "版本 {{version}} 已下载完成，重启后将自动安装。",
     "restartNow": "立即重启",
     "restartLater": "稍后重启"
+  },
+  "spreadsheet": {
+    "status": {
+      "selectSheet": "请先选择工作表",
+      "loading": "正在加载工作表数据...",
+      "loadFailed": "加载工作表数据失败",
+      "dragHint": "拖拽选择 → 自动解析"
+    }
+  },
+  "notFound": {
+    "title": "404 页面未找到",
+    "description": "你访问的页面不存在。",
+    "backHome": "返回首页"
+  },
+  "errorBoundary": {
+    "title": "应用程序错误",
+    "subtitle": "应用在运行时遇到了一个意外错误",
+    "solutionsTitle": "可能的解决方案：",
+    "solutionReload": "点击下方按钮重新加载应用",
+    "solutionRestart": "如果问题持续，请尝试重启应用",
+    "solutionF12": "按 F12 打开开发者工具查看详细错误",
+    "solutionDevMode": "启用开发者模式查看错误堆栈",
+    "reloadApp": "重新加载应用",
+    "enableDeveloperMode": "启用开发者模式",
+    "disableDeveloperMode": "关闭开发者模式",
+    "hintF12": "提示：按 F12 可以打开开发者工具查看控制台日志",
+    "hintPersisted": "开发者模式设置已保存到本地存储，重启应用后仍然有效",
+    "devTitle": "错误详情（开发者模式）",
+    "errorCode": "错误代码：",
+    "requestId": "请求 ID：",
+    "errorMessage": "错误消息：",
+    "stackTrace": "堆栈跟踪：",
+    "componentStack": "组件堆栈："
+  },
+  "errors": {
+    "common": {
+      "title": "操作失败",
+      "defaultDesc": "请求处理失败，请稍后重试。",
+      "issueFallback": "定义存在问题，请检查输入内容。",
+      "moreIssues": "另有 {{count}} 条问题。"
+    },
+    "api": {
+      "BAD_REQUEST": {
+        "title": "请求无效",
+        "desc": "请求内容不合法，请检查后重试。"
+      },
+      "INVALID_REQUEST": {
+        "title": "请求参数无效",
+        "desc": "参数校验失败，请检查输入后重试。"
+      },
+      "REQUEST_FAILED": {
+        "title": "请求失败",
+        "desc": "请求未成功，请稍后重试。"
+      },
+      "NETWORK_ERROR": {
+        "title": "网络连接异常",
+        "desc": "无法连接到服务，请检查网络后重试。"
+      },
+      "INTERNAL_SERVER_ERROR": {
+        "title": "系统异常",
+        "desc": "服务端发生异常，请稍后再试。"
+      },
+      "NO_FILE_UPLOADED": {
+        "title": "未上传文件",
+        "desc": "请选择 Excel 文件后再上传。"
+      },
+      "FILE_NOT_FOUND": {
+        "title": "文件不存在",
+        "desc": "找不到对应文件，请确认文件是否已被删除。"
+      },
+      "FILE_DELETE_FAILED": {
+        "title": "删除文件失败",
+        "desc": "文件删除未完成，请稍后重试。"
+      },
+      "READ_SHEET_FAILED": {
+        "title": "读取工作表失败",
+        "desc": "无法读取当前工作表数据，请确认文件格式是否正确。"
+      },
+      "PARSE_REGION_FAILED": {
+        "title": "选区解析失败",
+        "desc": "选择区域无法解析为有效表定义，请调整选区后重试。"
+      },
+      "READ_EXCEL_FAILED": {
+        "title": "Excel 读取失败",
+        "desc": "无法读取 Excel 内容，请确认文件未损坏。"
+      },
+      "PARSE_SHEET_FAILED": {
+        "title": "工作表解析失败",
+        "desc": "无法从工作表中提取表定义，请检查版式后重试。"
+      },
+      "TASK_NOT_FOUND": {
+        "title": "任务不存在",
+        "desc": "找不到对应后台任务，请刷新后重试。"
+      },
+      "SEARCH_INDEX_FAILED": {
+        "title": "搜索索引生成失败",
+        "desc": "当前无法生成搜索索引，请稍后再试。"
+      },
+      "DDL_GENERATE_FAILED": {
+        "title": "DDL 生成失败",
+        "desc": "生成 DDL 时发生异常，请检查表定义后重试。"
+      },
+      "ZIP_GENERATE_FAILED": {
+        "title": "ZIP 导出失败",
+        "desc": "生成 ZIP 文件时发生异常，请稍后再试。"
+      },
+      "SETTINGS_GET_FAILED": {
+        "title": "读取设置失败",
+        "desc": "无法加载当前设置，请稍后重试。"
+      },
+      "SETTINGS_UPDATE_FAILED": {
+        "title": "保存设置失败",
+        "desc": "设置更新未成功，请检查输入后重试。"
+      }
+    },
+    "issue": {
+      "INVALID_TABLE_NAME": "表“{{tableName}}”的物理名不合法，请使用字母/数字/下划线组合且以字母或下划线开头。",
+      "EMPTY_COLUMNS": "表“{{tableName}}”未解析到任何字段定义。",
+      "INVALID_COLUMN_NAME": "表“{{tableName}}”中字段“{{columnName}}”物理名不合法。",
+      "DUPLICATE_COLUMN_NAME": "表“{{tableName}}”中检测到重复字段名“{{columnName}}”。",
+      "MISSING_DATA_TYPE": "表“{{tableName}}”中字段“{{columnName}}”缺少数据类型。",
+      "UNSUPPORTED_DATA_TYPE": "表“{{tableName}}”中字段“{{columnName}}”的数据类型“{{dataType}}”不受支持。",
+      "CONFLICTING_SIZE_DEFINITIONS": "表“{{tableName}}”中字段“{{columnName}}”的类型与长度定义冲突。",
+      "INVALID_SIZE_FORMAT": "表“{{tableName}}”中字段“{{columnName}}”的长度格式“{{size}}”无效。",
+      "TYPE_MUST_NOT_INCLUDE_SIZE": "表“{{tableName}}”中字段“{{columnName}}”的类型“{{dataType}}”不允许配置长度。",
+      "TYPE_ONLY_ACCEPTS_INTEGER_SIZE": "表“{{tableName}}”中字段“{{columnName}}”的类型“{{dataType}}”只支持整数长度。",
+      "DUPLICATE_TABLE_NAME": "检测到重复的表物理名“{{tableName}}”。"
+    }
   }
 }

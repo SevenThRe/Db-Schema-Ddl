@@ -8,6 +8,7 @@
   "main": "dist/electron/main.cjs",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
+    "dev:sqlite": "cross-env NODE_ENV=development USE_SQLITE_STORAGE=true tsx server/index.ts",
     "build": "tsx script/build.ts",
     "build:electron": "npm run build && electron-builder",
     "rebuild": "taskkill //F //IM DBSchemaExcel2DDL.exe 2>nul || true && npm run build:electron",
@@ -17,7 +18,9 @@
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "mcp": "tsx mcp/index.ts"
+    "mcp": "tsx mcp/index.ts",
+    "mcp:debug": "cross-env MCP_DEBUG=1 tsx mcp/index.ts",
+    "check:i18n": "node script/check-i18n-keys.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

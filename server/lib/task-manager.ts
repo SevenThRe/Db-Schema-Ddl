@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
 import crypto from 'crypto';
-import { getSheetNames, parseTableDefinitions, type ParseOptions } from './excel';
+import { type ParseOptions } from './excel';
+import { runListSheets, runParseTables } from './excel-executor';
 
 export interface Task {
   id: string;
@@ -119,36 +119,24 @@ class TaskManager {
           task.progress = 10;
           if (task.onProgress) task.onProgress(task.progress);
 
-          // Get sheet names in chunks
-          const sheetNames = await new Promise<string[]>((resolve) => {
-            setImmediate(() => {
-              const names = getSheetNames(task.filePath);
-              resolve(names);
-            });
-          });
+          const sheetNames = await runListSheets(task.filePath);
 
           task.progress = 30;
           if (task.onProgress) task.onProgress(task.progress);
 
           // Process sheets one by one with breaks
           const sheetsWithInfo = [];
-          const progressPerSheet = 70 / sheetNames.length;
+          const progressPerSheet = sheetNames.length > 0 ? 70 / sheetNames.length : 70;
 
           for (let i = 0; i < sheetNames.length; i++) {
             const name = sheetNames[i];
-
-            // Process each sheet in its own event loop tick
-            const hasTableDefinitions = await new Promise<boolean>((resolve) => {
-              // Give UI time to breathe between sheets
-              setTimeout(() => {
-                try {
-                  const tables = parseTableDefinitions(task.filePath, name, task.parseOptions);
-                  resolve(tables.length > 0);
-                } catch (err) {
-                  resolve(false);
-                }
-              }, 0);
-            });
+            let hasTableDefinitions = false;
+            try {
+              const tables = await runParseTables(task.filePath, name, task.parseOptions);
+              hasTableDefinitions = tables.length > 0;
+            } catch {
+              hasTableDefinitions = false;
+            }
 
             sheetsWithInfo.push({ name, hasTableDefinitions });
 
@@ -173,13 +161,7 @@ class TaskManager {
           task.progress = 10;
           if (task.onProgress) task.onProgress(task.progress);
 
-          // Parse table asynchronously
-          const tables = await new Promise((resolve) => {
-            setImmediate(() => {
-              const result = parseTableDefinitions(task.filePath, task.sheetName!, task.parseOptions);
-              resolve(result);
-            });
-          });
+          const tables = await runParseTables(task.filePath, task.sheetName!, task.parseOptions);
 
           task.progress = 100;
           task.result = tables;

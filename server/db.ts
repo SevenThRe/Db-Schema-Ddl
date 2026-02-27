@@ -8,14 +8,14 @@ import fs from "fs";
 
 const { Pool } = pg;
 
-// Electron 環境では SQLite、Web 環境では PostgreSQL を使用
-const isElectron = process.env.ELECTRON_MODE === 'true';
+// Electron または明示指定時は SQLite、それ以外は PostgreSQL を使用
+const useSqlite = process.env.ELECTRON_MODE === 'true' || process.env.USE_SQLITE_STORAGE === 'true';
 
 let db: any;
 let pool: any = null;
 let sqlite: any = null;
 
-if (isElectron) {
+if (useSqlite) {
   // SQLite データベースファイルのパス（userData ディレクトリ内）
   const dbDir = process.env.DB_PATH || path.join(process.cwd(), 'data');
 
@@ -61,4 +61,3 @@ export function closeDatabase() {
 }
 
 export { db, pool };
-

@@ -35,6 +35,9 @@ export const ddlSettings = sqliteTable("ddl_settings", {
   excelReadPath: text("excel_read_path"),
   customHeaderTemplate: text("custom_header_template"),
   useCustomHeader: integer("use_custom_header", { mode: "boolean" }).notNull().default(false),
+  mysqlDataTypeCase: text("mysql_data_type_case").notNull().default("lower"),
+  mysqlBooleanMode: text("mysql_boolean_mode").notNull().default("tinyint(1)"),
+  pkMarkers: text("pk_markers").notNull().default("[\"\\u3007\"]"),
   maxConsecutiveEmptyRows: integer("max_consecutive_empty_rows").notNull().default(10),
   updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
 });
@@ -55,6 +58,9 @@ export const ddlSettingsSchema = z.object({
   excelReadPath: z.string().optional(),
   customHeaderTemplate: z.string().optional(),
   useCustomHeader: z.boolean().default(false),
+  mysqlDataTypeCase: z.enum(["lower", "upper"]).default("lower"),
+  mysqlBooleanMode: z.enum(["tinyint(1)", "boolean"]).default("tinyint(1)"),
+  pkMarkers: z.array(z.string().min(1)).default(["\u3007"]),
   maxConsecutiveEmptyRows: z.number().int().min(1).max(100).default(10),
 });
 

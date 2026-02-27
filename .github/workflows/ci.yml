@@ -34,6 +34,7 @@ jobs:
       - name: Check build artifacts
         run: |
           if (!(Test-Path "dist/index.cjs")) { exit 1 }
+          if (!(Test-Path "dist/excel-worker.cjs")) { exit 1 }
           if (!(Test-Path "dist/public/index.html")) { exit 1 }
           if (!(Test-Path "dist/electron/main.cjs")) { exit 1 }
           Write-Host "✓ All build artifacts generated successfully"

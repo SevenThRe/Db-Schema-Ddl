@@ -9,6 +9,7 @@ vite.config.ts.*
 
 # Runtime directories
 uploads/
+data/
 .local/
 .config/
 attached_assets/*

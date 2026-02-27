@@ -21,14 +21,17 @@ export default function Dashboard() {
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [currentTable, setCurrentTable] = useState<TableInfo | null>(null);
-  const [currentTableIndex, setCurrentTableIndex] = useState(0);
+  const [tableJumpRequest, setTableJumpRequest] = useState<{
+    sheetName: string;
+    physicalTableName: string;
+    token: number;
+  } | null>(null);
 
   const { data: files } = useFiles();
   const { t } = useTranslation();
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
     setCurrentTable(table);
-    setCurrentTableIndex(index);
   }, []);
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export default function Dashboard() {
   useEffect(() => {
     setSelectedSheet(null);
     setRegionTables(null);
+    setTableJumpRequest(null);
   }, [selectedFileId]);
 
   useEffect(() => {
@@ -68,12 +72,17 @@ export default function Dashboard() {
   const handleSelectSheet = useCallback((sheetName: string) => {
     setSelectedSheet(sheetName);
     setViewMode("auto");
+    setTableJumpRequest(null);
   }, []);
 
   const handleSelectTable = useCallback((sheetName: string, physicalTableName: string) => {
+    setTableJumpRequest({
+      sheetName,
+      physicalTableName,
+      token: Date.now(),
+    });
     setSelectedSheet(sheetName);
     setViewMode("auto");
-    // TODO: Scroll to the table in the preview
   }, []);
 
   // In spreadsheet mode with region selected, use regionTables for DDL generation
@@ -146,6 +155,12 @@ export default function Dashboard() {
                     <TablePreview
                       fileId={selectedFileId}
                       sheetName={selectedSheet}
+                      jumpToPhysicalTableName={
+                        tableJumpRequest && selectedSheet === tableJumpRequest.sheetName
+                          ? tableJumpRequest.physicalTableName
+                          : null
+                      }
+                      jumpToken={tableJumpRequest?.token ?? 0}
                       onCurrentTableChange={handleCurrentTableChange}
                     />
                   ) : (

@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { sendApiError } from "./lib/api-error";
+import { runUploadsBackfill } from "./lib/uploads-backfill";
 
 const app = express();
 const httpServer = createServer(app);
@@ -61,9 +63,17 @@ app.use((req, res, next) => {
 
 (async () => {
   // Initialize database (SQLite for Electron)
-  if (process.env.ELECTRON_MODE === 'true') {
+  if (process.env.ELECTRON_MODE === 'true' || process.env.USE_SQLITE_STORAGE === 'true') {
     const { initializeDatabase } = await import("./init-db");
     await initializeDatabase();
+  }
+
+  try {
+    await runUploadsBackfill({
+      logger: (message) => log(message, "uploads-backfill"),
+    });
+  } catch (error) {
+    log(`startup backfill failed: ${(error as Error).message}`, "uploads-backfill");
   }
 
   await registerRoutes(httpServer, app);
@@ -71,6 +81,7 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    const code = status >= 500 ? "INTERNAL_SERVER_ERROR" : "REQUEST_FAILED";
 
     console.error("Internal Server Error:", err);
 
@@ -78,7 +89,11 @@ app.use((req, res, next) => {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return sendApiError(res, {
+      status,
+      code,
+      message,
+    });
   });
 
   // importantly only setup vite in development and after

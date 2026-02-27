@@ -80,10 +80,10 @@ export function SearchDialog({
 
                 {sheets.length > 0 && (
                   <CommandGroup heading={t("search.sheets") || "Sheets"}>
-                    {sheets.map((item) => (
+                    {sheets.map((item, index) => (
                       <CommandItem
                         key={`sheet-${item.sheetName}`}
-                        value={item.displayName}
+                        value={`${item.displayName} __sheet_${index}`}
                         onSelect={() => handleSelect(item)}
                         className="cursor-pointer"
                       >
@@ -96,10 +96,10 @@ export function SearchDialog({
 
                 {tables.length > 0 && (
                   <CommandGroup heading={t("search.tables") || "Tables"}>
-                    {tables.map((item) => (
+                    {tables.map((item, index) => (
                       <CommandItem
                         key={`table-${item.sheetName}-${item.physicalTableName}`}
-                        value={`${item.displayName} ${item.physicalTableName} ${item.logicalTableName}`}
+                        value={`${item.displayName} ${item.physicalTableName} ${item.logicalTableName} __table_${index}`}
                         onSelect={() => handleSelect(item)}
                         className="cursor-pointer"
                       >

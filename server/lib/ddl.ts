@@ -1,4 +1,5 @@
 import { type TableInfo, type ColumnInfo, type GenerateDdlRequest, type DdlSettings } from '@shared/schema';
+import { normalizeDataTypeAndSize, validateGenerateDdlRequest } from './ddl-validation';
 
 const DEFAULT_SETTINGS: DdlSettings = {
   mysqlEngine: "InnoDB",
@@ -16,6 +17,9 @@ const DEFAULT_SETTINGS: DdlSettings = {
   excelReadPath: undefined,
   customHeaderTemplate: undefined,
   useCustomHeader: false,
+  mysqlDataTypeCase: "lower",
+  mysqlBooleanMode: "tinyint(1)",
+  pkMarkers: ["\u3007"],
   maxConsecutiveEmptyRows: 10,
 };
 
@@ -38,6 +42,7 @@ export function substituteFilenameSuffix(suffix: string, table: TableInfo, autho
 
 export function generateDDL(request: GenerateDdlRequest): string {
   const { tables, dialect, settings = DEFAULT_SETTINGS } = request;
+  validateGenerateDdlRequest({ tables, dialect });
   const ddls = tables.map(table => {
     if (dialect === 'mysql') {
       return generateMySQL(table, settings);
@@ -96,7 +101,8 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   const hasPk = table.columns.some(c => c.isPk);
 
   table.columns.forEach((col, index) => {
-    let line = `  \`${col.physicalName}\` ${mapDataTypeMySQL(col.dataType, col.size, settings)}`;
+    const normalizedTypeSpec = normalizeDataTypeAndSize(col.dataType, col.size);
+    let line = `  \`${col.physicalName}\` ${mapDataTypeMySQL(normalizedTypeSpec.type, normalizedTypeSpec.size, settings)}`;
 
     if (col.notNull) {
       line += ' NOT NULL';
@@ -163,7 +169,8 @@ function generateOracle(table: TableInfo, settings: DdlSettings = DEFAULT_SETTIN
   const hasPk = table.columns.some(c => c.isPk);
 
   table.columns.forEach((col, index) => {
-    let line = `  ${col.physicalName} ${mapDataTypeOracle(col.dataType, col.size)}`;
+    const normalizedTypeSpec = normalizeDataTypeAndSize(col.dataType, col.size);
+    let line = `  ${col.physicalName} ${mapDataTypeOracle(normalizedTypeSpec.type, normalizedTypeSpec.size)}`;
 
     if (col.notNull) {
       line += ' NOT NULL';
@@ -205,28 +212,39 @@ function escapeSql(str: string): string {
 function mapDataTypeMySQL(type?: string, size?: string, settings?: DdlSettings): string {
   const charset = settings?.varcharCharset || 'utf8mb4';
   const collate = settings?.varcharCollate || 'utf8mb4_bin';
+  const typeCase = settings?.mysqlDataTypeCase || 'lower';
+  const booleanMode = settings?.mysqlBooleanMode || 'tinyint(1)';
 
-  if (!type) return `VARCHAR(255) CHARACTER SET ${charset} COLLATE ${collate}`;
+  const formatTypeToken = (token: string): string => {
+    return typeCase === 'upper' ? token.toUpperCase() : token.toLowerCase();
+  };
+
+  if (!type) return `${formatTypeToken('varchar')}(255) CHARACTER SET ${charset} COLLATE ${collate}`;
   const t = type.toLowerCase().trim();
   if (t === 'varchar' || t === 'char') {
-    return `${t.toUpperCase()}(${size || '255'}) CHARACTER SET ${charset} COLLATE ${collate}`;
+    return `${formatTypeToken(t)}(${size || '255'}) CHARACTER SET ${charset} COLLATE ${collate}`;
   }
-  if (t === 'tinyint') return size ? `TINYINT(${size})` : 'TINYINT';
-  if (t === 'smallint') return size ? `SMALLINT(${size})` : 'SMALLINT';
-  if (t === 'int' || t === 'integer') return size ? `INT(${size})` : 'INT';
-  if (t === 'bigint') return size ? `BIGINT(${size})` : 'BIGINT';
-  if (t === 'date') return 'DATE';
-  if (t === 'datetime') return size ? `DATETIME(${size})` : 'DATETIME';
-  if (t === 'timestamp') return size ? `TIMESTAMP(${size})` : 'TIMESTAMP';
-  if (t === 'text') return size ? `TEXT(${size})` : 'TEXT';
-  if (t === 'longtext') return 'LONGTEXT';
-  if (t === 'mediumtext') return 'MEDIUMTEXT';
-  if (t === 'decimal' || t === 'numeric') return `DECIMAL(${size || '10,2'})`;
-  if (t === 'float') return size ? `FLOAT(${size})` : 'FLOAT';
-  if (t === 'double') return size ? `DOUBLE(${size})` : 'DOUBLE';
-  if (t === 'boolean' || t === 'bool') return 'BOOLEAN';
-  if (t === 'blob') return 'BLOB';
-  return size ? `${t.toUpperCase()}(${size})` : t.toUpperCase();
+  if (t === 'tinyint') return size ? `${formatTypeToken('tinyint')}(${size})` : formatTypeToken('tinyint');
+  if (t === 'smallint') return size ? `${formatTypeToken('smallint')}(${size})` : formatTypeToken('smallint');
+  if (t === 'int' || t === 'integer') return size ? `${formatTypeToken('int')}(${size})` : formatTypeToken('int');
+  if (t === 'bigint') return size ? `${formatTypeToken('bigint')}(${size})` : formatTypeToken('bigint');
+  if (t === 'date') return formatTypeToken('date');
+  if (t === 'datetime') return size ? `${formatTypeToken('datetime')}(${size})` : formatTypeToken('datetime');
+  if (t === 'timestamp') return size ? `${formatTypeToken('timestamp')}(${size})` : formatTypeToken('timestamp');
+  if (t === 'text') return size ? `${formatTypeToken('text')}(${size})` : formatTypeToken('text');
+  if (t === 'longtext') return formatTypeToken('longtext');
+  if (t === 'mediumtext') return formatTypeToken('mediumtext');
+  if (t === 'decimal' || t === 'numeric') return `${formatTypeToken('decimal')}(${size || '10,2'})`;
+  if (t === 'float') return size ? `${formatTypeToken('float')}(${size})` : formatTypeToken('float');
+  if (t === 'double') return size ? `${formatTypeToken('double')}(${size})` : formatTypeToken('double');
+  if (t === 'boolean' || t === 'bool') {
+    if (booleanMode === 'boolean') {
+      return formatTypeToken('boolean');
+    }
+    return `${formatTypeToken('tinyint')}(1)`;
+  }
+  if (t === 'blob') return formatTypeToken('blob');
+  return size ? `${formatTypeToken(t)}(${size})` : formatTypeToken(t);
 }
 
 function mapDataTypeOracle(type?: string, size?: string): string {
