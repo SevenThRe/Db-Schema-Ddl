@@ -168,9 +168,44 @@ function stableParseOptions(parseOptions?: ParseOptions): string {
   const normalizedPkMarkers = Array.isArray(parseOptions?.pkMarkers)
     ? [...(parseOptions?.pkMarkers ?? [])].sort()
     : [];
+  const normalizedReferenceRules = Array.isArray(parseOptions?.referenceExtraction?.rules)
+    ? [...parseOptions.referenceExtraction.rules]
+        .map((rule) => ({
+          source: String(rule.source ?? ""),
+          pattern: String(rule.pattern ?? ""),
+          flags: String(rule.flags ?? ""),
+          codeIdGroup: Number(rule.codeIdGroup ?? 1),
+          optionsGroup:
+            rule.optionsGroup == null
+              ? undefined
+              : Number(rule.optionsGroup),
+        }))
+        .sort((a, b) => {
+          const sourceCompare = a.source.localeCompare(b.source);
+          if (sourceCompare !== 0) {
+            return sourceCompare;
+          }
+          const patternCompare = a.pattern.localeCompare(b.pattern);
+          if (patternCompare !== 0) {
+            return patternCompare;
+          }
+          const flagsCompare = a.flags.localeCompare(b.flags);
+          if (flagsCompare !== 0) {
+            return flagsCompare;
+          }
+          if (a.codeIdGroup !== b.codeIdGroup) {
+            return a.codeIdGroup - b.codeIdGroup;
+          }
+          return (a.optionsGroup ?? -1) - (b.optionsGroup ?? -1);
+        })
+    : [];
   return JSON.stringify({
     maxConsecutiveEmptyRows: parseOptions?.maxConsecutiveEmptyRows ?? 10,
     pkMarkers: normalizedPkMarkers,
+    referenceExtraction: {
+      enabled: parseOptions?.referenceExtraction?.enabled ?? true,
+      rules: normalizedReferenceRules,
+    },
   });
 }
 
@@ -268,6 +303,22 @@ function estimateBundleBytes(bundle: WorkbookBundle): number {
         bytes += estimateStringBytes(col.dataType);
         bytes += estimateStringBytes(col.size);
         bytes += estimateStringBytes(col.comment);
+        bytes += estimateStringBytes(col.commentRaw);
+        if (Array.isArray(col.codeReferences)) {
+          bytes += col.codeReferences.length * 96;
+          for (const ref of col.codeReferences) {
+            bytes += estimateStringBytes(ref.source);
+            bytes += estimateStringBytes(ref.codeId);
+            bytes += estimateStringBytes(ref.raw);
+            if (Array.isArray(ref.options)) {
+              bytes += ref.options.length * 64;
+              for (const option of ref.options) {
+                bytes += estimateStringBytes(option.code);
+                bytes += estimateStringBytes(option.label);
+              }
+            }
+          }
+        }
       }
     }
   }

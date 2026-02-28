@@ -130,7 +130,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
           </div>
           <ul className="mt-1.5 list-disc pl-5 text-amber-700/90 dark:text-amber-200/90 space-y-1">
             {validation.hasInvalidTableName && (
-              <li className="font-mono text-xs">
+              <li className="font-mono text-xs break-all whitespace-normal">
                 {validation.tableNameCurrent || "(empty)"} {"->"} {validation.tableNameSuggested}
               </li>
             )}
@@ -198,7 +198,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                   >
                     <div>{col.physicalName || "-"}</div>
                     {invalidColumnIndexSet.has(index) && (
-                      <div className="text-[10px] leading-tight mt-0.5 opacity-90">
+                      <div className="text-[10px] leading-tight mt-0.5 opacity-90 break-all whitespace-normal">
                         {"->"} {invalidColumnMap.get(index)?.suggestedName}
                       </div>
                     )}
@@ -246,7 +246,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                     >
                       <div>{col.physicalName || "-"}</div>
                       {invalidColumnIndexSet.has(index) && (
-                        <div className="text-[10px] leading-tight mt-0.5 opacity-90">
+                        <div className="text-[10px] leading-tight mt-0.5 opacity-90 break-all whitespace-normal">
                           {"->"} {invalidColumnMap.get(index)?.suggestedName}
                         </div>
                       )}

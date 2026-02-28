@@ -39,6 +39,23 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: number; name: string } | null>(null);
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
   const dragEnterDepthRef = useRef(0);
+
+  const parseUploadedAt = (uploadedAt?: string | Date | null): Date | null => {
+    if (!uploadedAt) {
+      return null;
+    }
+    if (uploadedAt instanceof Date) {
+      return Number.isNaN(uploadedAt.getTime()) ? null : uploadedAt;
+    }
+    // SQLite CURRENT_TIMESTAMP format is UTC but lacks timezone info:
+    // "YYYY-MM-DD HH:mm:ss". Parse as UTC explicitly.
+    const sqliteUtcPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+    const normalized = sqliteUtcPattern.test(uploadedAt)
+      ? uploadedAt.replace(" ", "T") + "Z"
+      : uploadedAt;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
   const fileVersionMetaById = useMemo(() => {
     const map = new Map<number, { versionNumber: number; versionCount: number; shortHash: string }>();
     if (!files || files.length === 0) {
@@ -55,8 +72,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
     groups.forEach((groupFiles) => {
       const ordered = [...groupFiles].sort((a, b) => {
-        const tA = new Date(a.uploadedAt ?? 0).getTime();
-        const tB = new Date(b.uploadedAt ?? 0).getTime();
+        const tA = parseUploadedAt(a.uploadedAt)?.getTime() ?? 0;
+        const tB = parseUploadedAt(b.uploadedAt)?.getTime() ?? 0;
         if (tA !== tB) {
           return tA - tB;
         }
@@ -80,8 +97,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
       return [];
     }
     return [...files].sort((a, b) => {
-      const tA = new Date(a.uploadedAt ?? 0).getTime();
-      const tB = new Date(b.uploadedAt ?? 0).getTime();
+      const tA = parseUploadedAt(a.uploadedAt)?.getTime() ?? 0;
+      const tB = parseUploadedAt(b.uploadedAt)?.getTime() ?? 0;
       if (tA !== tB) {
         return tB - tA;
       }
@@ -90,11 +107,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   }, [files]);
 
   const formatUploadedAt = (uploadedAt?: string | Date | null) => {
-    if (!uploadedAt) {
-      return "";
-    }
-    const date = new Date(uploadedAt);
-    if (Number.isNaN(date.getTime())) {
+    const date = parseUploadedAt(uploadedAt);
+    if (!date) {
       return "";
     }
     return date.toLocaleString(undefined, {

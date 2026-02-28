@@ -1,6 +1,8 @@
 {
   "common": {
-    "cancel": "取消"
+    "cancel": "取消",
+    "selectAll": "全选",
+    "clearSelection": "清除选择"
   },
   "app": {
     "title": "DDL 生成器",
@@ -88,7 +90,131 @@
     "column": "列",
     "selectColumn": "选择 {{column}} 列",
     "deselectColumn": "取消 {{column}} 列",
-    "exportedZip": "已导出 {{count}} 张表为 ZIP 文件"
+    "exportedZip": "已导出 {{count}} 张表为 ZIP 文件",
+    "exportedZipPartial": "ZIP 已导出（成功 {{successCount}} 张，跳过 {{skippedCount}} 张无效表）。",
+    "missingTypeDialogTitle": "检测到字段缺少数据类型",
+    "missingTypeDialogDescription": "导出 ZIP 前请选择处理方式：跳过包含缺失类型字段的表，或为每个缺失字段选择数据类型后继续。",
+    "missingTypeSelectPlaceholder": "请选择数据类型",
+    "missingTypeNoExportableTitle": "没有可导出的表",
+    "missingTypeNoExportableDescription": "当前所选表都存在缺失数据类型的字段，请先补全后再导出。",
+    "missingTypeRequiredTitle": "请选择数据类型",
+    "missingTypeRequiredDescription": "请为 {{tableName}}.{{columnName}} 选择数据类型。",
+    "skipInvalidTables": "跳过无效表",
+    "fillTypeAndContinue": "按所选类型继续",
+    "missingTypeIntegerSizePlaceholder": "输入长度（例：20）",
+    "missingTypeNumericSizePlaceholder": "输入精度（例：10,2）",
+    "missingTypeInvalidSizeTitle": "长度格式不正确",
+    "missingTypeInvalidIntegerSizeDescription": "{{tableName}}.{{columnName}} 的长度“{{size}}”必须是整数。",
+    "missingTypeInvalidNumericSizeDescription": "{{tableName}}.{{columnName}} 的长度“{{size}}”需为“10”或“10,2”格式。",
+    "missingTypeNameFormatHint": "逻辑名（物理名）",
+    "missingTypePartialSelectionTitle": "已应用部分表选择",
+    "missingTypePartialSelectionDescription": "{{selectedCount}} 张表将继续处理，{{skippedCount}} 张无效表将被跳过。",
+    "missingTypeSelectionHint": "请选择要手动补全的无效表。未选择的无效表将被跳过。",
+    "missingTypeSelectionStats": "（已选问题：{{selected}} / 问题总数：{{total}}）",
+    "missingTypeSkippedTableHint": "该无效表将被跳过。",
+    "exportSummaryTitle": "ZIP 导出结果",
+    "exportSummaryDescription": "本次选择 {{selectedCount}} 张表，成功生成 {{successCount}} 张，跳过 {{skippedCount}} 张。",
+    "exportSummarySelected": "已选择",
+    "exportSummaryGenerated": "已生成",
+    "exportSummarySkipped": "已跳过",
+    "exportSummarySkippedTablesTitle": "本次跳过的表",
+    "exportSummarySkippedTablesHint": "详细原因请查看 ZIP 中的 __export_errors.txt。",
+    "exportSummaryClose": "我知道了",
+    "nameFix": {
+      "button": "名称修复",
+      "dialogTitle": "Name Fix 工作流",
+      "dialogDescription": "先配置命名规则并执行 Dry-run 预览，再选择 copy / overwrite / replace_download 执行。",
+      "batchModeLabel": "批量模式",
+      "batchModeCurrentFile": "当前文件",
+      "batchModeSelectedFiles": "指定文件",
+      "batchModeAllFiles": "全部文件",
+      "scopeLabel": "范围",
+      "scopeCurrentSheet": "当前工作表",
+      "scopeSelectedSheets": "指定工作表",
+      "scopeAllSheets": "全部工作表",
+      "scopeMultiFileHint": "多文件模式会固定使用 all_sheets。",
+      "applyModeLabel": "执行模式",
+      "applyModeCopy": "copy",
+      "applyModeOverwrite": "overwrite (Electron)",
+      "applyModeReplaceDownload": "replace_download (Web)",
+      "browserReplaceDownloadHint": "浏览器可使用 replace_download，执行后直接下载修复文件。",
+      "conflictStrategyLabel": "重名冲突策略",
+      "reservedWordStrategyLabel": "保留字策略",
+      "lengthOverflowStrategyLabel": "长度溢出策略",
+      "maxIdentifierLengthLabel": "标识符最大长度",
+      "optionConflictSuffixIncrement": "自动数字后缀",
+      "optionConflictHashSuffix": "短哈希后缀",
+      "optionAbort": "停止并报告",
+      "optionReservedPrefix": "添加前缀",
+      "optionLengthTruncateHash": "截断并追加哈希",
+      "helpBatchMode": "选择在当前文件、指定文件或全部已上传文件上执行。",
+      "helpScope": "选择解析范围；多文件模式下会固定为全部工作表。",
+      "helpApplyMode": "copy 保留原文件；overwrite 直接覆盖；replace_download 生成可下载的替换文件。",
+      "helpConflictStrategy": "当规范化后出现同名时，决定如何处理冲突。",
+      "helpReservedWordStrategy": "当名称命中 SQL 保留字时，决定如何处理。",
+      "helpLengthOverflowStrategy": "当名称超过标识符长度上限时，决定如何处理。",
+      "helpMaxIdentifierLength": "常见 MySQL 限制为 64，请按目标数据库限制设置。",
+      "fileQueueTitle": "文件队列",
+      "noUploadedFiles": "暂无可选上传文件。",
+      "selectedFilesCount": "已选文件：{{count}}",
+      "sheetSelectorTitle": "工作表选择",
+      "noSheetsAvailable": "暂无可用工作表。",
+      "selectedSheetsCount": "已选工作表：{{count}}",
+      "previewSummaryTitle": "预览摘要",
+      "previewFiles": "文件数",
+      "previewTablesChanged": "表改动数",
+      "previewColumnsChanged": "字段改动数",
+      "previewBlockingConflicts": "阻断冲突",
+      "previewMissingSourceRef": "缺失 sourceRef",
+      "previewPlan": "Plan",
+      "conflictDecisionTitle": "冲突决策",
+      "conflictDecisionStats": "conflicts={{conflictCount}} · trace={{traceCount}}",
+      "noConflictDetected": "当前策略下未检测到冲突。",
+      "applyResultTitle": "执行结果",
+      "jobLabel": "任务",
+      "applySummaryLine": "success={{successCount}}, failed={{failedCount}}, changedTables={{changedTableCount}}, changedColumns={{changedColumnCount}}",
+      "jobChangedLine": "changedTables={{changedTableCount}}, changedColumns={{changedColumnCount}}",
+      "fileSuccess": "成功",
+      "fileFailed": "失败",
+      "outputLabel": "输出",
+      "backupLabel": "备份",
+      "reportJsonLabel": "报告(json)",
+      "downloadResult": "下载修复结果文件",
+      "downloadBundleResult": "下载修复结果 ZIP",
+      "errorLabel": "错误",
+      "persistedJobTitle": "持久化任务状态",
+      "statusLabel": "状态",
+      "close": "关闭",
+      "runPreview": "运行预览",
+      "previewing": "预览中...",
+      "apply": "执行",
+      "applying": "执行中...",
+      "rollback": "回滚",
+      "rollingBack": "回滚中...",
+      "toastNoFileSelectedTitle": "未选择文件",
+      "toastNoFileSelectedDescription": "运行 Name Fix 前请先选择文件。",
+      "toastNoTargetFilesTitle": "没有目标文件",
+      "toastNoTargetFilesDescription": "预览前请至少选择一个文件。",
+      "toastCurrentSheetUnavailableTitle": "当前工作表不可用",
+      "toastCurrentSheetUnavailableDescription": "请选择工作表，或将范围切换为 all_sheets。",
+      "toastNoSelectedSheetsTitle": "未选择工作表",
+      "toastNoSelectedSheetsDescription": "在 selected_sheets 模式下至少选择一个工作表。",
+      "toastPreviewReadyTitle": "Name Fix 预览已完成",
+      "toastPreviewReadyDescription": "表改动：{{changedTableCount}}，字段改动：{{changedColumnCount}}",
+      "toastPreviewFailedTitle": "预览失败",
+      "toastPreviewRequiredTitle": "需要先预览",
+      "toastPreviewRequiredDescription": "请先执行预览，再执行 apply。",
+      "toastOverwriteUnavailableTitle": "overwrite 不可用",
+      "toastOverwriteUnavailableDescription": "overwrite 仅支持 Electron，浏览器请使用 copy。",
+      "toastApplyFinishedTitle": "Name Fix 执行完成",
+      "toastApplyFinishedDescription": "success={{successCount}}, failed={{failedCount}}",
+      "toastApplyFailedTitle": "执行失败",
+      "toastNoRollbackJobTitle": "没有可回滚任务",
+      "toastNoRollbackJobDescription": "请先执行 apply，再根据需要回滚。",
+      "toastRollbackCompletedTitle": "回滚完成",
+      "toastRollbackSkippedTitle": "回滚已跳过",
+      "toastRollbackFailedTitle": "回滚失败"
+    }
   },
   "view": {
     "autoParse": "自动解析",
@@ -176,6 +302,40 @@
       "pkMarkers": "PK 标记列表",
       "pkMarkersDesc": "用于识别主键列的标记，支持逗号或换行分隔，默认：〇"
     },
+    "nameFix": {
+      "title": "Name Fix 设置",
+      "defaultApplyMode": "默认应用模式",
+      "modePlaceholder": "请选择模式",
+      "defaultApplyModeOptions": {
+        "copy": "copy（生成修复后文件）",
+        "overwrite": "overwrite（仅 Electron）",
+        "replaceDownload": "replace_download（Web 下载）"
+      },
+      "duplicateConflictStrategy": "重名冲突策略",
+      "strategyPlaceholder": "请选择策略",
+      "conflictStrategyOptions": {
+        "suffixIncrement": "suffix_increment（递增后缀）",
+        "hashSuffix": "hash_suffix（哈希后缀）"
+      },
+      "reservedWordStrategy": "保留字策略",
+      "reservedWordStrategyOptions": {
+        "prefix": "prefix（添加前缀）"
+      },
+      "lengthOverflowStrategy": "长度超限策略",
+      "lengthOverflowStrategyOptions": {
+        "truncateHash": "truncate_hash（截断 + 哈希）"
+      },
+      "sharedOptions": {
+        "abort": "abort（中止）"
+      },
+      "maxIdentifierLength": "标识符最大长度",
+      "backupRetentionDays": "备份保留天数",
+      "maxBatchConcurrency": "最大批处理并发数",
+      "allowOverwriteInElectron": "允许在 Electron 中覆盖写入",
+      "allowOverwriteInElectronDesc": "在 Electron 环境下启用后，可直接原地替换源文件。",
+      "allowExternalPathWrite": "允许写入外部路径",
+      "allowExternalPathWriteDesc": "禁用时，输出路径将限制在应用上传目录内。"
+    },
     "notInElectron": "仅桌面版可用",
     "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用",
     "developer": {
@@ -188,7 +348,64 @@
       "enabledTitle": "已启用开发者模式",
       "enabledDesc": "当应用出错时，现在会显示详细的错误堆栈信息。",
       "disabledTitle": "已关闭开发者模式",
-      "disabledDesc": "当前仅显示用户友好错误提示。"
+      "disabledDesc": "当前仅显示用户友好错误提示。",
+      "runtimeGuard": {
+        "title": "运行守护微调",
+        "summary": "高级运行阈值。硬上限仍由服务端强制执行。",
+        "intent": "慎调此组：其意在均衡吞吐、稳定与防护，非阈值愈大愈善。",
+        "fields": {
+          "uploadRateLimitWindowMs": {
+            "label": "上传限流窗长（毫秒）",
+            "desc": "定上传计数之时窗；窗内请次逾额，则后请暂拒。"
+          },
+          "uploadRateLimitMaxRequests": {
+            "label": "上传窗内最大请求数",
+            "desc": "定前项时窗可纳之请求上限，以抑突发洪峰。"
+          },
+          "parseRateLimitWindowMs": {
+            "label": "解析限流窗长（毫秒）",
+            "desc": "定解析接口计数之时窗，用以平抑并发冲击。"
+          },
+          "parseRateLimitMaxRequests": {
+            "label": "解析窗内最大请求数",
+            "desc": "定解析时窗内可受之请求数，过则限之。"
+          },
+          "globalProtectRateLimitWindowMs": {
+            "label": "全局防护窗长（毫秒）",
+            "desc": "总量防护之计数时窗；诸路合计，于此窗内统筹裁断。"
+          },
+          "globalProtectRateLimitMaxRequests": {
+            "label": "全局防护最大请求数",
+            "desc": "全局时窗内总请求阈值，越界则触发系统级限流。"
+          },
+          "globalProtectMaxInFlight": {
+            "label": "全局在途并行上限",
+            "desc": "同刻在途任务之上限，防资源争抢与雪崩。"
+          },
+          "prewarmMaxConcurrency": {
+            "label": "预热并发上限",
+            "desc": "预热任务可并行之数；高则速，亦增资源耗用。"
+          },
+          "prewarmQueueMax": {
+            "label": "预热队列上限",
+            "desc": "待预热任务所蓄之数；队满则新任务将被抑止。"
+          },
+          "prewarmMaxFileMb": {
+            "label": "预热文件上限（MB）",
+            "desc": "单文件可入预热之体量上限，逾则不受理。"
+          },
+          "taskManagerMaxQueueLength": {
+            "label": "任务队列长度上限",
+            "desc": "任务管理器可排队之总量；过长易积压，宜酌定。"
+          },
+          "taskManagerStalePendingMs": {
+            "label": "任务待处理失效时限（毫秒）",
+            "desc": "任务久候未行，逾此时限则视为陈旧并清理。"
+          }
+        },
+        "prewarmEnabledLabel": "启用预热",
+        "prewarmEnabledDesc": "若欲减后台解析负载，可暂闭预热。"
+      }
     }
   },
   "toast": {

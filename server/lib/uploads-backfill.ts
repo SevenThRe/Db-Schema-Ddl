@@ -2,6 +2,7 @@ import crypto from "crypto";
 import fs from "fs";
 import { promises as fsPromises } from "fs";
 import path from "path";
+import { isSqliteStorageEnabled } from "../app-config";
 import { storage } from "../storage";
 
 const SUPPORTED_EXCEL_EXTENSIONS = new Set([".xlsx", ".xls"]);
@@ -29,11 +30,7 @@ function isEnabled(value: string | undefined): boolean {
 }
 
 function usesPersistentStorage(): boolean {
-  return (
-    Boolean(process.env.DATABASE_URL) ||
-    process.env.ELECTRON_MODE === "true" ||
-    process.env.USE_SQLITE_STORAGE === "true"
-  );
+  return Boolean(process.env.DATABASE_URL) || isSqliteStorageEnabled();
 }
 
 function buildStoredFilePath(configuredUploadsDir: string, fileName: string): string {

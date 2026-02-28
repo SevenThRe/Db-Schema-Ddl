@@ -34,7 +34,53 @@ const DEFAULT_SETTINGS: DdlSettings = {
   prewarmMaxFileMb: 20,
   taskManagerMaxQueueLength: 200,
   taskManagerStalePendingMs: 1800000,
+  nameFixDefaultMode: "copy",
+  nameFixConflictStrategy: "suffix_increment",
+  nameFixReservedWordStrategy: "prefix",
+  nameFixLengthOverflowStrategy: "truncate_hash",
+  nameFixMaxIdentifierLength: 64,
+  nameFixBackupRetentionDays: 30,
+  nameFixMaxBatchConcurrency: 4,
+  allowOverwriteInElectron: true,
+  allowExternalPathWrite: false,
 };
+
+const MYSQL_AUTO_INCREMENT_DATA_TYPES = new Set([
+  "tinyint",
+  "smallint",
+  "int",
+  "integer",
+  "bigint",
+]);
+
+type AutoIncrementIgnoreReason = "not_primary_key" | "non_numeric_type";
+
+export interface DdlGenerationWarning {
+  code: "AUTO_INCREMENT_IGNORED" | "AUTO_INCREMENT_DIALECT_UNSUPPORTED";
+  tableName: string;
+  columnName: string;
+  message: string;
+  reason?: AutoIncrementIgnoreReason | "dialect_unsupported";
+}
+
+function resolveMySqlAutoIncrementEligibility(column: ColumnInfo): {
+  eligible: boolean;
+  reason?: AutoIncrementIgnoreReason;
+} {
+  if (!column.autoIncrement) {
+    return { eligible: false };
+  }
+  if (!column.isPk) {
+    return { eligible: false, reason: "not_primary_key" };
+  }
+
+  const normalizedType = normalizeDataTypeAndSize(column.dataType, column.size).type?.toLowerCase();
+  if (!normalizedType || !MYSQL_AUTO_INCREMENT_DATA_TYPES.has(normalizedType)) {
+    return { eligible: false, reason: "non_numeric_type" };
+  }
+
+  return { eligible: true };
+}
 
 function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {
   const today = new Date();
@@ -64,6 +110,59 @@ export function generateDDL(request: GenerateDdlRequest): string {
     isFirst = false;
   });
   return chunks.join('');
+}
+
+export function collectDdlGenerationWarnings(request: GenerateDdlRequest): DdlGenerationWarning[] {
+  const warnings: DdlGenerationWarning[] = [];
+  const { tables, dialect } = request;
+
+  tables.forEach((table) => {
+    table.columns.forEach((column) => {
+      if (!column.autoIncrement) {
+        return;
+      }
+
+      const tableName = table.physicalTableName || table.logicalTableName || "(unknown_table)";
+      const columnName = column.physicalName || column.logicalName || "(unknown_column)";
+
+      if (dialect !== "mysql") {
+        warnings.push({
+          code: "AUTO_INCREMENT_DIALECT_UNSUPPORTED",
+          tableName,
+          columnName,
+          reason: "dialect_unsupported",
+          message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored for ${dialect.toUpperCase()} dialect.`,
+        });
+        return;
+      }
+
+      const eligibility = resolveMySqlAutoIncrementEligibility(column);
+      if (eligibility.eligible) {
+        return;
+      }
+
+      if (eligibility.reason === "not_primary_key") {
+        warnings.push({
+          code: "AUTO_INCREMENT_IGNORED",
+          tableName,
+          columnName,
+          reason: "not_primary_key",
+          message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because the column is not marked as PK.`,
+        });
+        return;
+      }
+
+      warnings.push({
+        code: "AUTO_INCREMENT_IGNORED",
+        tableName,
+        columnName,
+        reason: "non_numeric_type",
+        message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because data type is not integer-based.`,
+      });
+    });
+  });
+
+  return warnings;
 }
 
 function renderDDLChunks(
@@ -154,6 +253,10 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
 
     if (col.notNull) {
       line += ' NOT NULL';
+    }
+
+    if (resolveMySqlAutoIncrementEligibility(col).eligible) {
+      line += ' AUTO_INCREMENT';
     }
 
     if (col.logicalName) {

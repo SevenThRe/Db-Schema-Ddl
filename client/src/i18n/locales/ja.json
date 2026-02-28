@@ -85,7 +85,131 @@
     "column": "列",
     "selectColumn": "{{column}} 列を選択",
     "deselectColumn": "{{column}} 列の選択を解除",
-    "exportedZip": "{{count}} 件のテーブルを ZIP としてエクスポートしました"
+    "exportedZip": "{{count}} 件のテーブルを ZIP としてエクスポートしました",
+    "exportedZipPartial": "ZIP をエクスポートしました（成功: {{successCount}} 件、スキップ: {{skippedCount}} 件）。",
+    "missingTypeDialogTitle": "データ型未設定のカラムが見つかりました",
+    "missingTypeDialogDescription": "ZIP 出力前に処理方法を選択してください。未設定カラムを含むテーブルをスキップするか、各カラムのデータ型を選択して続行できます。",
+    "missingTypeSelectPlaceholder": "データ型を選択",
+    "missingTypeNoExportableTitle": "エクスポート可能なテーブルがありません",
+    "missingTypeNoExportableDescription": "選択中のテーブルはすべてデータ型未設定のカラムを含んでいます。データ型を指定してから再実行してください。",
+    "missingTypeRequiredTitle": "データ型を選択してください",
+    "missingTypeRequiredDescription": "{{tableName}}.{{columnName}} のデータ型を選択してください。",
+    "skipInvalidTables": "未設定テーブルをスキップ",
+    "fillTypeAndContinue": "選択した型で続行",
+    "missingTypeIntegerSizePlaceholder": "桁数を入力（例: 20）",
+    "missingTypeNumericSizePlaceholder": "精度を入力（例: 10,2）",
+    "missingTypeInvalidSizeTitle": "サイズ指定が不正です",
+    "missingTypeInvalidIntegerSizeDescription": "{{tableName}}.{{columnName}} のサイズ「{{size}}」は整数で入力してください。",
+    "missingTypeInvalidNumericSizeDescription": "{{tableName}}.{{columnName}} のサイズ「{{size}}」は「10」または「10,2」の形式で入力してください。",
+    "missingTypeNameFormatHint": "論理名（物理名）",
+    "missingTypePartialSelectionTitle": "一部テーブル選択を適用しました",
+    "missingTypePartialSelectionDescription": "{{selectedCount}} 件のテーブルは処理を継続し、{{skippedCount}} 件の無効テーブルはスキップされます。",
+    "missingTypeSelectionHint": "手動で補完する無効テーブルを選択してください。未選択の無効テーブルはスキップされます。",
+    "missingTypeSelectionStats": "（選択中の問題: {{selected}} / 全問題数: {{total}}）",
+    "missingTypeSkippedTableHint": "この無効テーブルはスキップされます。",
+    "exportSummaryTitle": "ZIP エクスポート結果",
+    "exportSummaryDescription": "選択 {{selectedCount}} 件のうち、生成 {{successCount}} 件 / スキップ {{skippedCount}} 件でした。",
+    "exportSummarySelected": "選択",
+    "exportSummaryGenerated": "生成",
+    "exportSummarySkipped": "スキップ",
+    "exportSummarySkippedTablesTitle": "今回スキップしたテーブル",
+    "exportSummarySkippedTablesHint": "詳細は ZIP 内の __export_errors.txt を確認してください。",
+    "exportSummaryClose": "閉じる",
+    "nameFix": {
+      "button": "Name Fix",
+      "dialogTitle": "Name Fix ワークフロー",
+      "dialogDescription": "命名ルールを設定し、Dry-run プレビュー後に copy / overwrite / replace_download を実行します。",
+      "batchModeLabel": "バッチモード",
+      "batchModeCurrentFile": "現在ファイル",
+      "batchModeSelectedFiles": "選択ファイル",
+      "batchModeAllFiles": "全ファイル",
+      "scopeLabel": "スコープ",
+      "scopeCurrentSheet": "現在シート",
+      "scopeSelectedSheets": "選択シート",
+      "scopeAllSheets": "全シート",
+      "scopeMultiFileHint": "複数ファイル時は all_sheets で実行されます。",
+      "applyModeLabel": "適用モード",
+      "applyModeCopy": "copy",
+      "applyModeOverwrite": "overwrite (Electron)",
+      "applyModeReplaceDownload": "replace_download (Web)",
+      "browserReplaceDownloadHint": "ブラウザでは replace_download で修復済みファイルをダウンロードできます。",
+      "conflictStrategyLabel": "重複解決戦略",
+      "reservedWordStrategyLabel": "予約語戦略",
+      "lengthOverflowStrategyLabel": "長さ超過戦略",
+      "maxIdentifierLengthLabel": "識別子最大長",
+      "optionConflictSuffixIncrement": "連番サフィックスを自動付与",
+      "optionConflictHashSuffix": "短いハッシュサフィックスを付与",
+      "optionAbort": "停止して報告",
+      "optionReservedPrefix": "プレフィックスを付与",
+      "optionLengthTruncateHash": "切り詰め + ハッシュ付与",
+      "helpBatchMode": "現在ファイル・選択ファイル・全アップロードファイルのどこに適用するかを選択します。",
+      "helpScope": "解析するシート範囲を指定します。複数ファイル時は全シート固定です。",
+      "helpApplyMode": "copy は元ファイル保持、overwrite は直接上書き、replace_download は置換後ファイルをダウンロードします。",
+      "helpConflictStrategy": "正規化後に同名が発生した場合の解決方法を選択します。",
+      "helpReservedWordStrategy": "テーブル名/カラム名が SQL 予約語に一致した場合の処理方法です。",
+      "helpLengthOverflowStrategy": "識別子長の上限を超えた場合の処理方法です。",
+      "helpMaxIdentifierLength": "MySQL では 64 が一般的です。対象 DB の上限に合わせて設定してください。",
+      "fileQueueTitle": "ファイルキュー",
+      "noUploadedFiles": "アップロード済みファイルがありません。",
+      "selectedFilesCount": "選択ファイル: {{count}}",
+      "sheetSelectorTitle": "シート選択",
+      "noSheetsAvailable": "利用可能なシートがありません。",
+      "selectedSheetsCount": "選択シート: {{count}}",
+      "previewSummaryTitle": "プレビュー概要",
+      "previewFiles": "ファイル数",
+      "previewTablesChanged": "変更テーブル",
+      "previewColumnsChanged": "変更カラム",
+      "previewBlockingConflicts": "ブロッキング競合",
+      "previewMissingSourceRef": "sourceRef 不足",
+      "previewPlan": "Plan",
+      "conflictDecisionTitle": "競合決定",
+      "conflictDecisionStats": "conflicts={{conflictCount}} · trace={{traceCount}}",
+      "noConflictDetected": "現在戦略で競合は検出されませんでした。",
+      "applyResultTitle": "適用結果",
+      "jobLabel": "Job",
+      "applySummaryLine": "success={{successCount}}, failed={{failedCount}}, changedTables={{changedTableCount}}, changedColumns={{changedColumnCount}}",
+      "jobChangedLine": "changedTables={{changedTableCount}}, changedColumns={{changedColumnCount}}",
+      "fileSuccess": "SUCCESS",
+      "fileFailed": "FAILED",
+      "outputLabel": "output",
+      "backupLabel": "backup",
+      "reportJsonLabel": "report(json)",
+      "downloadResult": "修復済みファイルをダウンロード",
+      "downloadBundleResult": "修復結果 ZIP をダウンロード",
+      "errorLabel": "error",
+      "persistedJobTitle": "保存済みジョブ状態",
+      "statusLabel": "status",
+      "close": "閉じる",
+      "runPreview": "プレビュー実行",
+      "previewing": "プレビュー中...",
+      "apply": "適用",
+      "applying": "適用中...",
+      "rollback": "ロールバック",
+      "rollingBack": "ロールバック中...",
+      "toastNoFileSelectedTitle": "ファイル未選択",
+      "toastNoFileSelectedDescription": "Name Fix 実行前にファイルを選択してください。",
+      "toastNoTargetFilesTitle": "対象ファイルがありません",
+      "toastNoTargetFilesDescription": "プレビュー前に少なくとも 1 ファイルを選択してください。",
+      "toastCurrentSheetUnavailableTitle": "現在シートが利用できません",
+      "toastCurrentSheetUnavailableDescription": "シートを選択するか、スコープを all_sheets に変更してください。",
+      "toastNoSelectedSheetsTitle": "シート未選択",
+      "toastNoSelectedSheetsDescription": "selected_sheets では少なくとも 1 シートを選択してください。",
+      "toastPreviewReadyTitle": "Name Fix プレビュー完了",
+      "toastPreviewReadyDescription": "変更テーブル: {{changedTableCount}}、変更カラム: {{changedColumnCount}}",
+      "toastPreviewFailedTitle": "プレビュー失敗",
+      "toastPreviewRequiredTitle": "プレビュー必須",
+      "toastPreviewRequiredDescription": "適用前にプレビューを実行してください。",
+      "toastOverwriteUnavailableTitle": "overwrite は利用できません",
+      "toastOverwriteUnavailableDescription": "overwrite は Electron のみ利用可能です。ブラウザでは copy を使用してください。",
+      "toastApplyFinishedTitle": "Name Fix 適用完了",
+      "toastApplyFinishedDescription": "success={{successCount}}, failed={{failedCount}}",
+      "toastApplyFailedTitle": "適用失敗",
+      "toastNoRollbackJobTitle": "ロールバック対象なし",
+      "toastNoRollbackJobDescription": "先に apply を実行してからロールバックしてください。",
+      "toastRollbackCompletedTitle": "ロールバック完了",
+      "toastRollbackSkippedTitle": "ロールバックをスキップ",
+      "toastRollbackFailedTitle": "ロールバック失敗"
+    }
   },
   "view": {
     "autoParse": "自動解析",
@@ -173,6 +297,40 @@
       "pkMarkers": "PK マーカー一覧",
       "pkMarkersDesc": "主キー列を識別するマーカー。カンマまたは改行で複数指定できます。デフォルト: 〇"
     },
+    "nameFix": {
+      "title": "Name Fix 設定",
+      "defaultApplyMode": "デフォルト適用モード",
+      "modePlaceholder": "モードを選択",
+      "defaultApplyModeOptions": {
+        "copy": "copy（修復済みファイルを生成）",
+        "overwrite": "overwrite（Electron のみ）",
+        "replaceDownload": "replace_download（Web ダウンロード）"
+      },
+      "duplicateConflictStrategy": "重複競合戦略",
+      "strategyPlaceholder": "戦略を選択",
+      "conflictStrategyOptions": {
+        "suffixIncrement": "suffix_increment（連番サフィックス）",
+        "hashSuffix": "hash_suffix（ハッシュサフィックス）"
+      },
+      "reservedWordStrategy": "予約語戦略",
+      "reservedWordStrategyOptions": {
+        "prefix": "prefix（プレフィックス付与）"
+      },
+      "lengthOverflowStrategy": "長さ超過戦略",
+      "lengthOverflowStrategyOptions": {
+        "truncateHash": "truncate_hash（切り詰め + ハッシュ）"
+      },
+      "sharedOptions": {
+        "abort": "abort（中断）"
+      },
+      "maxIdentifierLength": "識別子最大長",
+      "backupRetentionDays": "バックアップ保持（日）",
+      "maxBatchConcurrency": "最大バッチ並列数",
+      "allowOverwriteInElectron": "Electron での上書きを許可",
+      "allowOverwriteInElectronDesc": "Electron 実行時に、元ファイルをその場で直接置換できるようにします。",
+      "allowExternalPathWrite": "外部パスへの書き込みを許可",
+      "allowExternalPathWriteDesc": "無効の場合、出力先はアプリのアップロードディレクトリ配下に制限されます。"
+    },
     "notInElectron": "デスクトップ版のみ利用可能",
     "notInElectronDesc": "この機能は Electron デスクトップアプリケーションでのみ使用できます",
     "developer": {
@@ -185,7 +343,64 @@
       "enabledTitle": "開発者モードを有効化しました",
       "enabledDesc": "エラー発生時に詳細なスタック情報を表示します。",
       "disabledTitle": "開発者モードを無効化しました",
-      "disabledDesc": "ユーザー向けの簡易エラーメッセージのみ表示します。"
+      "disabledDesc": "ユーザー向けの簡易エラーメッセージのみ表示します。",
+      "runtimeGuard": {
+        "title": "ランタイムガード調整",
+        "summary": "高度な運用しきい値です。ハード上限は引き続きサーバー側で強制されます。",
+        "intent": "この設定群の意図は、スループット・安定性・防御の均衡を取ることです。数値を大きくすれば常に良いわけではありません。",
+        "fields": {
+          "uploadRateLimitWindowMs": {
+            "label": "アップロード制限ウィンドウ（ms）",
+            "desc": "アップロード要求を数える時間窓です。窓内件数が閾値を超えると一時的に拒否します。"
+          },
+          "uploadRateLimitMaxRequests": {
+            "label": "アップロード最大リクエスト数",
+            "desc": "前項の時間窓で受け付ける最大件数です。突発的な集中アクセスを抑えます。"
+          },
+          "parseRateLimitWindowMs": {
+            "label": "解析制限ウィンドウ（ms）",
+            "desc": "解析 API の要求を集計する時間窓です。並行アクセスの衝撃を平準化します。"
+          },
+          "parseRateLimitMaxRequests": {
+            "label": "解析最大リクエスト数",
+            "desc": "解析時間窓で許容する最大件数です。超過時は制限が発動します。"
+          },
+          "globalProtectRateLimitWindowMs": {
+            "label": "全体保護ウィンドウ（ms）",
+            "desc": "全経路を合算して判定する保護時間窓です。"
+          },
+          "globalProtectRateLimitMaxRequests": {
+            "label": "全体保護の最大リクエスト数",
+            "desc": "全体保護時間窓における総要求しきい値です。超えると全体制限を適用します。"
+          },
+          "globalProtectMaxInFlight": {
+            "label": "全体同時実行（in-flight）上限",
+            "desc": "同時進行中タスクの上限です。資源競合と雪崩的劣化を防ぎます。"
+          },
+          "prewarmMaxConcurrency": {
+            "label": "プリウォーム同時実行上限",
+            "desc": "プリウォームが同時に走れる件数です。高いほど速い一方で資源消費が増えます。"
+          },
+          "prewarmQueueMax": {
+            "label": "プリウォーム待機キュー上限",
+            "desc": "プリウォーム待機タスクを保持できる件数です。満杯時は新規タスクを抑制します。"
+          },
+          "prewarmMaxFileMb": {
+            "label": "プリウォーム対象ファイル上限（MB）",
+            "desc": "1 ファイルあたりのプリウォーム対象サイズ上限です。超過ファイルは対象外となります。"
+          },
+          "taskManagerMaxQueueLength": {
+            "label": "タスクキュー長上限",
+            "desc": "タスク管理キューに積める総件数です。過大設定は滞留を招きます。"
+          },
+          "taskManagerStalePendingMs": {
+            "label": "タスク保留失効タイムアウト（ms）",
+            "desc": "長時間保留されたタスクを陳腐化とみなして整理するまでの時間です。"
+          }
+        },
+        "prewarmEnabledLabel": "プリウォームを有効化",
+        "prewarmEnabledDesc": "バックグラウンド解析負荷を下げたい場合は無効化してください。"
+      }
     }
   },
   "toast": {
@@ -210,7 +425,9 @@
     "restartLater": "後で再起動"
   },
   "common": {
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "selectAll": "すべて選択",
+    "clearSelection": "選択をクリア"
   },
   "spreadsheet": {
     "status": {

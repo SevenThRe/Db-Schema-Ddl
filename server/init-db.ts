@@ -57,6 +57,15 @@ export async function initializeDatabase() {
         prewarm_max_file_mb INTEGER NOT NULL DEFAULT 20,
         task_manager_max_queue_length INTEGER NOT NULL DEFAULT 200,
         task_manager_stale_pending_ms INTEGER NOT NULL DEFAULT 1800000,
+        name_fix_default_mode TEXT NOT NULL DEFAULT 'copy',
+        name_fix_conflict_strategy TEXT NOT NULL DEFAULT 'suffix_increment',
+        name_fix_reserved_word_strategy TEXT NOT NULL DEFAULT 'prefix',
+        name_fix_length_overflow_strategy TEXT NOT NULL DEFAULT 'truncate_hash',
+        name_fix_max_identifier_length INTEGER NOT NULL DEFAULT 64,
+        name_fix_backup_retention_days INTEGER NOT NULL DEFAULT 30,
+        name_fix_max_batch_concurrency INTEGER NOT NULL DEFAULT 4,
+        allow_overwrite_in_electron INTEGER NOT NULL DEFAULT 1,
+        allow_external_path_write INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -112,6 +121,33 @@ export async function initializeDatabase() {
     if (!ddlSettingsColumnNames.has("task_manager_stale_pending_ms")) {
       await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN task_manager_stale_pending_ms INTEGER NOT NULL DEFAULT 1800000`);
     }
+    if (!ddlSettingsColumnNames.has("name_fix_default_mode")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_default_mode TEXT NOT NULL DEFAULT 'copy'`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_conflict_strategy")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_conflict_strategy TEXT NOT NULL DEFAULT 'suffix_increment'`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_reserved_word_strategy")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_reserved_word_strategy TEXT NOT NULL DEFAULT 'prefix'`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_length_overflow_strategy")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_length_overflow_strategy TEXT NOT NULL DEFAULT 'truncate_hash'`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_max_identifier_length")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_max_identifier_length INTEGER NOT NULL DEFAULT 64`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_backup_retention_days")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_backup_retention_days INTEGER NOT NULL DEFAULT 30`);
+    }
+    if (!ddlSettingsColumnNames.has("name_fix_max_batch_concurrency")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN name_fix_max_batch_concurrency INTEGER NOT NULL DEFAULT 4`);
+    }
+    if (!ddlSettingsColumnNames.has("allow_overwrite_in_electron")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN allow_overwrite_in_electron INTEGER NOT NULL DEFAULT 1`);
+    }
+    if (!ddlSettingsColumnNames.has("allow_external_path_write")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN allow_external_path_write INTEGER NOT NULL DEFAULT 0`);
+    }
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS processing_tasks (
@@ -124,6 +160,67 @@ export async function initializeDatabase() {
         result TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS name_fix_jobs (
+        id TEXT PRIMARY KEY,
+        file_id INTEGER NOT NULL,
+        plan_id TEXT NOT NULL,
+        plan_hash TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        source_path TEXT NOT NULL,
+        output_path TEXT,
+        backup_path TEXT,
+        report_json_path TEXT,
+        report_text_path TEXT,
+        conflict_strategy TEXT NOT NULL,
+        reserved_word_strategy TEXT NOT NULL,
+        length_overflow_strategy TEXT NOT NULL,
+        max_identifier_length INTEGER NOT NULL DEFAULT 64,
+        changed_table_count INTEGER NOT NULL DEFAULT 0,
+        changed_column_count INTEGER NOT NULL DEFAULT 0,
+        blocking_conflict_count INTEGER NOT NULL DEFAULT 0,
+        unresolved_source_ref_count INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS name_fix_job_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL,
+        file_id INTEGER NOT NULL,
+        sheet_name TEXT NOT NULL,
+        table_index INTEGER NOT NULL,
+        column_index INTEGER,
+        target TEXT NOT NULL,
+        before_name TEXT NOT NULL,
+        after_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        reason TEXT,
+        source_address TEXT,
+        blocking INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS name_fix_backups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL,
+        file_id INTEGER NOT NULL,
+        source_path TEXT NOT NULL,
+        backup_path TEXT NOT NULL,
+        backup_hash TEXT NOT NULL,
+        restorable INTEGER NOT NULL DEFAULT 1,
+        expires_at TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -161,6 +258,15 @@ export async function initializeDatabase() {
         prewarmMaxFileMb: 20,
         taskManagerMaxQueueLength: 200,
         taskManagerStalePendingMs: 1800000,
+        nameFixDefaultMode: "copy",
+        nameFixConflictStrategy: "suffix_increment",
+        nameFixReservedWordStrategy: "prefix",
+        nameFixLengthOverflowStrategy: "truncate_hash",
+        nameFixMaxIdentifierLength: 64,
+        nameFixBackupRetentionDays: 30,
+        nameFixMaxBatchConcurrency: 4,
+        allowOverwriteInElectron: true,
+        allowExternalPathWrite: false,
       });
       console.log("Default settings inserted");
     }

@@ -1,6 +1,6 @@
 # MCP Integration Guide
 
-This project exposes an MCP server at `mcp/index.ts` for Excel-to-DDL operations.
+This project exposes an MCP server at `mcp/index.ts` for Excel-to-DDL operations and comment/reference exploration.
 
 ## Start MCP server
 
@@ -140,7 +140,71 @@ Region mode example:
 }
 ```
 
-### 3) `validate_excel_file`
+Reference extraction example (preserve raw comments + custom rules):
+
+```json
+{
+  "filePath": "attached_assets/sample.xlsx",
+  "sheetName": "テーブル定義",
+  "dialect": "mysql",
+  "referenceExtraction": {
+    "enabled": true,
+    "rules": [
+      {
+        "source": "code_master",
+        "pattern": "\\\\u30b3\\\\u30fc\\\\u30c9\\\\u30de\\\\u30b9\\\\u30bf(?:\\\\s*[.\\\\uFF0E:\\\\uFF1A]\\\\s*|\\\\s+)([A-Za-z][A-Za-z0-9_-]{1,})(?:\\\\s*[\\\\(\\\\uFF08]([^\\\\)\\\\uFF09]+)[\\\\)\\\\uFF09])?",
+        "flags": "g",
+        "codeIdGroup": 1,
+        "optionsGroup": 2
+      }
+    ]
+  }
+}
+```
+
+### 3) `query_comment_references`
+
+Explore comment/remark details for AI usage.  
+Supports one-sheet or full-workbook scan and keeps raw comment text.  
+Filter semantics are configurable via `sourceMatchMode` (`exact` | `contains`) and `codeIdMatchMode` (`contains` | `exact` | `starts_with`).
+
+**Input**
+
+```json
+{
+  "filePath": "attached_assets/sample.xlsx",
+  "query": "SQS0068",
+  "includeColumnsWithoutReferences": true,
+  "maxResults": 200,
+  "offset": 0
+}
+```
+
+Single sheet example:
+
+```json
+{
+  "filePath": "attached_assets/sample.xlsx",
+  "sheetName": "テーブル定義-社会",
+  "source": "code_master",
+  "sourceMatchMode": "exact",
+  "codeId": "SQS",
+  "codeIdMatchMode": "starts_with"
+}
+```
+
+Exact `codeId` match example:
+
+```json
+{
+  "filePath": "attached_assets/sample.xlsx",
+  "source": "code_master",
+  "codeId": "SQS0068",
+  "codeIdMatchMode": "exact"
+}
+```
+
+### 4) `validate_excel_file`
 
 Validate file existence/extension/size and return sheet summary.
 
@@ -152,7 +216,7 @@ Validate file existence/extension/size and return sheet summary.
 }
 ```
 
-### 4) `get_file_metadata`
+### 5) `get_file_metadata`
 
 Return metadata such as size and timestamps.
 
@@ -168,6 +232,9 @@ Return metadata such as size and timestamps.
 
 - Input arguments are validated with `zod`.
 - Region parsing requires all region parameters together.
+- Reference extraction rule safety:
+  - `pattern` max length: `1000`
+  - allowed regex flags: `g`, `i`, `m`, `s`, `u` (unique chars only)
 - Excel files are restricted to:
   - extension: `.xlsx` / `.xls`
   - max size: `10 MB`
@@ -196,3 +263,14 @@ For `parse_excel_to_ddl`, the `data` payload also includes:
 - `tables`: parsed (and optionally normalized) table definitions
 - `ddl`: generated SQL text
 - `normalization`: `{ mode, tableNamesChanged, columnNamesChanged }`
+
+For `query_comment_references`, the `data` payload includes:
+
+- `rows`: matched rows with `sheetName`, table/column names, `comment`, `commentRaw`, `codeReferences`, and `matchedReferences`
+- `matchedRowCount` / `returnedRowCount` / `truncated`: query-result counters
+- `filters`: normalized filter options used for this query (`query`, `source`, `sourceMatchMode`, `codeId`, `codeIdMatchMode`, `includeColumnsWithoutReferences`, `maxResults`, `offset`)
+
+Notes:
+
+- Raw comment text is preserved on each column as `commentRaw`.
+- Structured extraction is additive; free-text remarks remain available even when no pattern matches.

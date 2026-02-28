@@ -1,6 +1,32 @@
 import { z } from 'zod';
-import { uploadedFiles, insertUploadedFileSchema, tableInfoSchema, generateDdlRequestSchema, ddlSettingsSchema, processingTaskSchema } from './schema';
+import {
+  uploadedFiles,
+  insertUploadedFileSchema,
+  tableInfoSchema,
+  generateDdlRequestSchema,
+  exportZipRequestSchema,
+  generateDdlByReferenceRequestSchema,
+  exportZipByReferenceRequestSchema,
+  ddlSettingsSchema,
+  processingTaskSchema,
+  nameFixPreviewRequestSchema,
+  nameFixPreviewResponseSchema,
+  nameFixApplyRequestSchema,
+  nameFixApplyResponseSchema,
+  nameFixRollbackRequestSchema,
+  nameFixRollbackResponseSchema,
+  nameFixJobSchema,
+  nameFixJobItemSchema,
+} from './schema';
 import { apiErrorSchema } from "./error-codes";
+
+const ddlGenerationWarningSchema = z.object({
+  code: z.enum(["AUTO_INCREMENT_IGNORED", "AUTO_INCREMENT_DIALECT_UNSUPPORTED"]),
+  tableName: z.string(),
+  columnName: z.string(),
+  message: z.string(),
+  reason: z.string().optional(),
+});
 
 export const api = {
   files: {
@@ -61,17 +87,43 @@ export const api = {
       path: '/api/generate-ddl' as const,
       input: generateDdlRequestSchema,
       responses: {
-        200: z.object({ ddl: z.string() }),
+        200: z.object({
+          ddl: z.string(),
+          warnings: z.array(ddlGenerationWarningSchema).optional(),
+        }),
         400: apiErrorSchema,
+      },
+    },
+    generateByReference: {
+      method: 'POST' as const,
+      path: '/api/generate-ddl-by-reference' as const,
+      input: generateDdlByReferenceRequestSchema,
+      responses: {
+        200: z.object({
+          ddl: z.string(),
+          warnings: z.array(ddlGenerationWarningSchema).optional(),
+        }),
+        400: apiErrorSchema,
+        404: apiErrorSchema,
       },
     },
     exportZip: {
       method: 'POST' as const,
       path: '/api/export-ddl-zip' as const,
-      input: generateDdlRequestSchema,
+      input: exportZipRequestSchema,
       responses: {
         200: z.custom<Blob>(), // Binary response (ZIP file)
         400: apiErrorSchema,
+      },
+    },
+    exportZipByReference: {
+      method: 'POST' as const,
+      path: '/api/export-ddl-zip-by-reference' as const,
+      input: exportZipByReferenceRequestSchema,
+      responses: {
+        200: z.custom<Blob>(), // Binary response (ZIP file)
+        400: apiErrorSchema,
+        404: apiErrorSchema,
       },
     },
   },
@@ -100,6 +152,57 @@ export const api = {
       responses: {
         200: ddlSettingsSchema,
         400: apiErrorSchema,
+      },
+    },
+  },
+  nameFix: {
+    preview: {
+      method: 'POST' as const,
+      path: '/api/name-fix/preview' as const,
+      input: nameFixPreviewRequestSchema,
+      responses: {
+        200: nameFixPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    apply: {
+      method: 'POST' as const,
+      path: '/api/name-fix/apply' as const,
+      input: nameFixApplyRequestSchema,
+      responses: {
+        200: nameFixApplyResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    rollback: {
+      method: 'POST' as const,
+      path: '/api/name-fix/rollback' as const,
+      input: nameFixRollbackRequestSchema,
+      responses: {
+        200: nameFixRollbackResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    getJob: {
+      method: 'GET' as const,
+      path: '/api/name-fix/jobs/:id' as const,
+      responses: {
+        200: z.object({
+          job: nameFixJobSchema,
+          items: z.array(nameFixJobItemSchema),
+        }),
+        404: apiErrorSchema,
+      },
+    },
+    download: {
+      method: 'GET' as const,
+      path: '/api/name-fix/download/:token' as const,
+      responses: {
+        400: apiErrorSchema,
+        404: apiErrorSchema,
       },
     },
   },

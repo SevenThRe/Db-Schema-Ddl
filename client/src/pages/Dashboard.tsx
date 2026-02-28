@@ -9,12 +9,58 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { useFiles } from "@/hooks/use-ddl";
-import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Layers3 } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Layers3, Loader2 } from "lucide-react";
+import { useFiles, useSheets } from "@/hooks/use-ddl";
 import type { TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
+const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
+
+type StoredSheetSelections = Record<string, string>;
+
+function readStoredSheetSelections(): StoredSheetSelections {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LAST_SELECTED_SHEET_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const normalized: StoredSheetSelections = {};
+    for (const [fileKey, sheetName] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof sheetName === "string" && sheetName.trim()) {
+        normalized[fileKey] = sheetName;
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function getSheetName(sheet: unknown): string | null {
+  if (typeof sheet === "string" && sheet.trim()) {
+    return sheet;
+  }
+  if (
+    sheet &&
+    typeof sheet === "object" &&
+    "name" in sheet &&
+    typeof (sheet as { name?: unknown }).name === "string"
+  ) {
+    return ((sheet as { name: string }).name || "").trim() || null;
+  }
+  return null;
+}
 
 export default function Dashboard() {
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
@@ -32,8 +78,12 @@ export default function Dashboard() {
   } | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const [sheetSelectorOpen, setSheetSelectorOpen] = useState(false);
+  const [lastSelectedSheetByFile, setLastSelectedSheetByFile] = useState<StoredSheetSelections>(() =>
+    readStoredSheetSelections(),
+  );
 
   const { data: files } = useFiles();
+  const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
   const { t } = useTranslation();
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
@@ -54,6 +104,58 @@ export default function Dashboard() {
     setSheetSelectorOpen(false);
     setSelectedTableNames(new Set());
   }, [selectedFileId]);
+
+  useEffect(() => {
+    if (!selectedFileId || selectedSheet || !sheets || sheets.length === 0) {
+      return;
+    }
+
+    const rememberedSheetName = lastSelectedSheetByFile[String(selectedFileId)];
+    const rememberedSheet = rememberedSheetName
+      ? sheets.find((sheet: unknown) => getSheetName(sheet) === rememberedSheetName)
+      : null;
+    const preferredSheet =
+      rememberedSheet ??
+      sheets.find(
+        (sheet: unknown) =>
+          typeof sheet === "object" &&
+          sheet !== null &&
+          "hasTableDefinitions" in sheet &&
+          Boolean((sheet as { hasTableDefinitions?: unknown }).hasTableDefinitions),
+      ) ??
+      sheets[0];
+
+    const preferredSheetName = getSheetName(preferredSheet);
+    if (preferredSheetName) {
+      setSelectedSheet(preferredSheetName);
+    }
+  }, [selectedFileId, selectedSheet, sheets, lastSelectedSheetByFile]);
+
+  useEffect(() => {
+    if (!selectedFileId || !selectedSheet) {
+      return;
+    }
+
+    const fileKey = String(selectedFileId);
+    setLastSelectedSheetByFile((previous) =>
+      previous[fileKey] === selectedSheet ? previous : { ...previous, [fileKey]: selectedSheet },
+    );
+  }, [selectedFileId, selectedSheet]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        LAST_SELECTED_SHEET_STORAGE_KEY,
+        JSON.stringify(lastSelectedSheetByFile),
+      );
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [lastSelectedSheetByFile]);
 
   useEffect(() => {
     setRegionTables(null);
@@ -140,6 +242,10 @@ export default function Dashboard() {
   // In spreadsheet mode with region selected, use regionTables for DDL generation
   const activeTables = viewMode === "spreadsheet" && regionTables ? regionTables : null;
   const selectedFileName = files?.find((file) => file.id === selectedFileId)?.originalName ?? null;
+  const isResolvingDefaultSheet =
+    Boolean(selectedFileId) &&
+    !selectedSheet &&
+    (isSheetsLoading || Boolean(sheets && sheets.length > 0));
 
   const renderPreviewPane = (showSheetTrigger: boolean) => (
     <div className="flex flex-col h-full min-w-0">
@@ -195,18 +301,25 @@ export default function Dashboard() {
 
       <div className="flex-1 overflow-hidden">
         {viewMode === "auto" ? (
-          <TablePreview
-            fileId={selectedFileId}
-            sheetName={selectedSheet}
-            onTablesLoaded={handleTablesLoaded}
-            jumpToPhysicalTableName={
-              tableJumpRequest && selectedSheet === tableJumpRequest.sheetName
-                ? tableJumpRequest.physicalTableName
-                : null
-            }
-            jumpToken={tableJumpRequest?.token ?? 0}
-            onCurrentTableChange={handleCurrentTableChange}
-          />
+          isResolvingDefaultSheet ? (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+              <Loader2 className="w-8 h-8 animate-spin mb-4 text-primary" />
+              <p>{t("sheet.loading")}</p>
+            </div>
+          ) : (
+            <TablePreview
+              fileId={selectedFileId}
+              sheetName={selectedSheet}
+              onTablesLoaded={handleTablesLoaded}
+              jumpToPhysicalTableName={
+                tableJumpRequest && selectedSheet === tableJumpRequest.sheetName
+                  ? tableJumpRequest.physicalTableName
+                  : null
+              }
+              jumpToken={tableJumpRequest?.token ?? 0}
+              onCurrentTableChange={handleCurrentTableChange}
+            />
+          )
         ) : (
           <SpreadsheetViewer
             fileId={selectedFileId}
@@ -254,13 +367,13 @@ export default function Dashboard() {
           {isCompactLayout ? (
             <>
               <ResizablePanelGroup direction="horizontal" className="flex-1">
-                <ResizablePanel defaultSize={65} minSize={45}>
+                <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={65} minSize={45}>
                   {renderPreviewPane(true)}
                 </ResizablePanel>
 
                 <ResizableHandle />
 
-                <ResizablePanel defaultSize={35} minSize={25}>
+                <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={35} minSize={25}>
                   <DdlGenerator
                     fileId={selectedFileId}
                     sheetName={selectedSheet}
@@ -289,7 +402,7 @@ export default function Dashboard() {
             </>
           ) : (
             <ResizablePanelGroup direction="horizontal" className="flex-1">
-              <ResizablePanel defaultSize={16} minSize={12} maxSize={26}>
+              <ResizablePanel id="dashboard-desktop-sheets" order={1} defaultSize={16} minSize={12} maxSize={26}>
                 <SheetSelector
                   fileId={selectedFileId}
                   selectedSheet={selectedSheet}
@@ -299,13 +412,13 @@ export default function Dashboard() {
 
               <ResizableHandle />
 
-              <ResizablePanel defaultSize={54} minSize={30}>
+              <ResizablePanel id="dashboard-desktop-preview" order={2} defaultSize={54} minSize={30}>
                 {renderPreviewPane(false)}
               </ResizablePanel>
 
               <ResizableHandle />
 
-              <ResizablePanel defaultSize={30} minSize={20}>
+              <ResizablePanel id="dashboard-desktop-ddl" order={3} defaultSize={30} minSize={20}>
                 <DdlGenerator
                   fileId={selectedFileId}
                   sheetName={selectedSheet}

@@ -8,14 +8,26 @@ import archiver from "archiver";
 import { once } from "events";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import type { DdlSettings } from "@shared/schema";
+import type {
+  DdlSettings,
+  GenerateDdlByReferenceRequest,
+  TableInfo,
+} from "@shared/schema";
 import { getSheetData } from "./lib/excel";
-import { generateDDL, streamDDL, substituteFilenameSuffix } from "./lib/ddl";
+import { collectDdlGenerationWarnings, generateDDL, streamDDL, substituteFilenameSuffix } from "./lib/ddl";
 import { DdlValidationError } from "./lib/ddl-validation";
 import { taskManager, TaskQueueOverflowError } from "./lib/task-manager";
 import { ExcelExecutorQueueOverflowError, runParseRegion, runParseWorkbookBundle } from "./lib/excel-executor";
 import { z } from "zod";
 import { sendApiError } from "./lib/api-error";
+import {
+  applyNameFixPlanById,
+  getNameFixJobDetail,
+  previewNameFixPlan,
+  resolveNameFixDownloadTicket,
+  rollbackNameFixJobById,
+  startNameFixMaintenance,
+} from "./lib/name-fix-service";
 
 // アップロードディレクトリの取得と作成
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 'uploads';
@@ -141,6 +153,11 @@ let globalProtectInFlight = 0;
 
 function resolveClientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+function isLocalRequest(req: Request): boolean {
+  const clientKey = resolveClientKey(req).replace(/^::ffff:/, "");
+  return clientKey === "127.0.0.1" || clientKey === "::1";
 }
 
 function consumeRateLimitSlot(
@@ -356,6 +373,103 @@ function sendTaskQueueBusyError(res: Response): void {
   });
 }
 
+class ReferenceRequestError extends Error {
+  readonly status: number;
+  readonly code: "INVALID_REQUEST" | "FILE_NOT_FOUND" | "REQUEST_FAILED";
+  readonly params?: Record<string, string | number | boolean | null>;
+
+  constructor(
+    status: number,
+    code: "INVALID_REQUEST" | "FILE_NOT_FOUND" | "REQUEST_FAILED",
+    message: string,
+    params?: Record<string, string | number | boolean | null>,
+  ) {
+    super(message);
+    this.name = "ReferenceRequestError";
+    this.status = status;
+    this.code = code;
+    this.params = params;
+  }
+}
+
+function normalizeSelectedTableIndexes(indexes: number[]): number[] {
+  const deduped: number[] = [];
+  const seen = new Set<number>();
+  indexes.forEach((index) => {
+    if (!seen.has(index)) {
+      seen.add(index);
+      deduped.push(index);
+    }
+  });
+  return deduped;
+}
+
+async function resolveTablesByReference(
+  request: Pick<
+    GenerateDdlByReferenceRequest,
+    "fileId" | "sheetName" | "selectedTableIndexes" | "tableOverrides"
+  >,
+): Promise<{ tables: TableInfo[]; persistedSettings: DdlSettings }> {
+  const file = await storage.getUploadedFile(request.fileId);
+  if (!file) {
+    throw new ReferenceRequestError(404, "FILE_NOT_FOUND", "File not found");
+  }
+
+  const persistedSettings = await storage.getSettings();
+  const bundle = await runParseWorkbookBundle(
+    file.filePath,
+    {
+      maxConsecutiveEmptyRows: persistedSettings?.maxConsecutiveEmptyRows ?? 10,
+      pkMarkers: persistedSettings?.pkMarkers ?? DEFAULT_PK_MARKERS,
+    },
+    file.fileHash,
+  );
+
+  const parsedTables = bundle.tablesBySheet[request.sheetName];
+  if (!parsedTables) {
+    throw new ReferenceRequestError(400, "INVALID_REQUEST", "Sheet not found in file", {
+      sheetName: request.sheetName,
+    });
+  }
+
+  const selectedIndexes = normalizeSelectedTableIndexes(request.selectedTableIndexes);
+  if (selectedIndexes.length === 0) {
+    throw new ReferenceRequestError(400, "INVALID_REQUEST", "No table selected");
+  }
+
+  selectedIndexes.forEach((index) => {
+    if (index < 0 || index >= parsedTables.length) {
+      throw new ReferenceRequestError(400, "INVALID_REQUEST", "Selected table index out of range", {
+        index,
+        tableCount: parsedTables.length,
+      });
+    }
+  });
+
+  const selectedIndexSet = new Set(selectedIndexes);
+  const overrideByIndex = new Map<number, TableInfo>();
+  (request.tableOverrides ?? []).forEach((override) => {
+    if (override.tableIndex < 0 || override.tableIndex >= parsedTables.length) {
+      throw new ReferenceRequestError(400, "INVALID_REQUEST", "Override table index out of range", {
+        index: override.tableIndex,
+        tableCount: parsedTables.length,
+      });
+    }
+    if (!selectedIndexSet.has(override.tableIndex)) {
+      throw new ReferenceRequestError(
+        400,
+        "INVALID_REQUEST",
+        "Override table index must exist in selectedTableIndexes",
+        { index: override.tableIndex },
+      );
+    }
+    overrideByIndex.set(override.tableIndex, override.table);
+  });
+
+  const tables = selectedIndexes.map((index) => overrideByIndex.get(index) ?? parsedTables[index]);
+  return { tables, persistedSettings };
+}
+
 async function prewarmWorkbookBundle(filePath: string, fileHash: string): Promise<void> {
   try {
     const settings = await storage.getSettings();
@@ -441,6 +555,8 @@ export async function registerRoutes(
   } catch (error) {
     console.warn("[settings] failed to load runtime limits from storage, fallback to env defaults:", error);
   }
+
+  startNameFixMaintenance();
 
   app.get(api.files.list.path, async (req, res) => {
     const files = await storage.getUploadedFiles();
@@ -842,7 +958,171 @@ export async function registerRoutes(
     },
   );
 
-  app.post(api.ddl.generate.path, async (req, res) => {
+  app.post(
+    api.nameFix.preview.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
+    async (req, res) => {
+      try {
+        const request = api.nameFix.preview.input.parse(req.body);
+        const response = await previewNameFixPlan(request);
+        res.json(response);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          return sendApiError(res, {
+            status: 400,
+            code: "INVALID_REQUEST",
+            message: err.errors[0].message,
+          });
+        }
+        const message = (err as Error).message;
+        if (message.toLowerCase().includes("file not found")) {
+          return sendApiError(res, {
+            status: 404,
+            code: "FILE_NOT_FOUND",
+            message,
+          });
+        }
+        return sendApiError(res, {
+          status: 400,
+          code: "REQUEST_FAILED",
+          message,
+        });
+      }
+    },
+  );
+
+  app.post(
+    api.nameFix.apply.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
+    async (req, res) => {
+      try {
+        const request = api.nameFix.apply.input.parse(req.body);
+        const response = await applyNameFixPlanById(request);
+        res.setHeader("X-NameFix-JobId", response.jobId);
+        res.setHeader("X-NameFix-PlanHash", response.planHash);
+        res.setHeader("X-NameFix-Changed-Tables", String(response.summary.changedTableCount));
+        res.setHeader("X-NameFix-Changed-Columns", String(response.summary.changedColumnCount));
+        res.json(response);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          return sendApiError(res, {
+            status: 400,
+            code: "INVALID_REQUEST",
+            message: err.errors[0].message,
+          });
+        }
+        const message = (err as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return sendApiError(res, {
+            status: 404,
+            code: "TASK_NOT_FOUND",
+            message,
+          });
+        }
+        return sendApiError(res, {
+          status: 400,
+          code: "REQUEST_FAILED",
+          message,
+        });
+      }
+    },
+  );
+
+  app.post(
+    api.nameFix.rollback.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
+    async (req, res) => {
+      try {
+        const request = api.nameFix.rollback.input.parse(req.body);
+        const response = await rollbackNameFixJobById(request);
+        res.json(response);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          return sendApiError(res, {
+            status: 400,
+            code: "INVALID_REQUEST",
+            message: err.errors[0].message,
+          });
+        }
+        const message = (err as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return sendApiError(res, {
+            status: 404,
+            code: "TASK_NOT_FOUND",
+            message,
+          });
+        }
+        return sendApiError(res, {
+          status: 400,
+          code: "REQUEST_FAILED",
+          message,
+        });
+      }
+    },
+  );
+
+  app.get(api.nameFix.getJob.path, async (req, res) => {
+    try {
+      const jobId = req.params.id;
+      const detail = await getNameFixJobDetail(jobId);
+      res.json(detail);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message.toLowerCase().includes("not found")) {
+        return sendApiError(res, {
+          status: 404,
+          code: "TASK_NOT_FOUND",
+          message,
+        });
+      }
+      return sendApiError(res, {
+        status: 400,
+        code: "REQUEST_FAILED",
+        message,
+      });
+    }
+  });
+
+  app.get(api.nameFix.download.path, async (req, res) => {
+    try {
+      const token = String(req.params.token ?? "").trim();
+      if (!token) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: "Download token is required.",
+        });
+      }
+      const ticket = await resolveNameFixDownloadTicket(token);
+      res.download(ticket.outputPath, ticket.downloadFilename);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message.toLowerCase().includes("not found") || message.toLowerCase().includes("expired")) {
+        return sendApiError(res, {
+          status: 404,
+          code: "FILE_NOT_FOUND",
+          message,
+        });
+      }
+      return sendApiError(res, {
+        status: 400,
+        code: "REQUEST_FAILED",
+        message,
+      });
+    }
+  });
+
+  app.post(
+    api.ddl.generate.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    async (req, res) => {
     const streamQuery = String(req.query.stream ?? "").toLowerCase();
     const streamResponse = streamQuery === "1" || streamQuery === "true";
     try {
@@ -872,7 +1152,8 @@ export async function registerRoutes(
       }
 
       const ddl = generateDDL(effectiveRequest);
-      res.json({ ddl });
+      const warnings = collectDdlGenerationWarnings(effectiveRequest);
+      res.json({ ddl, warnings });
     } catch (err) {
       if (streamResponse && res.headersSent) {
         const streamError = err instanceof Error ? err : new Error(String(err));
@@ -903,14 +1184,398 @@ export async function registerRoutes(
         message: "Failed to generate DDL",
       });
     }
-  });
+    },
+  );
 
-  app.post(api.ddl.exportZip.path, async (req, res) => {
+  app.post(
+    api.ddl.generateByReference.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
+    async (req, res) => {
+    const streamQuery = String(req.query.stream ?? "").toLowerCase();
+    const streamResponse = streamQuery === "1" || streamQuery === "true";
+    try {
+      const request = api.ddl.generateByReference.input.parse(req.body);
+      const { tables, persistedSettings } = await resolveTablesByReference(request);
+      const effectiveRequest = {
+        tables,
+        dialect: request.dialect,
+        settings: request.settings ?? persistedSettings,
+      };
+
+      if (streamResponse) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Transfer-Encoding", "chunked");
+        await streamDDL(effectiveRequest, async (chunk) => {
+          const accepted = res.write(chunk);
+          if (!accepted) {
+            await once(res, "drain");
+          }
+        });
+        res.end();
+        return;
+      }
+
+      const ddl = generateDDL(effectiveRequest);
+      const warnings = collectDdlGenerationWarnings(effectiveRequest);
+      res.json({ ddl, warnings });
+    } catch (err) {
+      if (streamResponse && res.headersSent) {
+        const streamError = err instanceof Error ? err : new Error(String(err));
+        console.error("[ddl-stream-by-reference] stream failed after headers sent:", streamError);
+        if (!res.destroyed) {
+          res.destroy(streamError);
+        }
+        return;
+      }
+      if (err instanceof z.ZodError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.errors[0].message,
+        });
+      }
+      if (err instanceof ReferenceRequestError) {
+        return sendApiError(res, {
+          status: err.status,
+          code: err.code,
+          message: err.message,
+          params: err.params,
+        });
+      }
+      if (err instanceof DdlValidationError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.message,
+          issues: err.issues,
+        });
+      }
+      return sendApiError(res, {
+        status: 500,
+        code: "DDL_GENERATE_FAILED",
+        message: "Failed to generate DDL",
+      });
+    }
+    },
+  );
+
+  app.post(
+    api.ddl.exportZipByReference.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
+    async (req, res) => {
+    try {
+      const request = api.ddl.exportZipByReference.input.parse(req.body);
+      const { tables, persistedSettings } = await resolveTablesByReference(request);
+      const effectiveSettings = request.settings ?? persistedSettings;
+      const { dialect, tolerantMode, includeErrorReport } = request;
+      const prefix = effectiveSettings?.exportFilenamePrefix || "Crt_";
+      const suffixTemplate = effectiveSettings?.exportFilenameSuffix || "";
+      const authorName = effectiveSettings?.authorName || "ISI";
+      const zipEntries: Array<{ filename: string; content: string }> = [];
+      const tolerantErrors: Array<{
+        tableLogicalName: string;
+        tablePhysicalName: string;
+        message: string;
+        issues?: unknown[];
+      }> = [];
+
+      for (const table of tables) {
+        try {
+          const singleTableDdl = generateDDL({
+            tables: [table],
+            dialect,
+            settings: effectiveSettings,
+          });
+          const suffix = substituteFilenameSuffix(suffixTemplate, table, authorName);
+          const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
+          zipEntries.push({
+            filename,
+            content: singleTableDdl,
+          });
+        } catch (error) {
+          if (!tolerantMode) {
+            throw error;
+          }
+
+          if (error instanceof DdlValidationError) {
+            tolerantErrors.push({
+              tableLogicalName: table.logicalTableName,
+              tablePhysicalName: table.physicalTableName,
+              message: error.message,
+              issues: error.issues,
+            });
+          } else {
+            tolerantErrors.push({
+              tableLogicalName: table.logicalTableName,
+              tablePhysicalName: table.physicalTableName,
+              message: `Unexpected error: ${(error as Error).message}`,
+            });
+          }
+        }
+      }
+
+      if (zipEntries.length === 0) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: tolerantMode
+            ? "No DDL files could be generated. All selected tables failed validation."
+            : "Failed to generate ZIP",
+          issues: tolerantErrors.flatMap((item) => (Array.isArray(item.issues) ? item.issues : [])),
+          params: {
+            selectedTableCount: tables.length,
+            successCount: 0,
+            skippedCount: tolerantErrors.length,
+            tolerantMode,
+          },
+        });
+      }
+
+      const successfulTableCount = zipEntries.length;
+      const skippedTableNames = Array.from(
+        new Set(
+          tolerantErrors
+            .map((item) => item.tablePhysicalName)
+            .filter((name): name is string => Boolean(name && name.trim())),
+        ),
+      );
+
+      if (tolerantMode && includeErrorReport && tolerantErrors.length > 0) {
+        const generatedAt = new Date().toISOString();
+        const reportLines: string[] = [
+          "DDL export completed with tolerated errors.",
+          `generatedAt: ${generatedAt}`,
+          `selectedTableCount: ${tables.length}`,
+          `successCount: ${zipEntries.length}`,
+          `skippedCount: ${tolerantErrors.length}`,
+          "",
+        ];
+        tolerantErrors.forEach((item, index) => {
+          reportLines.push(`## ${index + 1}. ${item.tablePhysicalName} (${item.tableLogicalName})`);
+          reportLines.push(item.message);
+          if (Array.isArray(item.issues) && item.issues.length > 0) {
+            reportLines.push(JSON.stringify(item.issues, null, 2));
+          }
+          reportLines.push("");
+        });
+        zipEntries.push({
+          filename: "__export_errors.txt",
+          content: reportLines.join("\n"),
+        });
+      }
+
+      const archive = archiver("zip", {
+        zlib: { level: 9 },
+      });
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="ddl_${dialect}_${Date.now()}.zip"`);
+      res.setHeader("X-Zip-Export-Success-Count", String(successfulTableCount));
+      res.setHeader("X-Zip-Export-Skipped-Count", String(tolerantErrors.length));
+      res.setHeader("X-Zip-Partial-Export", tolerantErrors.length > 0 ? "1" : "0");
+      if (skippedTableNames.length > 0) {
+        res.setHeader("X-Zip-Export-Skipped-Tables", encodeURIComponent(JSON.stringify(skippedTableNames)));
+      }
+
+      archive.pipe(res);
+
+      for (const entry of zipEntries) {
+        archive.append(entry.content, { name: entry.filename });
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          archive.off("error", onError);
+          archive.off("end", onEnd);
+          res.off("close", onClose);
+        };
+        const settleResolve = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          resolve();
+        };
+        const settleReject = (error: unknown) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          reject(error);
+        };
+        const onError = (error: unknown) => {
+          settleReject(error);
+        };
+        const onEnd = () => {
+          settleResolve();
+        };
+        const onClose = () => {
+          if (!res.writableEnded) {
+            archive.abort();
+            settleReject(new Error("Client disconnected during ZIP export"));
+          }
+        };
+
+        archive.once("error", onError);
+        archive.once("end", onEnd);
+        res.once("close", onClose);
+
+        Promise.resolve(archive.finalize()).catch(onError);
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.errors[0].message,
+        });
+      }
+      if (err instanceof ReferenceRequestError) {
+        return sendApiError(res, {
+          status: err.status,
+          code: err.code,
+          message: err.message,
+          params: err.params,
+        });
+      }
+      if (err instanceof DdlValidationError) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: err.message,
+          issues: err.issues,
+        });
+      }
+      console.error("ZIP export by reference error:", err);
+      if (!res.headersSent) {
+        return sendApiError(res, {
+          status: 500,
+          code: "ZIP_GENERATE_FAILED",
+          message: "Failed to generate ZIP",
+        });
+      }
+      if (!res.destroyed) {
+        const streamError = err instanceof Error ? err : new Error(String(err));
+        res.destroy(streamError);
+      }
+    }
+    },
+  );
+
+  app.post(
+    api.ddl.exportZip.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    async (req, res) => {
     try {
       const request = api.ddl.exportZip.input.parse(req.body);
       const hasRequestSettings = req.body && typeof req.body === "object" && req.body.settings != null;
       const effectiveSettings = hasRequestSettings ? request.settings : await storage.getSettings();
-      const { tables, dialect } = request;
+      const { tables, dialect, tolerantMode, includeErrorReport } = request;
+      const prefix = effectiveSettings?.exportFilenamePrefix || "Crt_";
+      const suffixTemplate = effectiveSettings?.exportFilenameSuffix || "";
+      const authorName = effectiveSettings?.authorName || "ISI";
+      const zipEntries: Array<{ filename: string; content: string }> = [];
+      const tolerantErrors: Array<{
+        tableLogicalName: string;
+        tablePhysicalName: string;
+        message: string;
+        issues?: unknown[];
+      }> = [];
+
+      // Build all zip entries before opening the response stream to avoid write-after-end
+      // when a table fails validation.
+      for (const table of tables) {
+        try {
+          const singleTableDdl = generateDDL({
+            tables: [table],
+            dialect,
+            settings: effectiveSettings
+          });
+          const suffix = substituteFilenameSuffix(suffixTemplate, table, authorName);
+          const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
+          zipEntries.push({
+            filename,
+            content: singleTableDdl,
+          });
+        } catch (error) {
+          if (!tolerantMode) {
+            throw error;
+          }
+
+          if (error instanceof DdlValidationError) {
+            tolerantErrors.push({
+              tableLogicalName: table.logicalTableName,
+              tablePhysicalName: table.physicalTableName,
+              message: error.message,
+              issues: error.issues,
+            });
+          } else {
+            tolerantErrors.push({
+              tableLogicalName: table.logicalTableName,
+              tablePhysicalName: table.physicalTableName,
+              message: `Unexpected error: ${(error as Error).message}`,
+            });
+          }
+        }
+      }
+
+      if (zipEntries.length === 0) {
+        return sendApiError(res, {
+          status: 400,
+          code: "INVALID_REQUEST",
+          message: tolerantMode
+            ? "No DDL files could be generated. All selected tables failed validation."
+            : "Failed to generate ZIP",
+          issues: tolerantErrors.flatMap((item) => Array.isArray(item.issues) ? item.issues : []),
+          params: {
+            selectedTableCount: tables.length,
+            successCount: 0,
+            skippedCount: tolerantErrors.length,
+            tolerantMode,
+          },
+        });
+      }
+
+      const successfulTableCount = zipEntries.length;
+      const skippedTableNames = Array.from(
+        new Set(
+          tolerantErrors
+            .map((item) => item.tablePhysicalName)
+            .filter((name): name is string => Boolean(name && name.trim())),
+        ),
+      );
+
+      if (tolerantMode && includeErrorReport && tolerantErrors.length > 0) {
+        const generatedAt = new Date().toISOString();
+        const reportLines: string[] = [
+          "DDL export completed with tolerated errors.",
+          `generatedAt: ${generatedAt}`,
+          `selectedTableCount: ${tables.length}`,
+          `successCount: ${zipEntries.length}`,
+          `skippedCount: ${tolerantErrors.length}`,
+          "",
+        ];
+        tolerantErrors.forEach((item, index) => {
+          reportLines.push(`## ${index + 1}. ${item.tablePhysicalName} (${item.tableLogicalName})`);
+          reportLines.push(item.message);
+          if (Array.isArray(item.issues) && item.issues.length > 0) {
+            reportLines.push(JSON.stringify(item.issues, null, 2));
+          }
+          reportLines.push("");
+        });
+        zipEntries.push({
+          filename: "__export_errors.txt",
+          content: reportLines.join("\n"),
+        });
+      }
 
       // Create a zip archive
       const archive = archiver('zip', {
@@ -920,32 +1585,20 @@ export async function registerRoutes(
       // Set response headers for file download
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="ddl_${dialect}_${Date.now()}.zip"`);
+      res.setHeader("X-Zip-Export-Success-Count", String(successfulTableCount));
+      res.setHeader("X-Zip-Export-Skipped-Count", String(tolerantErrors.length));
+      res.setHeader("X-Zip-Partial-Export", tolerantErrors.length > 0 ? "1" : "0");
+      if (skippedTableNames.length > 0) {
+        res.setHeader("X-Zip-Export-Skipped-Tables", encodeURIComponent(JSON.stringify(skippedTableNames)));
+      }
 
       // Pipe archive to response
       archive.pipe(res);
 
-      // Generate individual DDL for each table and add to ZIP
-      const prefix = effectiveSettings?.exportFilenamePrefix || "Crt_";
-      const suffixTemplate = effectiveSettings?.exportFilenameSuffix || "";
-      const authorName = effectiveSettings?.authorName || "ISI";
-
-      tables.forEach((table) => {
-        // Generate DDL for single table
-        const singleTableDdl = generateDDL({
-          tables: [table],
-          dialect,
-          settings: effectiveSettings
-        });
-
-        // Substitute variables in suffix for this specific table
-        const suffix = substituteFilenameSuffix(suffixTemplate, table, authorName);
-
-        // Create filename for this table
-        const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
-
-        // Add to ZIP
-        archive.append(singleTableDdl, { name: filename });
-      });
+      // Add prepared DDL entries to ZIP
+      for (const entry of zipEntries) {
+        archive.append(entry.content, { name: entry.filename });
+      }
 
       // Finalize the archive and surface asynchronous stream errors to this handler.
       await new Promise<void>((resolve, reject) => {
@@ -1020,7 +1673,8 @@ export async function registerRoutes(
         res.destroy(streamError);
       }
     }
-  });
+    },
+  );
 
   // Settings routes
   app.get(api.settings.get.path, async (req, res) => {
@@ -1039,6 +1693,16 @@ export async function registerRoutes(
   app.put(api.settings.update.path, async (req, res) => {
     try {
       const settings = api.settings.update.input.parse(req.body);
+      if (settings.allowExternalPathWrite) {
+        const allowForCurrentRequest = process.env.ELECTRON_MODE === "true" && isLocalRequest(req);
+        if (!allowForCurrentRequest) {
+          return sendApiError(res, {
+            status: 403,
+            code: "REQUEST_FAILED",
+            message: "allowExternalPathWrite can only be enabled in local Electron mode.",
+          });
+        }
+      }
       const updated = await storage.updateSettings(settings);
       applyRuntimeLimitsFromSettings(updated);
       res.json(updated);

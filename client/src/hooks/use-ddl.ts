@@ -5,7 +5,10 @@ import {
   type TableInfo,
   type GenerateDdlRequest,
   type DdlSettings,
-  type ProcessingTask
+  type ProcessingTask,
+  type NameFixPreviewRequest,
+  type NameFixApplyRequest,
+  type NameFixRollbackRequest,
 } from "@shared/schema";
 import { parseApiErrorResponse } from "@/lib/api-error";
 
@@ -361,6 +364,84 @@ export function useUpdateSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.settings.get.path] });
+    },
+  });
+}
+
+// --- Name Fix ---
+
+export function useNameFixPreview() {
+  return useMutation({
+    mutationFn: async (request: NameFixPreviewRequest) => {
+      const res = await fetch(api.nameFix.preview.path, {
+        method: api.nameFix.preview.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to preview name fixes",
+        });
+      }
+      return api.nameFix.preview.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useApplyNameFix() {
+  return useMutation({
+    mutationFn: async (request: NameFixApplyRequest) => {
+      const res = await fetch(api.nameFix.apply.path, {
+        method: api.nameFix.apply.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to apply name fixes",
+        });
+      }
+      return api.nameFix.apply.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useNameFixJob(jobId: string | null) {
+  return useQuery({
+    queryKey: [api.nameFix.getJob.path, jobId],
+    queryFn: async () => {
+      if (!jobId) return null;
+      const url = buildUrl(api.nameFix.getJob.path, { id: jobId });
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to fetch name-fix job",
+        });
+      }
+      return api.nameFix.getJob.responses[200].parse(await res.json());
+    },
+    enabled: Boolean(jobId),
+  });
+}
+
+export function useRollbackNameFix() {
+  return useMutation({
+    mutationFn: async (request: NameFixRollbackRequest) => {
+      const res = await fetch(api.nameFix.rollback.path, {
+        method: api.nameFix.rollback.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to rollback name-fix job",
+        });
+      }
+      return api.nameFix.rollback.responses[200].parse(await res.json());
     },
   });
 }

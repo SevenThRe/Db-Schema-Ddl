@@ -8,19 +8,45 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ParseOptions } from "../server/lib/excel";
-import { runListSheets, runParseRegion, runParseTables } from "../server/lib/excel-executor";
+import { runListSheets, runParseRegion, runParseTables, runParseWorkbookBundle } from "../server/lib/excel-executor";
 import { generateDDL } from "../server/lib/ddl";
 import { createLogger } from "../server/lib/logger";
-import type { TableInfo } from "../shared/schema";
+import type { CodeReference, TableInfo } from "../shared/schema";
 
 const logger = createLogger("mcp-server");
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 const ALLOWED_EXTENSIONS = new Set([".xlsx", ".xls"]);
 const DEFAULT_PK_MARKERS = ["\u3007"];
+const MAX_REFERENCE_RULE_PATTERN_LENGTH = 1000;
+const ALLOWED_REFERENCE_REGEX_FLAGS = new Set(["g", "i", "m", "s", "u"]);
+const CodeIdMatchModeSchema = z.enum(["contains", "exact", "starts_with"]);
+const SourceMatchModeSchema = z.enum(["exact", "contains"]);
 
 const FilePathSchema = z.object({
   filePath: z.string().trim().min(1, "filePath is required"),
+});
+
+const ReferenceExtractionRuleSchema = z.object({
+  source: z.string().trim().min(1).max(64).optional(),
+  pattern: z.string().trim().min(1).max(MAX_REFERENCE_RULE_PATTERN_LENGTH),
+  flags: z
+    .string()
+    .trim()
+    .optional()
+    .refine((flags) => {
+      if (!flags) return true;
+      const chars = flags.split("");
+      const unique = new Set(chars);
+      return unique.size === chars.length && chars.every((ch) => ALLOWED_REFERENCE_REGEX_FLAGS.has(ch));
+    }, "flags must be unique chars from [gimsu]"),
+  codeIdGroup: z.number().int().min(1).optional(),
+  optionsGroup: z.number().int().min(1).optional(),
+});
+
+const ReferenceExtractionBaseSchema = z.object({
+  enabled: z.boolean().optional(),
+  rules: z.array(ReferenceExtractionRuleSchema).max(50).optional(),
 });
 
 const ParseExcelToDdlSchema = z
@@ -35,6 +61,7 @@ const ParseExcelToDdlSchema = z
     nameNormalization: z.enum(["none", "snake_case"]).default("none"),
     maxConsecutiveEmptyRows: z.number().int().min(1).max(100).optional(),
     pkMarkers: z.array(z.string().trim().min(1)).optional(),
+    referenceExtraction: ReferenceExtractionBaseSchema.optional(),
   })
   .superRefine((data, ctx) => {
     const hasAnyRegion =
@@ -72,9 +99,26 @@ const ParseExcelToDdlSchema = z
     }
   });
 
+const QueryCommentReferencesSchema = z.object({
+  filePath: z.string().trim().min(1, "filePath is required"),
+  sheetName: z.string().trim().min(1).optional(),
+  query: z.string().trim().optional(),
+  source: z.string().trim().optional(),
+  sourceMatchMode: SourceMatchModeSchema.default("exact"),
+  codeId: z.string().trim().optional(),
+  codeIdMatchMode: CodeIdMatchModeSchema.default("contains"),
+  includeColumnsWithoutReferences: z.boolean().default(true),
+  maxResults: z.number().int().min(1).max(5000).default(500),
+  offset: z.number().int().nonnegative().default(0),
+  maxConsecutiveEmptyRows: z.number().int().min(1).max(100).optional(),
+  pkMarkers: z.array(z.string().trim().min(1)).optional(),
+  referenceExtraction: ReferenceExtractionBaseSchema.optional(),
+});
+
 type ToolName =
   | "list_excel_sheets"
   | "parse_excel_to_ddl"
+  | "query_comment_references"
   | "validate_excel_file"
   | "get_file_metadata";
 
@@ -90,6 +134,191 @@ interface NameNormalizationStats {
   mode: NameNormalizationMode;
   tableNamesChanged: number;
   columnNamesChanged: number;
+}
+
+interface CommentReferenceRow {
+  sheetName: string;
+  tableLogicalName: string;
+  tablePhysicalName: string;
+  columnLogicalName?: string;
+  columnPhysicalName?: string;
+  comment?: string;
+  commentRaw?: string;
+  codeReferences: CodeReference[];
+  matchedReferences: CodeReference[];
+}
+
+interface CommentReferenceQueryResult {
+  totalRowsScanned: number;
+  matchedRowCount: number;
+  returnedRowCount: number;
+  truncated: boolean;
+  filters: {
+    query?: string;
+    source?: string;
+    sourceMatchMode: z.infer<typeof SourceMatchModeSchema>;
+    codeId?: string;
+    codeIdMatchMode: z.infer<typeof CodeIdMatchModeSchema>;
+    includeColumnsWithoutReferences: boolean;
+    maxResults: number;
+    offset: number;
+  };
+  rows: CommentReferenceRow[];
+}
+
+function toLowerTrimmed(value?: string): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function matchesByMode(
+  target: string,
+  filter: string,
+  mode: z.infer<typeof CodeIdMatchModeSchema> | z.infer<typeof SourceMatchModeSchema>,
+): boolean {
+  if (mode === "exact") {
+    return target === filter;
+  }
+  if (mode === "starts_with") {
+    return target.startsWith(filter);
+  }
+  return target.includes(filter);
+}
+
+function flattenCommentRowsBySheet(
+  tablesBySheet: Record<string, TableInfo[]>,
+): CommentReferenceRow[] {
+  const rows: CommentReferenceRow[] = [];
+
+  for (const [sheetName, tables] of Object.entries(tablesBySheet)) {
+    for (const table of tables) {
+      for (const column of table.columns) {
+        const commentRaw = column.commentRaw;
+        const comment = column.comment;
+        const references = Array.isArray(column.codeReferences) ? column.codeReferences : [];
+        const hasComment = Boolean(commentRaw ?? comment);
+        if (!hasComment && references.length === 0) {
+          continue;
+        }
+
+        rows.push({
+          sheetName,
+          tableLogicalName: table.logicalTableName,
+          tablePhysicalName: table.physicalTableName,
+          columnLogicalName: column.logicalName,
+          columnPhysicalName: column.physicalName,
+          comment,
+          commentRaw,
+          codeReferences: references,
+          matchedReferences: [],
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function queryCommentReferenceRows(
+  rows: CommentReferenceRow[],
+  params: z.infer<typeof QueryCommentReferencesSchema>,
+): CommentReferenceQueryResult {
+  const queryFilter = toLowerTrimmed(params.query);
+  const sourceFilter = toLowerTrimmed(params.source);
+  const sourceMatchMode = params.sourceMatchMode;
+  const codeIdFilter = toLowerTrimmed(params.codeId);
+  const codeIdMatchMode = params.codeIdMatchMode;
+  const includeColumnsWithoutReferences = params.includeColumnsWithoutReferences;
+  const maxResults = params.maxResults;
+  const offset = params.offset;
+
+  const matchedRows: CommentReferenceRow[] = [];
+  let matchedRowCount = 0;
+  let truncated = false;
+
+  for (const row of rows) {
+    const references = row.codeReferences;
+    if (!includeColumnsWithoutReferences && references.length === 0) {
+      continue;
+    }
+
+    const matchedReferences = references.filter((ref) => {
+      if (sourceFilter && !matchesByMode(toLowerTrimmed(ref.source), sourceFilter, sourceMatchMode)) {
+        return false;
+      }
+      if (codeIdFilter && !matchesByMode(toLowerTrimmed(ref.codeId), codeIdFilter, codeIdMatchMode)) {
+        return false;
+      }
+      if (!queryFilter) {
+        return true;
+      }
+
+      const refHaystack = [
+        ref.source,
+        ref.codeId,
+        ref.raw,
+        ...(ref.options?.map((item) => `${item.code}:${item.label}`) ?? []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return refHaystack.includes(queryFilter);
+    });
+
+    const textHaystack = [
+      row.sheetName,
+      row.tableLogicalName,
+      row.tablePhysicalName,
+      row.columnLogicalName,
+      row.columnPhysicalName,
+      row.comment,
+      row.commentRaw,
+    ]
+      .filter((item) => item !== undefined && item !== null)
+      .join(" ")
+      .toLowerCase();
+
+    const hasReferenceFilter = Boolean(sourceFilter || codeIdFilter);
+    const rowMatched = hasReferenceFilter
+      ? matchedReferences.length > 0
+      : queryFilter
+      ? textHaystack.includes(queryFilter) || matchedReferences.length > 0
+      : includeColumnsWithoutReferences || references.length > 0;
+
+    if (!rowMatched) {
+      continue;
+    }
+
+    matchedRowCount++;
+    if (matchedRowCount <= offset) {
+      continue;
+    }
+
+    if (matchedRows.length < maxResults) {
+      matchedRows.push({
+        ...row,
+        matchedReferences,
+      });
+    } else {
+      truncated = true;
+    }
+  }
+
+  return {
+    totalRowsScanned: rows.length,
+    matchedRowCount,
+    returnedRowCount: matchedRows.length,
+    truncated,
+    filters: {
+      query: params.query,
+      source: params.source,
+      sourceMatchMode,
+      codeId: params.codeId,
+      codeIdMatchMode,
+      includeColumnsWithoutReferences,
+      maxResults,
+      offset,
+    },
+    rows: matchedRows,
+  };
 }
 
 function isValidPhysicalName(name?: string): boolean {
@@ -200,7 +429,7 @@ function applyNameNormalization(
 }
 
 const server = new Server(
-  { name: "ddl-generator", version: "1.2.0" },
+  { name: "ddl-generator", version: "1.3.0" },
   { capabilities: { tools: {} } },
 );
 
@@ -223,7 +452,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "parse_excel_to_ddl",
       description:
-        "Parse Excel sheet data and return table JSON plus generated DDL. Optional region arguments can limit parsing scope.",
+        "Parse Excel sheet data and return table JSON plus generated DDL. Use query_comment_references for deep comment exploration.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -249,8 +478,126 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: { type: "string" },
             description: "PK marker tokens (default: ['〇']).",
           },
+          referenceExtraction: {
+            type: "object",
+            description:
+              "Optional structured-reference extraction controls for parsed table columns.",
+            properties: {
+              enabled: {
+                type: "boolean",
+                description: "Enable/disable structured reference extraction from comments (default: true).",
+              },
+              rules: {
+                type: "array",
+                description:
+                  "Custom regex rules. Each rule should include a capture group for code ID and optional options group.",
+                items: {
+                  type: "object",
+                  properties: {
+                    source: { type: "string" },
+                    pattern: { type: "string" },
+                    flags: {
+                      type: "string",
+                      description: "Regex flags. Allowed unique chars: g, i, m, s, u.",
+                    },
+                    codeIdGroup: { type: "number" },
+                    optionsGroup: { type: "number" },
+                  },
+                  required: ["pattern"],
+                },
+              },
+            },
+          },
         },
         required: ["filePath", "sheetName"],
+      },
+    },
+    {
+      name: "query_comment_references",
+      description:
+        "Explore comment/remark details for AI. Returns raw comment text plus structured references with optional filters across one sheet or all sheets.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: { type: "string" },
+          sheetName: {
+            type: "string",
+            description:
+              "Optional target sheet. If omitted, parse all sheets and return matched rows across workbook.",
+          },
+          query: {
+            type: "string",
+            description:
+              "Optional keyword filter against sheet/table/column/comment text and matched reference payload.",
+          },
+          source: {
+            type: "string",
+            description: "Optional reference source filter (e.g. code_master).",
+          },
+          sourceMatchMode: {
+            type: "string",
+            enum: ["exact", "contains"],
+            description:
+              "Source filter match mode (default: exact). Matching is case-insensitive after trim.",
+          },
+          codeId: {
+            type: "string",
+            description: "Optional code ID filter value (case-insensitive after trim).",
+          },
+          codeIdMatchMode: {
+            type: "string",
+            enum: ["contains", "exact", "starts_with"],
+            description:
+              "Code ID filter match mode (default: contains). Matching is case-insensitive after trim.",
+          },
+          includeColumnsWithoutReferences: {
+            type: "boolean",
+            description:
+              "When true, include comment rows even if no structured reference was extracted (default: true).",
+          },
+          maxResults: {
+            type: "number",
+            description: "Maximum result rows returned (default: 500, max: 5000).",
+          },
+          offset: {
+            type: "number",
+            description: "Skip this number of matched rows before returning results (default: 0).",
+          },
+          maxConsecutiveEmptyRows: {
+            type: "number",
+            description: "Parser option: max consecutive empty rows before stop (default: 10).",
+          },
+          pkMarkers: {
+            type: "array",
+            items: { type: "string" },
+            description: "Parser option: PK marker tokens (default: ['〇']).",
+          },
+          referenceExtraction: {
+            type: "object",
+            description: "Optional extraction rules override.",
+            properties: {
+              enabled: { type: "boolean" },
+              rules: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    source: { type: "string" },
+                    pattern: { type: "string" },
+                    flags: {
+                      type: "string",
+                      description: "Regex flags. Allowed unique chars: g, i, m, s, u.",
+                    },
+                    codeIdGroup: { type: "number" },
+                    optionsGroup: { type: "number" },
+                  },
+                  required: ["pattern"],
+                },
+              },
+            },
+          },
+        },
+        required: ["filePath"],
       },
     },
     {
@@ -285,6 +632,37 @@ function normalizePkMarkers(markers?: string[]): string[] {
     .filter((marker) => marker.length > 0);
   const unique = Array.from(new Set(cleaned));
   return unique.length > 0 ? unique : DEFAULT_PK_MARKERS;
+}
+
+function normalizeReferenceExtractionConfig(
+  raw?: z.infer<typeof ReferenceExtractionBaseSchema>,
+): ParseOptions["referenceExtraction"] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const rules = Array.isArray(raw.rules)
+    ? raw.rules
+        .map((rule) => ({
+          source: rule.source?.trim() || undefined,
+          pattern: rule.pattern.trim(),
+          flags: rule.flags?.trim() || undefined,
+          codeIdGroup: rule.codeIdGroup,
+          optionsGroup: rule.optionsGroup,
+        }))
+        .filter((rule) => rule.pattern.length > 0)
+    : undefined;
+
+  const normalized = {
+    enabled: raw.enabled,
+    rules: rules && rules.length > 0 ? rules : undefined,
+  };
+
+  if (normalized.enabled === undefined && !normalized.rules) {
+    return undefined;
+  }
+
+  return normalized;
 }
 
 function getAllowedRoots(): string[] {
@@ -448,6 +826,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const parseOptions: ParseOptions = {
         maxConsecutiveEmptyRows: parsed.maxConsecutiveEmptyRows ?? 10,
         pkMarkers: normalizePkMarkers(parsed.pkMarkers),
+        referenceExtraction: normalizeReferenceExtractionConfig(parsed.referenceExtraction),
       };
 
       const hasRegion =
@@ -497,8 +876,67 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           nameNormalization: parsed.nameNormalization,
           maxConsecutiveEmptyRows: parseOptions.maxConsecutiveEmptyRows,
           pkMarkers: parseOptions.pkMarkers,
+          referenceExtractionEnabled: parseOptions.referenceExtraction?.enabled ?? true,
+          referenceRuleCount: parseOptions.referenceExtraction?.rules?.length ?? 0,
           tableNamesChanged: normalized.stats.tableNamesChanged,
           columnNamesChanged: normalized.stats.columnNamesChanged,
+        },
+      );
+    }
+
+    if (name === "query_comment_references") {
+      const parsed = QueryCommentReferencesSchema.parse(args ?? {});
+      const { resolvedPath, stats } = inspectExcelFile(parsed.filePath);
+      const parseOptions: ParseOptions = {
+        maxConsecutiveEmptyRows: parsed.maxConsecutiveEmptyRows ?? 10,
+        pkMarkers: normalizePkMarkers(parsed.pkMarkers),
+        referenceExtraction: normalizeReferenceExtractionConfig(parsed.referenceExtraction),
+      };
+
+      let tablesBySheet: Record<string, TableInfo[]> = {};
+      let parsedSheetCount = 0;
+      let bundleParseMode: string | undefined;
+
+      if (parsed.sheetName) {
+        const tables = await runParseTables(resolvedPath, parsed.sheetName, parseOptions);
+        tablesBySheet = { [parsed.sheetName]: tables };
+        parsedSheetCount = 1;
+      } else {
+        const bundle = await runParseWorkbookBundle(resolvedPath, parseOptions);
+        tablesBySheet = bundle.tablesBySheet;
+        parsedSheetCount = Object.keys(bundle.tablesBySheet).length;
+        bundleParseMode = bundle.stats.parseMode;
+      }
+
+      const rows = flattenCommentRowsBySheet(tablesBySheet);
+      const result = queryCommentReferenceRows(rows, parsed);
+
+      return successResponse(
+        "query_comment_references",
+        startedAt,
+        result,
+        {
+          filePath: resolvedPath,
+          fileSizeBytes: stats.size,
+          requestedSheetName: parsed.sheetName,
+          parsedSheetCount,
+          bundleParseMode,
+          maxConsecutiveEmptyRows: parseOptions.maxConsecutiveEmptyRows,
+          pkMarkers: parseOptions.pkMarkers,
+          referenceExtractionEnabled: parseOptions.referenceExtraction?.enabled ?? true,
+          referenceRuleCount: parseOptions.referenceExtraction?.rules?.length ?? 0,
+          query: parsed.query,
+          source: parsed.source,
+          sourceMatchMode: parsed.sourceMatchMode,
+          codeId: parsed.codeId,
+          codeIdMatchMode: parsed.codeIdMatchMode,
+          includeColumnsWithoutReferences: parsed.includeColumnsWithoutReferences,
+          maxResults: parsed.maxResults,
+          offset: parsed.offset,
+          totalRowsScanned: result.totalRowsScanned,
+          matchedRowCount: result.matchedRowCount,
+          returnedRowCount: result.returnedRowCount,
+          truncated: result.truncated,
         },
       );
     }

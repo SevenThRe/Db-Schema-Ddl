@@ -5,11 +5,12 @@ import Database from "better-sqlite3";
 import * as schema from "@shared/schema";
 import path from "path";
 import fs from "fs";
+import { isSqliteStorageEnabled } from "./app-config";
 
 const { Pool } = pg;
 
 // Electron または明示指定時は SQLite、それ以外は PostgreSQL を使用
-const useSqlite = process.env.ELECTRON_MODE === 'true' || process.env.USE_SQLITE_STORAGE === 'true';
+const useSqlite = isSqliteStorageEnabled();
 
 let db: any;
 let pool: any = null;

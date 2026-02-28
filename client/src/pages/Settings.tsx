@@ -99,6 +99,15 @@ export default function Settings() {
     prewarmMaxFileMb: 20,
     taskManagerMaxQueueLength: 200,
     taskManagerStalePendingMs: 1800000,
+    nameFixDefaultMode: "copy",
+    nameFixConflictStrategy: "suffix_increment",
+    nameFixReservedWordStrategy: "prefix",
+    nameFixLengthOverflowStrategy: "truncate_hash",
+    nameFixMaxIdentifierLength: 64,
+    nameFixBackupRetentionDays: 30,
+    nameFixMaxBatchConcurrency: 4,
+    allowOverwriteInElectron: true,
+    allowExternalPathWrite: false,
   });
   const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
 
@@ -622,6 +631,151 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Name Fix Settings */}
+          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+            <h2 className="text-lg font-semibold mb-4">{t("settings.nameFix.title")}</h2>
+
+            <div className="space-y-2">
+              <Label htmlFor="nameFixDefaultMode">{t("settings.nameFix.defaultApplyMode")}</Label>
+              <Select
+                value={formData.nameFixDefaultMode}
+                onValueChange={(value) => handleChange("nameFixDefaultMode", value as DdlSettings["nameFixDefaultMode"])}
+              >
+                <SelectTrigger id="nameFixDefaultMode">
+                  <SelectValue placeholder={t("settings.nameFix.modePlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="copy">{t("settings.nameFix.defaultApplyModeOptions.copy")}</SelectItem>
+                  <SelectItem value="overwrite">{t("settings.nameFix.defaultApplyModeOptions.overwrite")}</SelectItem>
+                  <SelectItem value="replace_download">{t("settings.nameFix.defaultApplyModeOptions.replaceDownload")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="nameFixConflictStrategy">{t("settings.nameFix.duplicateConflictStrategy")}</Label>
+              <Select
+                value={formData.nameFixConflictStrategy}
+                onValueChange={(value) => handleChange("nameFixConflictStrategy", value as DdlSettings["nameFixConflictStrategy"])}
+              >
+                <SelectTrigger id="nameFixConflictStrategy">
+                  <SelectValue placeholder={t("settings.nameFix.strategyPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="suffix_increment">
+                    {t("settings.nameFix.conflictStrategyOptions.suffixIncrement")}
+                  </SelectItem>
+                  <SelectItem value="hash_suffix">{t("settings.nameFix.conflictStrategyOptions.hashSuffix")}</SelectItem>
+                  <SelectItem value="abort">{t("settings.nameFix.sharedOptions.abort")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="nameFixReservedWordStrategy">{t("settings.nameFix.reservedWordStrategy")}</Label>
+              <Select
+                value={formData.nameFixReservedWordStrategy}
+                onValueChange={(value) => handleChange("nameFixReservedWordStrategy", value as DdlSettings["nameFixReservedWordStrategy"])}
+              >
+                <SelectTrigger id="nameFixReservedWordStrategy">
+                  <SelectValue placeholder={t("settings.nameFix.strategyPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prefix">{t("settings.nameFix.reservedWordStrategyOptions.prefix")}</SelectItem>
+                  <SelectItem value="abort">{t("settings.nameFix.sharedOptions.abort")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="nameFixLengthOverflowStrategy">{t("settings.nameFix.lengthOverflowStrategy")}</Label>
+              <Select
+                value={formData.nameFixLengthOverflowStrategy}
+                onValueChange={(value) => handleChange("nameFixLengthOverflowStrategy", value as DdlSettings["nameFixLengthOverflowStrategy"])}
+              >
+                <SelectTrigger id="nameFixLengthOverflowStrategy">
+                  <SelectValue placeholder={t("settings.nameFix.strategyPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="truncate_hash">{t("settings.nameFix.lengthOverflowStrategyOptions.truncateHash")}</SelectItem>
+                  <SelectItem value="abort">{t("settings.nameFix.sharedOptions.abort")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="nameFixMaxIdentifierLength">{t("settings.nameFix.maxIdentifierLength")}</Label>
+                <Input
+                  id="nameFixMaxIdentifierLength"
+                  type="number"
+                  min="8"
+                  max="255"
+                  value={formData.nameFixMaxIdentifierLength}
+                  onChange={(e) =>
+                    handleNumberChange("nameFixMaxIdentifierLength", e.target.value, 64, 8, 255)
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nameFixBackupRetentionDays">{t("settings.nameFix.backupRetentionDays")}</Label>
+                <Input
+                  id="nameFixBackupRetentionDays"
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={formData.nameFixBackupRetentionDays}
+                  onChange={(e) =>
+                    handleNumberChange("nameFixBackupRetentionDays", e.target.value, 30, 1, 365)
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nameFixMaxBatchConcurrency">{t("settings.nameFix.maxBatchConcurrency")}</Label>
+                <Input
+                  id="nameFixMaxBatchConcurrency"
+                  type="number"
+                  min="1"
+                  max="16"
+                  value={formData.nameFixMaxBatchConcurrency}
+                  onChange={(e) =>
+                    handleNumberChange("nameFixMaxBatchConcurrency", e.target.value, 4, 1, 16)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border rounded-md px-3 py-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="allowOverwriteInElectron">{t("settings.nameFix.allowOverwriteInElectron")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.nameFix.allowOverwriteInElectronDesc")}
+                </p>
+              </div>
+              <Switch
+                id="allowOverwriteInElectron"
+                checked={formData.allowOverwriteInElectron}
+                onCheckedChange={(checked) => handleChange("allowOverwriteInElectron", checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between border rounded-md px-3 py-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="allowExternalPathWrite">{t("settings.nameFix.allowExternalPathWrite")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.nameFix.allowExternalPathWriteDesc")}
+                </p>
+              </div>
+              <Switch
+                id="allowExternalPathWrite"
+                checked={formData.allowExternalPathWrite}
+                onCheckedChange={(checked) => handleChange("allowExternalPathWrite", checked)}
+              />
+            </div>
+          </div>
+
           {/* Developer Mode */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-5">
             <div className="flex items-center gap-3 mb-4">
@@ -657,15 +811,25 @@ export default function Settings() {
 
             <div className="border border-border rounded-lg p-4 space-y-4">
               <div>
-                <p className="text-sm font-medium text-foreground">Runtime Guard Tuning</p>
+                <p className="text-sm font-medium text-foreground">
+                  {t("settings.developer.runtimeGuard.title")}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Advanced operational thresholds. Hard caps are still enforced server-side.
+                  {t("settings.developer.runtimeGuard.summary")}
+                </p>
+                <p className="text-[11px] text-red-500 mt-1">
+                  {t("settings.developer.runtimeGuard.intent")}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="uploadRateLimitWindowMs">Upload rate window (ms)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="uploadRateLimitWindowMs">
+                    {t("settings.developer.runtimeGuard.fields.uploadRateLimitWindowMs.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.uploadRateLimitWindowMs.desc")}
+                  </p>
                   <Input
                     id="uploadRateLimitWindowMs"
                     type="number"
@@ -679,8 +843,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="uploadRateLimitMaxRequests">Upload max requests</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="uploadRateLimitMaxRequests">
+                    {t("settings.developer.runtimeGuard.fields.uploadRateLimitMaxRequests.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.uploadRateLimitMaxRequests.desc")}
+                  </p>
                   <Input
                     id="uploadRateLimitMaxRequests"
                     type="number"
@@ -694,8 +863,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="parseRateLimitWindowMs">Parse rate window (ms)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="parseRateLimitWindowMs">
+                    {t("settings.developer.runtimeGuard.fields.parseRateLimitWindowMs.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.parseRateLimitWindowMs.desc")}
+                  </p>
                   <Input
                     id="parseRateLimitWindowMs"
                     type="number"
@@ -709,8 +883,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="parseRateLimitMaxRequests">Parse max requests</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="parseRateLimitMaxRequests">
+                    {t("settings.developer.runtimeGuard.fields.parseRateLimitMaxRequests.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.parseRateLimitMaxRequests.desc")}
+                  </p>
                   <Input
                     id="parseRateLimitMaxRequests"
                     type="number"
@@ -724,8 +903,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="globalProtectRateLimitWindowMs">Global protect window (ms)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="globalProtectRateLimitWindowMs">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectRateLimitWindowMs.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectRateLimitWindowMs.desc")}
+                  </p>
                   <Input
                     id="globalProtectRateLimitWindowMs"
                     type="number"
@@ -745,8 +929,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="globalProtectRateLimitMaxRequests">Global protect max requests</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="globalProtectRateLimitMaxRequests">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectRateLimitMaxRequests.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectRateLimitMaxRequests.desc")}
+                  </p>
                   <Input
                     id="globalProtectRateLimitMaxRequests"
                     type="number"
@@ -766,8 +955,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="globalProtectMaxInFlight">Global protect max in-flight</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="globalProtectMaxInFlight">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectMaxInFlight.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.globalProtectMaxInFlight.desc")}
+                  </p>
                   <Input
                     id="globalProtectMaxInFlight"
                     type="number"
@@ -781,8 +975,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="prewarmMaxConcurrency">Prewarm max concurrency</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="prewarmMaxConcurrency">
+                    {t("settings.developer.runtimeGuard.fields.prewarmMaxConcurrency.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.prewarmMaxConcurrency.desc")}
+                  </p>
                   <Input
                     id="prewarmMaxConcurrency"
                     type="number"
@@ -796,8 +995,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="prewarmQueueMax">Prewarm queue max</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="prewarmQueueMax">
+                    {t("settings.developer.runtimeGuard.fields.prewarmQueueMax.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.prewarmQueueMax.desc")}
+                  </p>
                   <Input
                     id="prewarmQueueMax"
                     type="number"
@@ -811,8 +1015,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="prewarmMaxFileMb">Prewarm max file (MB)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="prewarmMaxFileMb">
+                    {t("settings.developer.runtimeGuard.fields.prewarmMaxFileMb.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.prewarmMaxFileMb.desc")}
+                  </p>
                   <Input
                     id="prewarmMaxFileMb"
                     type="number"
@@ -826,8 +1035,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="taskManagerMaxQueueLength">Task queue max length</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="taskManagerMaxQueueLength">
+                    {t("settings.developer.runtimeGuard.fields.taskManagerMaxQueueLength.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.taskManagerMaxQueueLength.desc")}
+                  </p>
                   <Input
                     id="taskManagerMaxQueueLength"
                     type="number"
@@ -841,8 +1055,13 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="taskManagerStalePendingMs">Task stale pending timeout (ms)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="taskManagerStalePendingMs">
+                    {t("settings.developer.runtimeGuard.fields.taskManagerStalePendingMs.label")}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.developer.runtimeGuard.fields.taskManagerStalePendingMs.desc")}
+                  </p>
                   <Input
                     id="taskManagerStalePendingMs"
                     type="number"
@@ -865,9 +1084,11 @@ export default function Settings() {
 
               <div className="flex items-center justify-between border rounded-md px-3 py-2">
                 <div className="space-y-0.5">
-                  <Label htmlFor="prewarmEnabled">Enable prewarm</Label>
+                  <Label htmlFor="prewarmEnabled">
+                    {t("settings.developer.runtimeGuard.prewarmEnabledLabel")}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
-                    Disable to reduce background parse workload.
+                    {t("settings.developer.runtimeGuard.prewarmEnabledDesc")}
                   </p>
                 </div>
                 <Switch
