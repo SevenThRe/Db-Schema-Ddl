@@ -82,6 +82,15 @@ export async function initializeDatabase() {
     if (!ddlSettingsColumnNames.has("pk_markers")) {
       await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN pk_markers TEXT NOT NULL DEFAULT '["\\u3007"]'`);
     }
+    if (!ddlSettingsColumnNames.has("custom_header_template")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN custom_header_template TEXT`);
+    }
+    if (!ddlSettingsColumnNames.has("use_custom_header")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN use_custom_header INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!ddlSettingsColumnNames.has("max_consecutive_empty_rows")) {
+      await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN max_consecutive_empty_rows INTEGER NOT NULL DEFAULT 10`);
+    }
     if (!ddlSettingsColumnNames.has("upload_rate_limit_window_ms")) {
       await db.run(sql`ALTER TABLE ddl_settings ADD COLUMN upload_rate_limit_window_ms INTEGER NOT NULL DEFAULT 60000`);
     }

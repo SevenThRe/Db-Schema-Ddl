@@ -17,8 +17,8 @@
     "release": "npm run build && electron-builder --publish always",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "test": "node --test --import tsx \"test/**/*.test.ts\"",
-    "test:name-fix": "tsx --test test/shared/physical-name.test.ts test/server/name-fix-service.integration.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts",
+    "test": "node --test --import tsx test/shared/physical-name.test.ts test/server/name-fix-service.integration.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts test/server/routes-assembly-text.test.ts",
+    "test:name-fix": "node --test --import tsx test/shared/physical-name.test.ts test/server/name-fix-service.integration.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts",
     "bench:excel": "tsx script/benchmark-excel-parse.ts",
     "bench:ddl": "tsx script/benchmark-ddl.ts",
     "bench:all": "npm run bench:excel && npm run bench:ddl",
@@ -61,11 +61,15 @@
     "@tanstack/react-query": "^5.60.5",
     "@types/multer": "^2.0.0",
     "archiver": "^7.0.1",
+    "archiver-utils": "^5.0.2",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "compress-commons": "^6.0.2",
     "connect-pg-simple": "^10.0.0",
+    "crc-32": "^1.2.2",
+    "crc32-stream": "^6.0.0",
     "date-fns": "^3.6.0",
     "drizzle-orm": "^0.45.1",
     "drizzle-zod": "^0.7.0",
@@ -100,6 +104,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "xlsx": "^0.18.5",
+    "zip-stream": "^6.0.1",
     "zod": "^3.24.2",
     "zod-validation-error": "^3.4.0"
   },
@@ -148,24 +153,9 @@
       "attached_assets/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "node_modules",
-        "to": "node_modules",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "asar": true,
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*",
-      "node_modules/archiver/**/*",
-      "node_modules/archiver-utils/**/*",
-      "node_modules/compress-commons/**/*",
-      "node_modules/crc-32/**/*",
-      "node_modules/crc32-stream/**/*",
-      "node_modules/zip-stream/**/*"
+      "node_modules/better-sqlite3/**/*"
     ],
     "win": {
       "target": [
@@ -183,7 +173,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowElevation": false
     },
     "publish": {
       "provider": "github",

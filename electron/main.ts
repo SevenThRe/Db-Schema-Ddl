@@ -1,4 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import net from 'net';
 import { initAutoUpdater } from './updater';
@@ -9,6 +12,53 @@ let serverPort: number;
 let httpServer: Server | null = null;
 let isShuttingDown = false;
 let activeSockets = new Set<any>();
+
+const bootstrapLogPath = path.join(os.tmpdir(), 'dbschemaexcel2ddl-bootstrap.log');
+
+function writeBootstrapLog(message: string) {
+  try {
+    fs.appendFileSync(
+      bootstrapLogPath,
+      `[${new Date().toISOString()}] ${message}\n`,
+      'utf8',
+    );
+  } catch {
+    // Ignore logging errors to avoid blocking startup
+  }
+}
+
+function stringifyError(err: unknown) {
+  if (err instanceof Error) {
+    return err.stack ?? err.message;
+  }
+  return String(err);
+}
+
+if (!app || typeof app.whenReady !== 'function') {
+  const runAsNodeFlag = process.env.ELECTRON_RUN_AS_NODE ?? '(unset)';
+  writeBootstrapLog(
+    `Electron API unavailable. ELECTRON_RUN_AS_NODE=${runAsNodeFlag}, execPath=${process.execPath}`,
+  );
+
+  if (process.env.ELECTRON_RUN_AS_NODE === '1') {
+    try {
+      const env = { ...process.env };
+      delete env.ELECTRON_RUN_AS_NODE;
+      const child = spawn(process.execPath, [], {
+        detached: true,
+        stdio: 'ignore',
+        env,
+      });
+      child.unref();
+      writeBootstrapLog('Relaunch requested after removing ELECTRON_RUN_AS_NODE.');
+    } catch (err) {
+      const message = err instanceof Error ? err.stack ?? err.message : String(err);
+      writeBootstrapLog(`Relaunch failed: ${message}`);
+    }
+  }
+
+  process.exit(0);
+}
 
 /**
  * 空きポートを検索
@@ -164,7 +214,14 @@ app.whenReady().then(async () => {
       initAutoUpdater(mainWindow!);
     }
   } catch (err) {
+    const errorText = stringifyError(err);
     console.error('Failed to initialize application:', err);
+    writeBootstrapLog(`Initialization failed: ${errorText}`);
+    try {
+      dialog.showErrorBox('Startup failed', errorText);
+    } catch {
+      // ignore dialog failure
+    }
     app.quit();
   }
 
