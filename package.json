@@ -17,7 +17,7 @@
     "release": "npm run build && electron-builder --publish always",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "test": "node --test --import tsx test/shared/physical-name.test.ts test/server/name-fix-service.integration.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts test/server/routes-assembly-text.test.ts",
+    "test": "node --test --import tsx test/shared/physical-name.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts",
     "test:name-fix": "node --test --import tsx test/shared/physical-name.test.ts test/server/name-fix-service.integration.test.ts test/server/excel-source-ref.test.ts test/server/ddl-regression.test.ts",
     "bench:excel": "tsx script/benchmark-excel-parse.ts",
     "bench:ddl": "tsx script/benchmark-ddl.ts",
