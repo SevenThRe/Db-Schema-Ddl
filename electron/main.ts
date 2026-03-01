@@ -112,6 +112,20 @@ async function startExpressServer() {
 
   // Electronアプリケーションのリソースディレクトリを設定
   const isDev = !app.isPackaged;
+  const serverDistDir = path.join(app.getAppPath(), 'dist');
+  const unpackedWorkerPath = path.join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'dist',
+    'excel-worker.cjs',
+  );
+  const packagedWorkerPath = path.join(serverDistDir, 'excel-worker.cjs');
+
+  process.env.SERVER_DIST_DIR = serverDistDir;
+  process.env.EXCEL_WORKER_PATH = fs.existsSync(unpackedWorkerPath)
+    ? unpackedWorkerPath
+    : packagedWorkerPath;
+
   if (isDev) {
     process.env.UPLOADS_DIR = path.join(app.getAppPath(), 'uploads');
     process.env.RESOURCES_PATH = path.join(app.getAppPath(), 'attached_assets');
@@ -128,7 +142,7 @@ async function startExpressServer() {
   console.log('  DB_PATH:', process.env.DB_PATH);
 
   // Express サーバーをロード
-  const serverPath = path.join(app.getAppPath(), 'dist', 'index.cjs');
+  const serverPath = path.join(serverDistDir, 'index.cjs');
   const serverModule = require(serverPath);
 
   // httpServer インスタンスを保存（クリーンアップ用）

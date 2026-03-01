@@ -224,13 +224,23 @@ function buildBundleCacheKey(filePath: string, parseOptions?: ParseOptions, file
 
 function getWorkerScriptConfig(): { scriptPath: string; execArgv?: string[] } {
   const workspaceRoot = process.cwd();
-  const prodWorkerPath = path.resolve(workspaceRoot, "dist/excel-worker.cjs");
+  const explicitWorkerPath = String(process.env.EXCEL_WORKER_PATH ?? "").trim();
+  const distRootFromEnv = String(process.env.SERVER_DIST_DIR ?? "").trim();
+  const prodWorkerCandidates = [
+    explicitWorkerPath,
+    distRootFromEnv ? path.resolve(distRootFromEnv, "excel-worker.cjs") : "",
+    path.resolve(workspaceRoot, "dist/excel-worker.cjs"),
+    path.resolve(workspaceRoot, "excel-worker.cjs"),
+  ].filter((candidate): candidate is string => candidate.length > 0);
+  const prodWorkerPath = prodWorkerCandidates.find((candidate) => fs.existsSync(candidate));
   const devWorkerPath = path.resolve(workspaceRoot, "server/lib/excel-worker.ts");
   const isProd = process.env.NODE_ENV === "production";
 
   if (isProd) {
-    if (!fs.existsSync(prodWorkerPath)) {
-      throw new Error(`Worker script missing in production: ${prodWorkerPath}`);
+    if (!prodWorkerPath) {
+      throw new Error(
+        `Worker script missing in production. checked: ${prodWorkerCandidates.join(", ")}`,
+      );
     }
     return { scriptPath: prodWorkerPath };
   }
