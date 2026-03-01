@@ -36,11 +36,18 @@ jobs:
             if (-not $version.StartsWith("v")) {
               $version = "v$version"
             }
+            $prerelease = "${{ inputs.prerelease }}"
+            if ([string]::IsNullOrWhiteSpace($prerelease)) {
+              $prerelease = "false"
+            }
           } else {
             $version = "${{ github.ref_name }}"
+            $prerelease = "false"
           }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "PRERELEASE=$prerelease" >> $env:GITHUB_OUTPUT
           echo "Release version: $version"
+          echo "Pre-release: $prerelease"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,8 +64,18 @@ jobs:
           $version = "${{ steps.version.outputs.VERSION }}".TrimStart("v")
           npm version $version --no-git-tag-version --allow-same-version
 
-      - name: Build and release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ inputs.prerelease || false }}
-        run: npm run release
+      - name: Build desktop artifacts
+        run: |
+          npm run build
+          npx electron-builder --win nsis --publish never
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
+          files: |
+            dist-electron/*.exe
+            dist-electron/*.blockmap
