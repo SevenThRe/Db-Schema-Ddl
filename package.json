@@ -177,7 +177,8 @@
       "allowToChangeInstallationDirectory": true,
       "perMachine": true,
       "allowElevation": true,
-      "selectPerMachineByDefault": true
+      "selectPerMachineByDefault": true,
+      "include": "build/installer.nsh"
     },
     "publish": {
       "provider": "github",
