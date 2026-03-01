@@ -14,6 +14,7 @@ let isShuttingDown = false;
 let activeSockets = new Set<any>();
 
 const bootstrapLogPath = path.join(os.tmpdir(), 'dbschemaexcel2ddl-bootstrap.log');
+const relaunchGuardEnv = 'DBSCHEMA_ELECTRON_RELAUNCH_ATTEMPTED';
 
 function writeBootstrapLog(message: string) {
   try {
@@ -34,23 +35,38 @@ function stringifyError(err: unknown) {
   return String(err);
 }
 
+function isTruthyEnv(value: unknown): boolean {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
 if (!app || typeof app.whenReady !== 'function') {
   const runAsNodeFlag = process.env.ELECTRON_RUN_AS_NODE ?? '(unset)';
   writeBootstrapLog(
     `Electron API unavailable. ELECTRON_RUN_AS_NODE=${runAsNodeFlag}, execPath=${process.execPath}`,
   );
 
-  if (process.env.ELECTRON_RUN_AS_NODE === '1') {
+  if (isTruthyEnv(process.env.ELECTRON_RUN_AS_NODE)) {
+    if (process.env[relaunchGuardEnv] === '1') {
+      writeBootstrapLog('Relaunch guard hit. Skip retry to avoid infinite loop.');
+      process.exit(1);
+    }
+
     try {
       const env = { ...process.env };
+      env[relaunchGuardEnv] = '1';
       delete env.ELECTRON_RUN_AS_NODE;
-      const child = spawn(process.execPath, [], {
+      const relaunchArgs = process.argv.slice(1);
+      const child = spawn(process.execPath, relaunchArgs, {
         detached: true,
         stdio: 'ignore',
         env,
+        windowsHide: true,
       });
       child.unref();
-      writeBootstrapLog('Relaunch requested after removing ELECTRON_RUN_AS_NODE.');
+      writeBootstrapLog(
+        `Relaunch requested after removing ELECTRON_RUN_AS_NODE. args=${JSON.stringify(relaunchArgs)}`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.stack ?? err.message : String(err);
       writeBootstrapLog(`Relaunch failed: ${message}`);
@@ -59,6 +75,14 @@ if (!app || typeof app.whenReady !== 'function') {
 
   process.exit(0);
 }
+
+if (process.env.ELECTRON_RUN_AS_NODE) {
+  writeBootstrapLog(
+    `Detected ELECTRON_RUN_AS_NODE=${process.env.ELECTRON_RUN_AS_NODE} after Electron bootstrap. Clearing it for child processes.`,
+  );
+  delete process.env.ELECTRON_RUN_AS_NODE;
+}
+delete process.env[relaunchGuardEnv];
 
 /**
  * 空きポートを検索
