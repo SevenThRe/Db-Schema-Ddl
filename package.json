@@ -178,7 +178,8 @@
       "perMachine": true,
       "allowElevation": true,
       "selectPerMachineByDefault": true,
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "publish": {
       "provider": "github",

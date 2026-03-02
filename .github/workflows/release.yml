@@ -77,5 +77,6 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
           files: |
-            dist-electron/*.exe
-            dist-electron/*.blockmap
+            dist-electron/*-Setup-*.exe
+            dist-electron/*-Setup-*.exe.blockmap
+            dist-electron/latest.yml
