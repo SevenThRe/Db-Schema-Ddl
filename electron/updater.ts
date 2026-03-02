@@ -68,7 +68,10 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
    * レンダラープロセスからのインストール要求ハンドラー
    */
   ipcMain.on('install-update', () => {
-    autoUpdater.quitAndInstall(false, true);
+    // Use silent install to provide seamless in-app update UX.
+    // isSilent=true avoids re-opening assisted installer UI.
+    // isForceRunAfter=true re-launches app automatically after install.
+    autoUpdater.quitAndInstall(true, true);
   });
 
   /**

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +21,47 @@ import { useTranslation } from 'react-i18next';
 export function UpdateNotifier() {
   const { toast } = useToast();
   const { t } = useTranslation();
-  const [updateDownloaded, setUpdateDownloaded] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const [pendingVersion, setPendingVersion] = useState('');
+  const pendingVersionRef = useRef('');
+  const downloadToastRef = useRef<ReturnType<typeof toast> | null>(null);
+
+  const buildDownloadDescription = (version: string, percent: number) => {
+    const normalizedPercent = Math.max(0, Math.min(100, Math.round(percent)));
+    const progressValue = normalizedPercent === 0 ? 2 : normalizedPercent;
+    return (
+      <div className="space-y-2">
+        <div className="text-xs text-muted-foreground">
+          {t('update.availableDesc', { version: version || pendingVersionRef.current })}
+        </div>
+        <Progress value={progressValue} className="h-1.5" />
+        <div className="text-[11px] text-muted-foreground">
+          {t('update.downloadProgress', { percent: normalizedPercent })}
+        </div>
+      </div>
+    );
+  };
+
+  const showOrUpdateDownloadToast = (percent: number) => {
+    const version = pendingVersionRef.current;
+    const description = buildDownloadDescription(version, percent);
+
+    if (downloadToastRef.current) {
+      downloadToastRef.current.update({
+        id: downloadToastRef.current.id,
+        title: t('update.downloading'),
+        description,
+        duration: 0,
+      });
+      return;
+    }
+
+    downloadToastRef.current = toast({
+      title: t('update.downloading'),
+      description,
+      duration: 0,
+    });
+  };
 
   useEffect(() => {
     // Electron環境でない場合は何もしない
@@ -36,6 +74,7 @@ export function UpdateNotifier() {
      * ユーザーに確認を求める
      */
     window.electronAPI.onUpdateAvailable((info) => {
+      pendingVersionRef.current = info.version;
       setPendingVersion(info.version);
       setShowDownloadDialog(true);
     });
@@ -44,15 +83,17 @@ export function UpdateNotifier() {
      * ダウンロード進捗状況の表示
      */
     window.electronAPI.onDownloadProgress((progress) => {
-      setDownloadProgress(progress.percent);
+      showOrUpdateDownloadToast(progress.percent);
     });
 
     /**
      * ダウンロード完了時の通知
      */
     window.electronAPI.onUpdateDownloaded((info) => {
-      setUpdateDownloaded(true);
-      setDownloadProgress(0);
+      if (downloadToastRef.current) {
+        downloadToastRef.current.dismiss();
+        downloadToastRef.current = null;
+      }
       toast({
         title: t('update.ready'),
         description: t('update.readyDesc', { version: info.version }),
@@ -93,12 +134,8 @@ export function UpdateNotifier() {
               onClick={() => {
                 setShowDownloadDialog(false);
                 // ダウンロードを開始
+                showOrUpdateDownloadToast(0);
                 window.electronAPI?.startDownload();
-                toast({
-                  title: t('update.available'),
-                  description: t('update.availableDesc', { version: pendingVersion }),
-                  duration: 5000,
-                });
               }}
             >
               {t('update.downloadNow')}
@@ -106,22 +143,6 @@ export function UpdateNotifier() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* ダウンロード中の進捗表示 */}
-      {downloadProgress > 0 && downloadProgress < 100 && !updateDownloaded && (
-        <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-4 max-w-sm z-50">
-          <p className="text-sm font-medium mb-2">{t('update.downloading')}</p>
-          <div className="w-full bg-secondary rounded-full h-2">
-            <div
-              className="bg-primary h-2 rounded-full transition-all duration-300"
-              style={{ width: `${downloadProgress}%` }}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {t('update.downloadProgress', { percent: downloadProgress })}
-          </p>
-        </div>
-      )}
     </>
   );
 }

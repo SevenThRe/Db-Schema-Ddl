@@ -49,6 +49,16 @@
   DetailPrint "Installer version: ${VERSION}"
   DetailPrint "Default target: $INSTDIR"
 
+  ; Reuse previous install location when available (important for silent auto-update).
+  ReadRegStr $R1 HKLM "${INSTALL_REGISTRY_KEY}" "InstallLocation"
+  ${if} $R1 == ""
+    ReadRegStr $R1 HKCU "${INSTALL_REGISTRY_KEY}" "InstallLocation"
+  ${endif}
+  ${if} $R1 != ""
+    StrCpy $INSTDIR $R1
+    DetailPrint "Reusing previous install location: $INSTDIR"
+  ${endif}
+
   ReadRegStr $R0 HKLM "${INSTALL_REGISTRY_KEY}" "DisplayVersion"
   ${if} $R0 != ""
     DetailPrint "Detected existing all-users installation: $R0"
@@ -118,29 +128,37 @@
     !endif
   ${endif}
 
-  ; Best-effort cleanup for empty install directory that can remain
-  ; because uninstaller executable is still in use during uninstall.
-  RMDir "$INSTDIR"
-  IfFileExists "$INSTDIR\*.*" still_exists removed_now
+  ; IMPORTANT:
+  ; During auto-update, uninstall + install happens in one flow.
+  ; A delayed cleanup task can race and delete freshly installed files.
+  ; So only run aggressive install-dir cleanup for true uninstall (not update).
+  ${if} ${isUpdated}
+    DetailPrint "Update flow detected. Skip delayed install-directory cleanup."
+  ${else}
+    ; Best-effort cleanup for empty install directory that can remain
+    ; because uninstaller executable is still in use during uninstall.
+    RMDir "$INSTDIR"
+    IfFileExists "$INSTDIR\*.*" still_exists removed_now
 
-  removed_now:
-    DetailPrint "Install directory removed."
-    Goto cleanup_done
+    removed_now:
+      DetailPrint "Install directory removed."
+      Goto cleanup_done
 
-  still_exists:
-    DetailPrint "Install directory still present. Scheduling delayed cleanup..."
-    StrCpy $R0 "$TEMP\dbschema_cleanup_install_dir.bat"
-    FileOpen $R1 $R0 w
-    FileWrite $R1 "@echo off$\r$\n"
-    FileWrite $R1 "cd /d %TEMP%$\r$\n"
-    FileWrite $R1 "ping 127.0.0.1 -n 4 >nul$\r$\n"
-    FileWrite $R1 "rmdir /S /Q $\"$INSTDIR$\"$\r$\n"
-    FileWrite $R1 "del /f /q $\"%~f0$\"$\r$\n"
-    FileClose $R1
-    Exec '"$SYSDIR\cmd.exe" /C start "" /MIN "$TEMP\dbschema_cleanup_install_dir.bat"'
-    ; Do not set reboot flag for this app.
-    ; If immediate delete fails, deferred batch cleanup handles it.
-    RMDir /r "$INSTDIR"
+    still_exists:
+      DetailPrint "Install directory still present. Scheduling delayed cleanup..."
+      StrCpy $R0 "$TEMP\dbschema_cleanup_install_dir.bat"
+      FileOpen $R1 $R0 w
+      FileWrite $R1 "@echo off$\r$\n"
+      FileWrite $R1 "cd /d %TEMP%$\r$\n"
+      FileWrite $R1 "ping 127.0.0.1 -n 4 >nul$\r$\n"
+      FileWrite $R1 "rmdir /S /Q $\"$INSTDIR$\"$\r$\n"
+      FileWrite $R1 "del /f /q $\"%~f0$\"$\r$\n"
+      FileClose $R1
+      Exec '"$SYSDIR\cmd.exe" /C start "" /MIN "$TEMP\dbschema_cleanup_install_dir.bat"'
+      ; Do not set reboot flag for this app.
+      ; If immediate delete fails, deferred batch cleanup handles it.
+      RMDir /r "$INSTDIR"
+  ${endif}
 
   cleanup_done:
   SetRebootFlag false
