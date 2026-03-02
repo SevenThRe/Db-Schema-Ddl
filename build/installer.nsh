@@ -50,6 +50,7 @@
 
 !macro customUnInit
   SetDetailsPrint both
+  SetOutPath "$TEMP"
   DetailPrint "Uninstaller initialized."
 !macroend
 
@@ -57,5 +58,28 @@
   SetDetailsPrint both
   DetailPrint "Running uninstall cleanup..."
   DetailPrint "Removing installed files and shortcuts..."
+  ; Best-effort cleanup for empty install directory that can remain
+  ; because uninstaller executable is still in use during uninstall.
+  RMDir "$INSTDIR"
+  IfFileExists "$INSTDIR\*.*" still_exists removed_now
+
+  removed_now:
+    DetailPrint "Install directory removed."
+    Goto cleanup_done
+
+  still_exists:
+    DetailPrint "Install directory still present. Scheduling delayed cleanup..."
+    StrCpy $R0 "$TEMP\dbschema_cleanup_install_dir.bat"
+    FileOpen $R1 $R0 w
+    FileWrite $R1 "@echo off$\r$\n"
+    FileWrite $R1 "cd /d %TEMP%$\r$\n"
+    FileWrite $R1 "ping 127.0.0.1 -n 4 >nul$\r$\n"
+    FileWrite $R1 "rmdir /S /Q $\"$INSTDIR$\"$\r$\n"
+    FileWrite $R1 "del /f /q $\"%~f0$\"$\r$\n"
+    FileClose $R1
+    Exec '"$SYSDIR\cmd.exe" /C start "" /MIN "$TEMP\dbschema_cleanup_install_dir.bat"'
+    RMDir /r /REBOOTOK "$INSTDIR"
+
+  cleanup_done:
   DetailPrint "Uninstall finalize step completed."
 !macroend
