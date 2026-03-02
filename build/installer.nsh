@@ -1,3 +1,42 @@
+!include LogicLib.nsh
+!include nsDialogs.nsh
+
+!ifdef BUILD_UNINSTALLER
+  Var un.DeleteDataCheckbox
+  Var un.DeleteAllDataRequested
+
+  !macro customUnWelcomePage
+    UninstPage custom un.ConfirmDataCleanupPageCreate un.ConfirmDataCleanupPageLeave
+  !macroend
+
+  Function un.ConfirmDataCleanupPageCreate
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+      Abort
+    ${EndIf}
+
+    ${NSD_CreateLabel} 0 0 100% 12u "Uninstall options"
+    Pop $1
+    ${NSD_CreateLabel} 0 16u 100% 26u "Choose whether to also remove local data (settings/cache/database/uploads)."
+    Pop $1
+    ${NSD_CreateCheckbox} 0 46u 100% 12u "Remove all local application data (cannot be undone)"
+    Pop $un.DeleteDataCheckbox
+    ${NSD_SetState} $un.DeleteDataCheckbox ${BST_UNCHECKED}
+
+    nsDialogs::Show
+  FunctionEnd
+
+  Function un.ConfirmDataCleanupPageLeave
+    ${NSD_GetState} $un.DeleteDataCheckbox $un.DeleteAllDataRequested
+    ${If} $un.DeleteAllDataRequested == ${BST_CHECKED}
+      StrCpy $un.DeleteAllDataRequested "1"
+    ${Else}
+      StrCpy $un.DeleteAllDataRequested "0"
+    ${EndIf}
+  FunctionEnd
+!endif
+
 !macro customHeader
   ; Keep install details visible so users can see exact progress.
   ShowInstDetails show
@@ -51,6 +90,7 @@
 !macro customUnInit
   SetDetailsPrint both
   SetOutPath "$TEMP"
+  StrCpy $un.DeleteAllDataRequested "0"
   DetailPrint "Uninstaller initialized."
 !macroend
 
@@ -58,6 +98,26 @@
   SetDetailsPrint both
   DetailPrint "Running uninstall cleanup..."
   DetailPrint "Removing installed files and shortcuts..."
+
+  ${if} $un.DeleteAllDataRequested == "1"
+    DetailPrint "Removing app data requested by user..."
+    SetShellVarContext current
+    RMDir /r "$APPDATA\${APP_FILENAME}"
+    !ifdef APP_PRODUCT_FILENAME
+      RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
+    !endif
+    !ifdef APP_PACKAGE_NAME
+      RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+    !endif
+    RMDir /r "$LOCALAPPDATA\${APP_FILENAME}"
+    !ifdef APP_PRODUCT_FILENAME
+      RMDir /r "$LOCALAPPDATA\${APP_PRODUCT_FILENAME}"
+    !endif
+    !ifdef APP_PACKAGE_NAME
+      RMDir /r "$LOCALAPPDATA\${APP_PACKAGE_NAME}"
+    !endif
+  ${endif}
+
   ; Best-effort cleanup for empty install directory that can remain
   ; because uninstaller executable is still in use during uninstall.
   RMDir "$INSTDIR"
