@@ -138,8 +138,11 @@
     FileWrite $R1 "del /f /q $\"%~f0$\"$\r$\n"
     FileClose $R1
     Exec '"$SYSDIR\cmd.exe" /C start "" /MIN "$TEMP\dbschema_cleanup_install_dir.bat"'
-    RMDir /r /REBOOTOK "$INSTDIR"
+    ; Do not set reboot flag for this app.
+    ; If immediate delete fails, deferred batch cleanup handles it.
+    RMDir /r "$INSTDIR"
 
   cleanup_done:
+  SetRebootFlag false
   DetailPrint "Uninstall finalize step completed."
 !macroend
