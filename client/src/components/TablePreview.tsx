@@ -31,8 +31,10 @@ const TABLE_COLUMN_GRID_CLASS =
 const COMPACT_TABLE_GRID_CLASS =
   "grid grid-cols-[56px_minmax(240px,_1.1fr)_minmax(220px,_1fr)] gap-2 px-4";
 const COMPACT_TABLE_BREAKPOINT = 980;
-const TOOLBAR_ICON_BUTTON_CLASS = "h-7 w-7 shrink-0";
-const TOOLBAR_BUTTON_CLASS = "h-7 px-2 text-[11px]";
+const TOOLBAR_ICON_BUTTON_CLASS =
+  "h-7 w-7 shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
+const TOOLBAR_BUTTON_CLASS =
+  "h-7 px-2 text-[11px] rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
 
 function columnLabelToNumber(label: string): number {
   let result = 0;
@@ -586,7 +588,7 @@ export function TablePreview({
                 onValueChange={(value) => setCurrentTableIndex(parseInt(value))}
               >
                 <SelectTrigger className={cn(
-                  "max-w-[60vw] h-7 text-xs shrink-0",
+                  "max-w-[60vw] h-7 text-xs shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55",
                   isCompactColumns ? "w-[180px] min-w-[130px] sm:w-[210px] sm:min-w-[150px]" : "w-[220px] min-w-[140px] sm:w-[270px] sm:min-w-[170px]",
                 )}>
                   <SelectValue />

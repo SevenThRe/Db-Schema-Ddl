@@ -265,7 +265,37 @@ export function useDeleteFile() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onMutate: async (fileId: number) => {
+      await queryClient.cancelQueries({ queryKey: [api.files.list.path] });
+      const previousFiles = queryClient.getQueryData<UploadedFile[]>([api.files.list.path]) ?? [];
+
+      queryClient.setQueryData(
+        [api.files.list.path],
+        previousFiles.filter((file) => file.id !== fileId),
+      );
+
+      return { previousFiles, fileId };
+    },
+    onError: (_error, _fileId, context) => {
+      if (context?.previousFiles) {
+        queryClient.setQueryData([api.files.list.path], context.previousFiles);
+      }
+    },
+    onSuccess: (_data, deletedFileId) => {
+      queryClient.removeQueries({
+        predicate: (query) => {
+          const [queryPath, queryFileId] = query.queryKey;
+          if (queryFileId !== deletedFileId) {
+            return false;
+          }
+          return (
+            queryPath === api.files.getSheets.path ||
+            queryPath === api.files.getTableInfo.path ||
+            queryPath === api.files.getSearchIndex.path ||
+            queryPath === "sheetData"
+          );
+        },
+      });
       queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
     },
   });

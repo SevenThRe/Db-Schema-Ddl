@@ -252,7 +252,7 @@ function getWorkerScriptConfig(): { scriptPath: string; execArgv?: string[] } {
     };
   }
 
-  if (fs.existsSync(prodWorkerPath)) {
+  if (prodWorkerPath && fs.existsSync(prodWorkerPath)) {
     return { scriptPath: prodWorkerPath };
   }
 

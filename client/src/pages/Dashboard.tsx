@@ -16,6 +16,8 @@ import { useTranslation } from "react-i18next";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
+const PREVIEW_ACTION_BUTTON_CLASS =
+  "h-6 px-2.5 gap-1.5 text-[11px] shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none backdrop-blur-[2px] hover:bg-accent/55";
 
 type StoredSheetSelections = Record<string, string>;
 
@@ -98,8 +100,19 @@ export default function Dashboard() {
   }, [files, selectedFileId]);
 
   useEffect(() => {
+    if (selectedFileId == null || !files) {
+      return;
+    }
+    const selectedStillExists = files.some((file) => file.id === selectedFileId);
+    if (!selectedStillExists) {
+      setSelectedFileId(null);
+    }
+  }, [files, selectedFileId]);
+
+  useEffect(() => {
     setSelectedSheet(null);
     setRegionTables(null);
+    setCurrentTable(null);
     setTableJumpRequest(null);
     setSheetSelectorOpen(false);
     setSelectedTableNames(new Set());
@@ -141,6 +154,24 @@ export default function Dashboard() {
       previous[fileKey] === selectedSheet ? previous : { ...previous, [fileKey]: selectedSheet },
     );
   }, [selectedFileId, selectedSheet]);
+
+  useEffect(() => {
+    if (!files || files.length === 0) {
+      setLastSelectedSheetByFile((previous) =>
+        Object.keys(previous).length > 0 ? {} : previous,
+      );
+      return;
+    }
+
+    const validFileIdSet = new Set(files.map((file) => String(file.id)));
+    setLastSelectedSheetByFile((previous) => {
+      const nextEntries = Object.entries(previous).filter(([fileKey]) => validFileIdSet.has(fileKey));
+      if (nextEntries.length === Object.keys(previous).length) {
+        return previous;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+  }, [files]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -269,7 +300,7 @@ export default function Dashboard() {
               variant="outline"
               size="sm"
               onClick={() => setSheetSelectorOpen(true)}
-              className="h-6 px-2 gap-1.5 text-[11px] shrink-0"
+              className={PREVIEW_ACTION_BUTTON_CLASS}
               disabled={!selectedFileId}
             >
               <List className="w-3 h-3" />
@@ -281,12 +312,12 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={() => setSearchOpen(true)}
-            className="h-6 px-2 gap-1.5 text-[11px] shrink-0"
+            className={PREVIEW_ACTION_BUTTON_CLASS}
             disabled={!selectedFileId}
           >
             <Search className="w-3 h-3" />
             <span className="hidden sm:inline">{t("search.button") || "Search"}</span>
-            <kbd className="pointer-events-none ml-1 hidden h-4 select-none items-center gap-1 rounded border bg-muted px-1 font-mono text-[10px] font-medium opacity-100 sm:flex">
+            <kbd className="pointer-events-none ml-1 hidden h-4 select-none items-center gap-1 rounded-md border border-border/70 bg-background/85 px-1 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
               <span className="text-xs">⌘</span>P
             </kbd>
           </Button>

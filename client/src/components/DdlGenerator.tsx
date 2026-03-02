@@ -27,11 +27,22 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { parseApiErrorResponse, translateApiError } from "@/lib/api-error";
 import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
-import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle, WandSparkles, CircleHelp } from "lucide-react";
+import {
+  formatLogicalPhysicalName,
+  getSheetNameValue,
+  parseUploadedAtMillis,
+  renderNameDiffPair,
+} from "@/components/ddl/name-fix-display-utils";
+import {
+  buildNameFixDialogOptions,
+  NameFixLabelWithHelp,
+} from "@/components/ddl/name-fix-options";
+import { NameFixExecutionPanels } from "@/components/ddl/name-fix-panels";
+import type { NameFixApplyResultState } from "@/components/ddl/name-fix-types";
+import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface DdlGeneratorProps {
@@ -222,131 +233,12 @@ interface NameFixFileVersionMeta {
   shortHash: string;
 }
 
-interface NameDiffSegments {
-  prefix: string;
-  beforeChanged: string;
-  afterChanged: string;
-  suffix: string;
-}
-
 interface DdlGenerationWarning {
   code: "AUTO_INCREMENT_IGNORED" | "AUTO_INCREMENT_DIALECT_UNSUPPORTED";
   tableName: string;
   columnName: string;
   message: string;
   reason?: string;
-}
-
-function formatLogicalPhysicalName(
-  logicalName?: string,
-  physicalName?: string,
-): string {
-  const logical = (logicalName ?? "").trim();
-  const physical = (physicalName ?? "").trim();
-
-  if (logical && physical) {
-    if (logical === physical) {
-      return logical;
-    }
-    return `${logical} (${physical})`;
-  }
-  return logical || physical || "(unnamed)";
-}
-
-function parseUploadedAtMillis(uploadedAt?: string | Date | null): number {
-  if (!uploadedAt) {
-    return 0;
-  }
-  if (uploadedAt instanceof Date) {
-    return Number.isNaN(uploadedAt.getTime()) ? 0 : uploadedAt.getTime();
-  }
-
-  const sqliteUtcPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
-  const normalized = sqliteUtcPattern.test(uploadedAt)
-    ? uploadedAt.replace(" ", "T") + "Z"
-    : uploadedAt;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-}
-
-function getSheetNameValue(sheet: unknown): string {
-  if (typeof sheet === "string") {
-    return sheet;
-  }
-  if (
-    sheet
-    && typeof sheet === "object"
-    && "name" in sheet
-    && typeof (sheet as { name?: unknown }).name === "string"
-  ) {
-    return (sheet as { name: string }).name;
-  }
-  return "";
-}
-
-function splitNameDiff(before: string, after: string): NameDiffSegments {
-  if (before === after) {
-    return {
-      prefix: before,
-      beforeChanged: "",
-      afterChanged: "",
-      suffix: "",
-    };
-  }
-
-  let prefixLength = 0;
-  const minLength = Math.min(before.length, after.length);
-  while (prefixLength < minLength && before[prefixLength] === after[prefixLength]) {
-    prefixLength += 1;
-  }
-
-  let suffixLength = 0;
-  const beforeRemaining = before.length - prefixLength;
-  const afterRemaining = after.length - prefixLength;
-  while (
-    suffixLength < beforeRemaining &&
-    suffixLength < afterRemaining &&
-    before[before.length - 1 - suffixLength] === after[after.length - 1 - suffixLength]
-  ) {
-    suffixLength += 1;
-  }
-
-  const beforeEnd = before.length - suffixLength;
-  const afterEnd = after.length - suffixLength;
-
-  return {
-    prefix: before.slice(0, prefixLength),
-    beforeChanged: before.slice(prefixLength, beforeEnd),
-    afterChanged: after.slice(prefixLength, afterEnd),
-    suffix: before.slice(beforeEnd),
-  };
-}
-
-function renderNameDiffPair(beforeName: string, afterName: string) {
-  const segments = splitNameDiff(beforeName, afterName);
-  if (beforeName === afterName) {
-    return <span className="text-muted-foreground">{beforeName}</span>;
-  }
-
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <span className="inline-flex items-center">
-        {segments.prefix && <span className="text-muted-foreground">{segments.prefix}</span>}
-        <span className="rounded bg-rose-100 px-0.5 text-rose-700 line-through decoration-rose-700">
-          {segments.beforeChanged || "(empty)"}
-        </span>
-        {segments.suffix && <span className="text-muted-foreground">{segments.suffix}</span>}
-      </span>
-      <span className="text-muted-foreground">{"->"}</span>
-      <span className="inline-flex items-center">
-        {segments.prefix && <span className="text-muted-foreground">{segments.prefix}</span>}
-        <span className="rounded bg-emerald-100 px-0.5 text-emerald-700 font-semibold">
-          {segments.afterChanged || "(empty)"}
-        </span>
-        {segments.suffix && <span className="text-muted-foreground">{segments.suffix}</span>}
-      </span>
-    </span>
-  );
 }
 
 function classifyWord(word: string): SqlTokenType {
@@ -454,6 +346,83 @@ function tokenizeSql(sqlText: string): SqlToken[] {
   }
 
   return tokens;
+}
+
+function formatZipTimestamp(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+}
+
+function sanitizeSheetNameForFilename(sheetName: string): string {
+  return sheetName
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[_\-.]+|[_\-.]+$/g, "")
+    .slice(0, 64);
+}
+
+function deriveSheetNameHintFromTables(tables: TableInfo[]): string | undefined {
+  const uniqueSheetNames = Array.from(
+    new Set(
+      tables
+        .map((table) => table.sourceRef?.sheetName?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  if (uniqueSheetNames.length === 1) {
+    return uniqueSheetNames[0];
+  }
+  return undefined;
+}
+
+function buildZipDownloadFilename(
+  dialect: "mysql" | "oracle",
+  sheetNameHint?: string,
+  date: Date = new Date(),
+): string {
+  const timestamp = formatZipTimestamp(date);
+  if (!sheetNameHint) {
+    return `ddl_${dialect}_${timestamp}.zip`;
+  }
+  const safeSheetName = sanitizeSheetNameForFilename(sheetNameHint);
+  if (!safeSheetName) {
+    return `ddl_${dialect}_${timestamp}.zip`;
+  }
+  return `ddl_${dialect}_${safeSheetName}_${timestamp}.zip`;
+}
+
+function parseFilenameFromContentDisposition(contentDisposition: string | null): string | null {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      // fallback to plain filename
+    }
+  }
+
+  const quotedMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1].trim();
+  }
+
+  const plainMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1].trim();
+  }
+
+  return null;
 }
 
 function toDdlTablePayload(table: TableInfo): TableInfo {
@@ -640,37 +609,15 @@ export function DdlGenerator({
   const [nameFixScope, setNameFixScope] = useState<NameFixScope>("current_sheet");
   const [nameFixSelectedFileIds, setNameFixSelectedFileIds] = useState<number[]>([]);
   const [nameFixSelectedSheetNames, setNameFixSelectedSheetNames] = useState<string[]>([]);
+  const [nameFixSelectedTableIndexes, setNameFixSelectedTableIndexes] = useState<Set<number>>(new Set());
+  const [nameFixTableFilterQuery, setNameFixTableFilterQuery] = useState("");
   const [nameFixConflictStrategy, setNameFixConflictStrategy] = useState<NameFixConflictStrategy>("suffix_increment");
   const [nameFixReservedWordStrategy, setNameFixReservedWordStrategy] = useState<ReservedWordStrategy>("prefix");
   const [nameFixLengthOverflowStrategy, setNameFixLengthOverflowStrategy] = useState<LengthOverflowStrategy>("truncate_hash");
   const [nameFixMaxIdentifierLength, setNameFixMaxIdentifierLength] = useState(64);
   const [nameFixApplyMode, setNameFixApplyMode] = useState<NameFixMode>("copy");
   const [nameFixPreviewResult, setNameFixPreviewResult] = useState<NameFixPreviewResponse | null>(null);
-  const [nameFixApplyResult, setNameFixApplyResult] = useState<{
-    jobId: string;
-    status: string;
-    downloadBundleToken?: string;
-    downloadBundleFilename?: string;
-    successCount: number;
-    failedCount: number;
-    changedTableCount: number;
-    changedColumnCount: number;
-    files: Array<{
-      fileId: number;
-      sourcePath: string;
-      outputPath?: string;
-      backupPath?: string;
-      reportJsonPath?: string;
-      reportTextPath?: string;
-      downloadToken?: string;
-      downloadFilename?: string;
-      success: boolean;
-      changedTableCount: number;
-      changedColumnCount: number;
-      skippedChanges: number;
-      error?: string;
-    }>;
-  } | null>(null);
+  const [nameFixApplyResult, setNameFixApplyResult] = useState<NameFixApplyResultState | null>(null);
   const [nameFixActiveJobId, setNameFixActiveJobId] = useState<string | null>(null);
   const [nameFixRunningStep, setNameFixRunningStep] = useState<"idle" | "preview" | "apply" | "rollback">("idle");
   const [generatedTables, setGeneratedTables] = useState<TableInfo[] | null>(null);
@@ -745,6 +692,22 @@ export function DdlGenerator({
       .filter((name: string) => Boolean(name && name.trim())),
     [availableSheets],
   );
+  const nameFixFilteredCurrentSheetTables = useMemo(() => {
+    if (!tables || tables.length === 0) {
+      return [];
+    }
+    const query = nameFixTableFilterQuery.trim().toLowerCase();
+    return tables
+      .map((table: TableInfo, tableIndex: number) => ({ table, tableIndex }))
+      .filter(({ table }: { table: TableInfo; tableIndex: number }) => {
+        if (!query) {
+          return true;
+        }
+        const logicalName = table.logicalTableName?.toLowerCase() ?? "";
+        const physicalName = table.physicalTableName?.toLowerCase() ?? "";
+        return logicalName.includes(query) || physicalName.includes(query);
+      });
+  }, [tables, nameFixTableFilterQuery]);
   const tableDisplayNameByPhysicalName = useMemo(() => {
     const map = new Map<string, string>();
     (tables ?? []).forEach((table: TableInfo) => {
@@ -758,6 +721,14 @@ export function DdlGenerator({
   }, [tables]);
   const isNameFixScopeLocked = nameFixBatchMode !== "current_file";
   const displayedNameFixScope: NameFixScope = isNameFixScopeLocked ? "all_sheets" : nameFixScope;
+  const nameFixCurrentSheetTableCount = tables?.length ?? 0;
+  const shouldShowNameFixTableFilter =
+    nameFixBatchMode === "current_file"
+    && displayedNameFixScope === "current_sheet"
+    && nameFixCurrentSheetTableCount > 0;
+  const isNameFixPartialTableSelection =
+    nameFixSelectedTableIndexes.size > 0
+    && nameFixSelectedTableIndexes.size < nameFixCurrentSheetTableCount;
   const hasNameFixBlockingIssues =
     (nameFixPreviewResult?.summary.blockingConflictCount ?? 0) > 0
     || (nameFixPreviewResult?.summary.unresolvedSourceRefCount ?? 0) > 0;
@@ -833,6 +804,14 @@ export function DdlGenerator({
   }, [tables, effectiveSelectedTableNames, commitSelectedTableNames]);
 
   useEffect(() => {
+    setGeneratedDdl(null);
+    setGeneratedTables(null);
+    setGenerationError(null);
+    setCopied(false);
+    setZipExportSummary((previous) => (previous.open ? { ...previous, open: false } : previous));
+  }, [fileId, sheetName]);
+
+  useEffect(() => {
     if (!settings) {
       return;
     }
@@ -887,6 +866,30 @@ export function DdlGenerator({
     }
   }, [nameFixBatchMode, nameFixScope, nameFixSelectedSheetNames.length]);
 
+  useEffect(() => {
+    if (!shouldShowNameFixTableFilter) {
+      return;
+    }
+    setNameFixSelectedTableIndexes((previous) => {
+      const sanitized = new Set(
+        Array.from(previous).filter(
+          (index) => Number.isInteger(index) && index >= 0 && index < nameFixCurrentSheetTableCount,
+        ),
+      );
+      if (sanitized.size === 0 && previous.size === 0 && nameFixCurrentSheetTableCount > 0) {
+        return new Set(Array.from({ length: nameFixCurrentSheetTableCount }, (_, index) => index));
+      }
+      if (sanitized.size !== previous.size) {
+        return sanitized;
+      }
+      const hasDifference = Array.from(previous).some((value) => !sanitized.has(value));
+      if (hasDifference) {
+        return sanitized;
+      }
+      return previous;
+    });
+  }, [shouldShowNameFixTableFilter, nameFixCurrentSheetTableCount]);
+
   const tablesWithNameIssues = useMemo(() => {
     return (tables ?? []).filter((table: TableInfo) => validateTablePhysicalNames(table).hasIssues);
   }, [tables]);
@@ -903,90 +906,11 @@ export function DdlGenerator({
     [pendingNameFixTables],
   );
 
-  const conflictStrategyOptions = useMemo(
-    () => [
-      {
-        value: "suffix_increment" as NameFixConflictStrategy,
-        label: t("ddl.nameFix.optionConflictSuffixIncrement", {
-          defaultValue: "Auto numeric suffix",
-        }),
-      },
-      {
-        value: "hash_suffix" as NameFixConflictStrategy,
-        label: t("ddl.nameFix.optionConflictHashSuffix", {
-          defaultValue: "Short hash suffix",
-        }),
-      },
-      {
-        value: "abort" as NameFixConflictStrategy,
-        label: t("ddl.nameFix.optionAbort", {
-          defaultValue: "Stop and report",
-        }),
-      },
-    ],
-    [t],
-  );
-
-  const reservedWordStrategyOptions = useMemo(
-    () => [
-      {
-        value: "prefix" as ReservedWordStrategy,
-        label: t("ddl.nameFix.optionReservedPrefix", {
-          defaultValue: "Add prefix",
-        }),
-      },
-      {
-        value: "abort" as ReservedWordStrategy,
-        label: t("ddl.nameFix.optionAbort", {
-          defaultValue: "Stop and report",
-        }),
-      },
-    ],
-    [t],
-  );
-
-  const lengthOverflowStrategyOptions = useMemo(
-    () => [
-      {
-        value: "truncate_hash" as LengthOverflowStrategy,
-        label: t("ddl.nameFix.optionLengthTruncateHash", {
-          defaultValue: "Truncate + hash tail",
-        }),
-      },
-      {
-        value: "abort" as LengthOverflowStrategy,
-        label: t("ddl.nameFix.optionAbort", {
-          defaultValue: "Stop and report",
-        }),
-      },
-    ],
-    [t],
-  );
-
-  const NameFixLabelWithHelp = ({
-    label,
-    helpText,
-  }: {
-    label: string;
-    helpText: string;
-  }) => (
-    <div className="flex items-center gap-1">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <Tooltip delayDuration={350}>
-        <TooltipTrigger asChild>
-          <span
-            className="inline-flex h-4 w-4 cursor-help items-center justify-center text-muted-foreground/80 hover:text-foreground"
-            aria-hidden="true"
-          >
-            <CircleHelp className="w-3.5 h-3.5" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="z-[1300] max-w-[320px] text-xs leading-5">
-          {helpText}
-        </TooltipContent>
-      </Tooltip>
-    </div>
-  );
+  const {
+    conflictStrategyOptions,
+    reservedWordStrategyOptions,
+    lengthOverflowStrategyOptions,
+  } = useMemo(() => buildNameFixDialogOptions(t), [t]);
 
   // 从 Excel 范围中提取列字母（例如 "B79:E824" -> "B"）
   const getColumnLetter = (table: TableInfo): string => {
@@ -1596,6 +1520,10 @@ export function DdlGenerator({
       }
 
       const blob = await response.blob();
+      const contentDisposition = response.headers.get("Content-Disposition");
+      const serverFilename = parseFilenameFromContentDisposition(contentDisposition);
+      const fallbackSheetNameHint = sheetName ?? deriveSheetNameHintFromTables(tablesForExport);
+      const zipFilename = serverFilename ?? buildZipDownloadFilename(dialect, fallbackSheetNameHint);
       const skippedCount = Number(response.headers.get("X-Zip-Export-Skipped-Count") || "0");
       const successCount = Number(
         response.headers.get("X-Zip-Export-Success-Count") || String(tablesForExport.length),
@@ -1617,7 +1545,7 @@ export function DdlGenerator({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `ddl_${dialect}_${Date.now()}.zip`;
+      link.download = zipFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1757,6 +1685,30 @@ export function DdlGenerator({
     });
   };
 
+  const toggleNameFixTableSelection = (tableIndex: number, selected: boolean) => {
+    setNameFixSelectedTableIndexes((previous) => {
+      const next = new Set(previous);
+      if (selected) {
+        next.add(tableIndex);
+      } else {
+        next.delete(tableIndex);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllNameFixTableSelections = (selected: boolean) => {
+    if (!tables || tables.length === 0) {
+      setNameFixSelectedTableIndexes(new Set());
+      return;
+    }
+    if (!selected) {
+      setNameFixSelectedTableIndexes(new Set());
+      return;
+    }
+    setNameFixSelectedTableIndexes(new Set(tables.map((_: TableInfo, index: number) => index)));
+  };
+
   const openSyncNameFixDialog = () => {
     if (!fileId && uploadedFiles.length === 0) {
       toast({
@@ -1771,6 +1723,8 @@ export function DdlGenerator({
     setNameFixScope(sheetName ? "current_sheet" : "all_sheets");
     setNameFixSelectedFileIds(initialFileIds);
     setNameFixSelectedSheetNames(sheetName ? [sheetName] : []);
+    setNameFixSelectedTableIndexes(new Set((tables ?? []).map((_: TableInfo, index: number) => index)));
+    setNameFixTableFilterQuery("");
     setNameFixApplyMode((previousMode) => {
       if (!isElectron) {
         return "replace_download";
@@ -1815,6 +1769,28 @@ export function DdlGenerator({
       return;
     }
 
+    if (
+      !multiFileMode
+      && effectiveScope === "current_sheet"
+      && shouldShowNameFixTableFilter
+      && nameFixSelectedTableIndexes.size === 0
+    ) {
+      toast({
+        title: t("ddl.noTableSelected"),
+        description: t("ddl.pleaseSelectTable"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedTableIndexesForPreview =
+      !multiFileMode
+      && effectiveScope === "current_sheet"
+      && shouldShowNameFixTableFilter
+      && isNameFixPartialTableSelection
+        ? Array.from(nameFixSelectedTableIndexes).sort((a, b) => a - b)
+        : undefined;
+
     try {
       setNameFixRunningStep("preview");
       const preview = await previewNameFix({
@@ -1825,6 +1801,7 @@ export function DdlGenerator({
           !multiFileMode && effectiveScope === "selected_sheets"
             ? nameFixSelectedSheetNames
             : undefined,
+        selectedTableIndexes: selectedTableIndexesForPreview,
         conflictStrategy: nameFixConflictStrategy,
         reservedWordStrategy: nameFixReservedWordStrategy,
         lengthOverflowStrategy: nameFixLengthOverflowStrategy,
@@ -2349,183 +2326,79 @@ export function DdlGenerator({
               </div>
             )}
 
-            {nameFixPreviewResult && (
+            {shouldShowNameFixTableFilter && (
               <div className="rounded-md border p-3 space-y-2">
-                <div className="text-sm font-semibold">{t("ddl.nameFix.previewSummaryTitle")}</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewFiles")}</div>
-                    <div className="font-semibold">{nameFixPreviewResult.summary.fileCount}</div>
-                  </div>
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewTablesChanged")}</div>
-                    <div className="font-semibold">{nameFixPreviewResult.summary.changedTableCount}</div>
-                  </div>
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewColumnsChanged")}</div>
-                    <div className="font-semibold">{nameFixPreviewResult.summary.changedColumnCount}</div>
-                  </div>
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewBlockingConflicts")}</div>
-                    <div className="font-semibold text-amber-700">{nameFixPreviewResult.summary.blockingConflictCount}</div>
-                  </div>
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewMissingSourceRef")}</div>
-                    <div className="font-semibold text-amber-700">{nameFixPreviewResult.summary.unresolvedSourceRefCount}</div>
-                  </div>
-                  <div className="rounded border p-2">
-                    <div className="text-muted-foreground">{t("ddl.nameFix.previewPlan")}</div>
-                    <div className="font-mono text-[11px] truncate">{nameFixPreviewResult.planId}</div>
-                  </div>
-                </div>
-
-                <ScrollArea className="h-[180px] border rounded-md p-2">
-                  <div className="space-y-2">
-                    {nameFixPreviewResult.files.flatMap((file) =>
-                      file.tableMappings
-                        .filter(
-                          (mapping) =>
-                            mapping.physicalTableNameBefore !== mapping.physicalTableNameAfter ||
-                            mapping.columns.some(
-                              (column) => column.physicalNameBefore !== column.physicalNameAfter,
-                            ),
-                        )
-                        .map((mapping) => (
-                            <div key={`${file.fileId}-${mapping.sheetName}-${mapping.tableIndex}`} className="rounded border p-2">
-                            <div className="text-xs font-semibold">
-                              {mapping.sheetName} · {formatLogicalPhysicalName(mapping.logicalTableName, mapping.physicalTableNameBefore)}
-                            </div>
-                            <div className="text-[11px] font-mono leading-5">
-                              {renderNameDiffPair(mapping.physicalTableNameBefore, mapping.physicalTableNameAfter)}
-                            </div>
-                            {mapping.columns.filter((column) => column.physicalNameBefore !== column.physicalNameAfter).slice(0, 4).map((column) => (
-                              <div key={column.columnIndex} className="text-[11px] font-mono leading-5">
-                                {renderNameDiffPair(column.physicalNameBefore, column.physicalNameAfter)}
-                              </div>
-                            ))}
-                          </div>
-                        )),
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
-            {nameFixPreviewResult && (
-              <div className="rounded-md border p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">{t("ddl.nameFix.conflictDecisionTitle")}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Table filter (current sheet)</div>
                   <div className="text-[11px] text-muted-foreground">
-                    {t("ddl.nameFix.conflictDecisionStats", {
-                      conflictCount: nameFixPreviewResult.files.reduce((total, file) => total + file.conflicts.length, 0),
-                      traceCount: nameFixPreviewResult.files.reduce((total, file) => total + file.decisionTrace.length, 0),
-                    })}
-                    {" · "}
+                    {nameFixSelectedTableIndexes.size} / {nameFixCurrentSheetTableCount}
                   </div>
                 </div>
-                <ScrollArea className="h-[120px] border rounded-md p-2">
-                  <div className="space-y-1.5 text-xs">
-                    {nameFixPreviewResult.files.flatMap((file) => file.conflicts).length === 0 ? (
-                      <div className="text-muted-foreground">{t("ddl.nameFix.noConflictDetected")}</div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={nameFixTableFilterQuery}
+                    onChange={(event) => setNameFixTableFilterQuery(event.target.value)}
+                    placeholder={t("ddl.searchTables")}
+                    className="h-8 text-xs pl-9"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => toggleAllNameFixTableSelections(true)}
+                  >
+                    {t("common.selectAll")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => toggleAllNameFixTableSelections(false)}
+                  >
+                    {t("common.clearSelection")}
+                  </Button>
+                </div>
+
+                <ScrollArea className="h-[140px] border rounded-md p-2">
+                  <div className="space-y-1.5">
+                    {nameFixFilteredCurrentSheetTables.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">{t("search.noResults")}</div>
                     ) : (
-                      nameFixPreviewResult.files.flatMap((file) =>
-                        file.conflicts.map((conflict, index) => (
-                          <div
-                            key={`${file.fileId}-${conflict.target}-${conflict.tableIndex}-${conflict.columnIndex ?? -1}-${index}`}
-                            className="rounded border p-2"
-                          >
-                            <div className={conflict.blocking ? "text-red-700 font-medium" : "text-amber-700 font-medium"}>
-                              [{conflict.blocking ? "BLOCKING" : "AUTO"}] {conflict.type}
+                      nameFixFilteredCurrentSheetTables.map(({ table, tableIndex }: { table: TableInfo; tableIndex: number }) => (
+                        <label key={`${tableIndex}-${table.physicalTableName}`} className="flex items-start gap-2 text-xs cursor-pointer rounded border p-2">
+                          <Checkbox
+                            checked={nameFixSelectedTableIndexes.has(tableIndex)}
+                            onCheckedChange={(value) => toggleNameFixTableSelection(tableIndex, value === true)}
+                          />
+                          <div className="min-w-0 flex-1 leading-relaxed">
+                            <div className="font-mono break-all">{table.physicalTableName || "(empty)"}</div>
+                            <div className="text-[11px] text-muted-foreground break-all">
+                              {formatLogicalPhysicalName(table.logicalTableName, table.physicalTableName)}
                             </div>
-                            <div className="font-mono text-[11px] break-all">
-                              {conflict.currentName} {"->"} {conflict.attemptedName}
-                            </div>
-                            <div className="text-muted-foreground">{conflict.reason}</div>
                           </div>
-                        )),
-                      )
+                        </label>
+                      ))
                     )}
                   </div>
                 </ScrollArea>
-              </div>
-            )}
 
-            {nameFixApplyResult && (
-              <div className="rounded-md border p-3 space-y-2">
-                <div className="text-sm font-semibold">{t("ddl.nameFix.applyResultTitle")}</div>
-                <div className="text-xs">
-                  {t("ddl.nameFix.jobLabel")}: <span className="font-mono">{nameFixApplyResult.jobId}</span>
-                </div>
-                {nameFixApplyResult.downloadBundleToken && (
-                  <div className="text-xs">
-                    <a
-                      className="text-primary underline"
-                      href={buildUrl(api.nameFix.download.path, { token: nameFixApplyResult.downloadBundleToken })}
-                      download={nameFixApplyResult.downloadBundleFilename || undefined}
-                    >
-                      {t("ddl.nameFix.downloadBundleResult")}
-                    </a>
-                  </div>
-                )}
-                <div className="text-xs">
-                  {t("ddl.nameFix.applySummaryLine", {
-                    successCount: nameFixApplyResult.successCount,
-                    failedCount: nameFixApplyResult.failedCount,
-                    changedTableCount: nameFixApplyResult.changedTableCount,
-                    changedColumnCount: nameFixApplyResult.changedColumnCount,
-                  })}
-                </div>
-                <ScrollArea className="h-[140px] border rounded-md p-2">
-                  <div className="space-y-1.5 text-xs">
-                    {nameFixApplyResult.files.map((file) => (
-                      <div key={`${file.fileId}-${file.sourcePath}`} className="rounded border p-2">
-                        <div className="font-mono break-all">{file.sourcePath}</div>
-                        <div className={file.success ? "text-emerald-700" : "text-red-700"}>
-                          {file.success ? t("ddl.nameFix.fileSuccess") : t("ddl.nameFix.fileFailed")}
-                        </div>
-                        {file.outputPath && <div>{t("ddl.nameFix.outputLabel")}: <span className="font-mono break-all">{file.outputPath}</span></div>}
-                        {file.backupPath && <div>{t("ddl.nameFix.backupLabel")}: <span className="font-mono break-all">{file.backupPath}</span></div>}
-                        {file.reportJsonPath && <div>{t("ddl.nameFix.reportJsonLabel")}: <span className="font-mono break-all">{file.reportJsonPath}</span></div>}
-                        {file.downloadToken && (
-                          <div>
-                            <a
-                              className="text-primary underline"
-                              href={buildUrl(api.nameFix.download.path, { token: file.downloadToken })}
-                              download={file.downloadFilename || undefined}
-                            >
-                              {t("ddl.nameFix.downloadResult")}
-                            </a>
-                          </div>
-                        )}
-                        {file.error && <div className="text-red-700">{t("ddl.nameFix.errorLabel")}: {file.error}</div>}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
-            {nameFixJobDetail && (
-              <div className="rounded-md border p-3 space-y-2">
-                <div className="text-sm font-semibold">{t("ddl.nameFix.persistedJobTitle")}</div>
-                <div className="text-xs">
-                  {t("ddl.nameFix.jobLabel")}=<span className="font-mono">{nameFixJobDetail.job.id}</span>
-                  {" · "}
-                  {t("ddl.nameFix.statusLabel")}=<span className="font-semibold">{nameFixJobDetail.job.status}</span>
-                </div>
-                <div className="text-xs">
-                  {t("ddl.nameFix.jobChangedLine", {
-                    changedTableCount: nameFixJobDetail.job.changedTableCount,
-                    changedColumnCount: nameFixJobDetail.job.changedColumnCount,
-                  })}
-                </div>
-                {nameFixJobDetail.job.error && (
-                  <div className="text-xs text-red-700">
-                    {t("ddl.nameFix.errorLabel")}: {nameFixJobDetail.job.error}
+                {isNameFixPartialTableSelection && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Partial table selection applied to current-sheet preview/apply.
                   </div>
                 )}
               </div>
             )}
+
+            <NameFixExecutionPanels
+              t={t}
+              nameFixPreviewResult={nameFixPreviewResult}
+              nameFixApplyResult={nameFixApplyResult}
+              nameFixJobDetail={nameFixJobDetail}
+            />
             </div>
           </div>
 

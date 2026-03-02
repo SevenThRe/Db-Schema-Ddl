@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import * as XLSX from "xlsx";
 
 const LABEL_TABLE_INFO = "\u30c6\u30fc\u30d6\u30eb\u60c5\u5831"; // テーブル情報
+const LABEL_DATABASE_DEFINITION = "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u5b9a\u7fa9\u66f8"; // データベース定義書
 const LABEL_LOGICAL_TABLE = "\u8ad6\u7406\u30c6\u30fc\u30d6\u30eb\u540d"; // 論理テーブル名
 const LABEL_PHYSICAL_TABLE = "\u7269\u7406\u30c6\u30fc\u30d6\u30eb\u540d"; // 物理テーブル名
 const LABEL_LOGICAL = "\u8ad6\u7406\u540d"; // 論理名
@@ -34,6 +35,7 @@ interface NameFixModuleSet {
     scope: "current_sheet" | "selected_sheets" | "all_sheets";
     currentSheetName?: string;
     selectedSheetNames?: string[];
+    selectedTableIndexes?: number[];
     conflictStrategy: "suffix_increment" | "hash_suffix" | "abort";
     reservedWordStrategy: "prefix" | "abort";
     lengthOverflowStrategy: "truncate_hash" | "abort";
@@ -57,6 +59,29 @@ function createFixtureWorkbook(filePath: string): void {
     ["No", LABEL_LOGICAL, LABEL_PHYSICAL, LABEL_DATA_TYPE],
     [1, "User Id", "User ID", "varchar"],
     [2, "Group", "group", "varchar"],
+  ];
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+  XLSX.writeFile(workbook, filePath);
+}
+
+function createTwoTableFixtureWorkbook(filePath: string): void {
+  const rows: Array<Array<string | number>> = [
+    [LABEL_DATABASE_DEFINITION],
+    ["No.", LABEL_LOGICAL_TABLE, LABEL_PHYSICAL_TABLE],
+    [1, "User Logical", "User Table"],
+    [],
+    ["No.", LABEL_LOGICAL, LABEL_PHYSICAL, LABEL_DATA_TYPE],
+    [1, "User Id", "User ID", "varchar"],
+    [2, "Group", "group", "varchar"],
+    [],
+    ["No.", LABEL_LOGICAL_TABLE, LABEL_PHYSICAL_TABLE],
+    [1, "Role Logical", "Role Table"],
+    [],
+    ["No.", LABEL_LOGICAL, LABEL_PHYSICAL, LABEL_DATA_TYPE],
+    [1, "Role Id", "Role ID", "varchar"],
+    [2, "Sort", "sort", "varchar"],
   ];
   const sheet = XLSX.utils.aoa_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -177,6 +202,60 @@ test("name-fix integration: preview -> apply(copy) updates exported copy and kee
     assert.equal(await readCell(outputPath, "Sheet1", "B3"), "user_table");
     assert.equal(await readCell(outputPath, "Sheet1", "C6"), "user_id");
     assert.equal(await readCell(outputPath, "Sheet1", "C7"), "n_group");
+  } finally {
+    if (uploadedFileId !== null) {
+      await modules.storage.deleteUploadedFile(uploadedFileId);
+    }
+  }
+});
+
+test("name-fix integration: current_sheet selectedTableIndexes limits rename scope", async () => {
+  let uploadedFileId: number | null = null;
+
+  try {
+    const sourcePath = path.join(uploadsRoot, "current-sheet-filter-source.xlsx");
+    createTwoTableFixtureWorkbook(sourcePath);
+    const uploaded = await modules.storage.createUploadedFile({
+      filePath: sourcePath,
+      originalName: "current-sheet-filter-source.xlsx",
+      fileHash: await hashFile(sourcePath),
+      fileSize: (await fs.stat(sourcePath)).size,
+    });
+    uploadedFileId = uploaded.id;
+
+    const preview = await modules.previewNameFixPlan({
+      fileIds: [uploaded.id],
+      scope: "current_sheet",
+      currentSheetName: "Sheet1",
+      selectedTableIndexes: [1],
+      conflictStrategy: "suffix_increment",
+      reservedWordStrategy: "prefix",
+      lengthOverflowStrategy: "truncate_hash",
+      maxIdentifierLength: 64,
+    });
+
+    assert.equal(preview.summary.fileCount, 1);
+    assert.equal(preview.summary.tableCount, 1);
+    assert.equal(preview.files[0].tableMappings.length, 1);
+    assert.equal(preview.files[0].tableMappings[0].tableIndex, 1);
+
+    const apply = await modules.applyNameFixPlanById({
+      planId: preview.planId,
+      mode: "copy",
+      includeReport: false,
+    });
+
+    assert.equal(apply.status, "completed");
+    assert.equal(apply.summary.successCount, 1);
+    const outputPath = String(apply.files[0].outputPath ?? "");
+    assert.ok(outputPath.length > 0);
+
+    assert.equal(await readCell(outputPath, "Sheet1", "C3"), "User Table");
+    assert.equal(await readCell(outputPath, "Sheet1", "C6"), "User ID");
+    assert.equal(await readCell(outputPath, "Sheet1", "C7"), "group");
+    assert.equal(await readCell(outputPath, "Sheet1", "C10"), "role_table");
+    assert.equal(await readCell(outputPath, "Sheet1", "C13"), "role_id");
+    assert.equal(await readCell(outputPath, "Sheet1", "C14"), "sort");
   } finally {
     if (uploadedFileId !== null) {
       await modules.storage.deleteUploadedFile(uploadedFileId);

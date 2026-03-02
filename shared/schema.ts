@@ -280,6 +280,7 @@ export const nameFixPreviewRequestSchema = z.object({
   scope: nameFixScopeSchema.default("current_sheet"),
   currentSheetName: z.string().optional(),
   selectedSheetNames: z.array(z.string()).optional(),
+  selectedTableIndexes: z.array(z.number().int().min(0)).optional(),
   conflictStrategy: nameFixConflictStrategySchema.default("suffix_increment"),
   reservedWordStrategy: reservedWordStrategySchema.default("prefix"),
   lengthOverflowStrategy: lengthOverflowStrategySchema.default("truncate_hash"),

@@ -211,9 +211,6 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   const confirmDelete = () => {
     if (!pendingDeleteFile) return;
     const deletingFileId = pendingDeleteFile.id;
-    if (selectedFileId === deletingFileId) {
-      onSelectFile(null);
-    }
     deleteFile(deletingFileId, {
       onSuccess: () => {
         toast({ title: t("toast.fileDeleted") });
@@ -230,6 +227,9 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
         setPendingDeleteFile(null);
       },
     });
+    if (selectedFileId === deletingFileId) {
+      onSelectFile(null);
+    }
   };
 
   // Collapsed mini sidebar
