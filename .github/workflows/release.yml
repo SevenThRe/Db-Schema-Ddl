@@ -19,6 +19,8 @@ on:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      LATEST_INSTALLER_NAME: DBSchemaExcel2DDL-Setup-latest.exe
 
     permissions:
       contents: write
@@ -68,6 +70,24 @@ jobs:
         run: |
           npm run build
           npx electron-builder --win nsis --publish never
+
+      - name: Create stable latest-download alias
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path dist-electron -Filter "*-Setup-*.exe" | Select-Object -First 1
+          if (-not $setup) {
+            throw "No setup exe found in dist-electron."
+          }
+          $aliasExe = Join-Path "dist-electron" "${{ env.LATEST_INSTALLER_NAME }}"
+          Copy-Item -Path $setup.FullName -Destination $aliasExe -Force
+
+          $sourceBlockmap = "$($setup.FullName).blockmap"
+          $aliasBlockmap = "$aliasExe.blockmap"
+          if (Test-Path $sourceBlockmap) {
+            Copy-Item -Path $sourceBlockmap -Destination $aliasBlockmap -Force
+          } else {
+            Write-Host "No blockmap found for $($setup.Name), skip alias blockmap."
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

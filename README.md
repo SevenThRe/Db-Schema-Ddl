@@ -33,6 +33,11 @@ A full-stack web application that parses Japanese Excel-based database definitio
 
 ## Quick Start
 
+### Download (Windows)
+
+- Releases page: [GitHub Releases](https://github.com/SevenThRe/Db-Schema-Ddl/releases)
+- Latest installer (constant URL): [![Download Latest](https://img.shields.io/badge/Download-Latest-2ea44f?logo=github)](https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest/download/DBSchemaExcel2DDL-Setup-latest.exe)
+
 1. **Install dependencies:**
    ```bash
    npm install
@@ -91,7 +96,16 @@ npm run build    # Build for production
 npm start        # Run production server
 npm run check    # Type check
 npm run db:push  # Sync database schema
+npm run docs:dev   # Start Docusaurus docs site
+npm run docs:build # Build Docusaurus docs site
+npm run docs:serve # Serve docs build locally
 ```
+
+## Documentation
+
+- Source: `docs-site/`
+- Local preview: `npm run docs:dev`
+- Production (GitHub Pages): `https://seventhre.github.io/Db-Schema-Ddl/`
 
 ## Project Structure
 
