@@ -5,6 +5,7 @@ import type {
   NameFixRollbackRequest,
   NameFixRollbackResponse,
 } from "@shared/schema";
+import { NAME_FIX_RUNTIME_MESSAGES } from "./constants";
 import { storage } from "../../storage";
 import { computeBufferHash } from "./shared";
 
@@ -13,11 +14,11 @@ export async function rollbackNameFixJobById(
 ): Promise<NameFixRollbackResponse> {
   const job = await storage.getNameFixJob(request.jobId);
   if (!job) {
-    throw new Error("Name-fix job not found.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.jobNotFound);
   }
   const backups = await storage.getNameFixBackupsByJob(request.jobId);
   if (backups.length === 0) {
-    throw new Error("No backup found for this job.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.backupNotFound);
   }
 
   let restoredPath: string | undefined;
@@ -42,7 +43,9 @@ export async function rollbackNameFixJobById(
     restoredPath,
     backupPath: backups[0]?.backupPath,
     restoredHash,
-    message: restoredPath ? "Rollback completed." : "No restorable backup found.",
+    message: restoredPath
+      ? NAME_FIX_RUNTIME_MESSAGES.rollbackCompleted
+      : NAME_FIX_RUNTIME_MESSAGES.rollbackNoRestorableBackup,
   };
 }
 
@@ -51,9 +54,8 @@ export async function getNameFixJobDetail(
 ): Promise<{ job: NameFixJob; items: NameFixJobItem[] }> {
   const job = await storage.getNameFixJob(jobId);
   if (!job) {
-    throw new Error("Name-fix job not found.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.jobNotFound);
   }
   const items = await storage.listNameFixJobItems(jobId);
   return { job, items };
 }
-

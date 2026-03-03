@@ -8,6 +8,10 @@ import type {
   NameFixTableMapping,
   TableInfo,
 } from "@shared/schema";
+import {
+  NAME_FIX_RUNTIME_ID_PREFIX,
+  NAME_FIX_RUNTIME_MESSAGES,
+} from "./constants";
 import { runParseWorkbookBundle } from "../excel-executor";
 import type { NameFixCellChange } from "../excel-writeback";
 import { storage } from "../../storage";
@@ -205,7 +209,7 @@ async function buildFilePreviewPlan(
 ): Promise<StoredFilePreviewPlan> {
   const file = await storage.getUploadedFile(fileId);
   if (!file) {
-    throw new Error(`File not found: ${fileId}`);
+    throw new Error(`${NAME_FIX_RUNTIME_MESSAGES.fileNotFoundByIdPrefix}: ${fileId}`);
   }
 
   const settings = await storage.getSettings();
@@ -246,7 +250,7 @@ async function buildFilePreviewPlan(
     && selectedCurrentSheetTableIndexSet
     && selectedTables.length === 0
   ) {
-    throw new Error("No tables matched selectedTableIndexes in current sheet.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.noTablesMatchedCurrentSheet);
   }
 
   const fixed = computeNameFixPlan(selectedTables.map((item) => item.table), {
@@ -321,7 +325,7 @@ export async function previewNameFixPlan(
   };
 
   const planHash = computePlanHash(hashPayload);
-  const planId = randomId("name_fix_plan");
+  const planId = randomId(NAME_FIX_RUNTIME_ID_PREFIX.plan);
   const createdAt = Date.now();
   const expiresAt = createdAt + PREVIEW_TTL_MS;
 

@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import type { NameFixBackup } from "@shared/schema";
+import { NAME_FIX_RUNTIME_MESSAGES } from "./constants";
 import { storage } from "../../storage";
 import {
   BACKUP_CLEANUP_INTERVAL_MS,
@@ -54,8 +55,7 @@ export function startNameFixMaintenance(): void {
     cleanupExpiredPreviewPlans();
     cleanupExpiredDownloadTokens();
     void cleanupExpiredBackups().catch((error) => {
-      console.warn("[name-fix] backup cleanup failed:", (error as Error).message);
+      console.warn(`${NAME_FIX_RUNTIME_MESSAGES.logPrefix} backup cleanup failed:`, (error as Error).message);
     });
   }, BACKUP_CLEANUP_INTERVAL_MS);
 }
-

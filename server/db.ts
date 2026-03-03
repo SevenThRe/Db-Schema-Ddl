@@ -1,38 +1,45 @@
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import pg from "pg";
 import Database from "better-sqlite3";
 import * as schema from "@shared/schema";
 import path from "path";
 import fs from "fs";
 import { isSqliteStorageEnabled } from "./app-config";
+import { DB_RUNTIME_DEFAULTS } from "./constants/db-runtime";
 
 const { Pool } = pg;
+
+type DatabaseConnection = NodePgDatabase<typeof schema> | BetterSQLite3Database<typeof schema>;
+type PgPool = pg.Pool;
+type SqliteConnection = Database.Database;
 
 // Electron または明示指定時は SQLite、それ以外は PostgreSQL を使用
 const useSqlite = isSqliteStorageEnabled();
 
-let db: any;
-let pool: any = null;
-let sqlite: any = null;
+let db: DatabaseConnection | null = null;
+let pool: PgPool | null = null;
+let sqlite: SqliteConnection | null = null;
 
 if (useSqlite) {
   // SQLite データベースファイルのパス（userData ディレクトリ内）
-  const dbDir = process.env.DB_PATH || path.join(process.cwd(), 'data');
+  const dbDir = process.env.DB_PATH || path.join(process.cwd(), DB_RUNTIME_DEFAULTS.sqliteDataDir);
 
   // ディレクトリが存在しない場合は作成
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const dbPath = path.join(dbDir, 'database.sqlite');
+  const dbPath = path.join(dbDir, DB_RUNTIME_DEFAULTS.sqliteFileName);
   console.log(`Using SQLite database at: ${dbPath}`);
 
   // SQLite データベース接続
   sqlite = new Database(dbPath);
 
   // WAL モードを有効化（パフォーマンス向上）
-  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma(DB_RUNTIME_DEFAULTS.sqliteJournalMode);
 
   db = drizzleSqlite(sqlite, { schema });
 } else {

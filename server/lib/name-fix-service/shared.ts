@@ -13,11 +13,16 @@ import type {
   NameFixTableMapping,
 } from "@shared/schema";
 import type { NameFixCellChange } from "../excel-writeback";
+import {
+  NAME_FIX_RUNTIME_ID_PREFIX,
+  NAME_FIX_RUNTIME_LIMITS,
+  NAME_FIX_RUNTIME_MESSAGES,
+} from "./constants";
 
-export const PREVIEW_TTL_MS = 30 * 60 * 1000;
-export const BACKUP_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-export const MAX_BACKUP_HISTORY_PER_SOURCE = 20;
-export const DOWNLOAD_TOKEN_TTL_MS = 30 * 60 * 1000;
+export const PREVIEW_TTL_MS = NAME_FIX_RUNTIME_LIMITS.previewTtlMs;
+export const BACKUP_CLEANUP_INTERVAL_MS = NAME_FIX_RUNTIME_LIMITS.backupCleanupIntervalMs;
+export const MAX_BACKUP_HISTORY_PER_SOURCE = NAME_FIX_RUNTIME_LIMITS.maxBackupHistoryPerSource;
+export const DOWNLOAD_TOKEN_TTL_MS = NAME_FIX_RUNTIME_LIMITS.downloadTokenTtlMs;
 
 export interface StoredFilePreviewPlan {
   fileId: number;
@@ -61,6 +66,21 @@ export const downloadTokenCache = new Map<string, NameFixDownloadTicket>();
 export const fileLocks = new Map<string, string>();
 let maintenanceStarted = false;
 
+interface ReportIssueLike {
+  sheetName?: unknown;
+  sourceAddress?: unknown;
+  reason?: unknown;
+}
+
+function toPlainReportIssue(item: unknown): { sheetName: string; sourceAddress: string; reason: string } {
+  const raw = (item ?? {}) as ReportIssueLike;
+  return {
+    sheetName: String(raw.sheetName ?? ""),
+    sourceAddress: String(raw.sourceAddress ?? ""),
+    reason: String(raw.reason ?? ""),
+  };
+}
+
 export function isMaintenanceStarted(): boolean {
   return maintenanceStarted;
 }
@@ -78,7 +98,7 @@ export function computeBufferHash(payload: Buffer): string {
 }
 
 export function randomId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`;
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(NAME_FIX_RUNTIME_LIMITS.randomIdByteLength).toString("hex")}`;
 }
 
 export function cleanupExpiredPreviewPlans(): void {
@@ -109,7 +129,7 @@ export function createDownloadTicket(
   preferredName: string,
   options?: { deleteOnExpire?: boolean; preserveFilename?: boolean },
 ): NameFixDownloadTicket {
-  const token = randomId("name_fix_download");
+  const token = randomId(NAME_FIX_RUNTIME_ID_PREFIX.download);
   const now = Date.now();
   const ext = path.extname(outputPath) || ".xlsx";
   const safeName = path.basename(preferredName || path.basename(outputPath));
@@ -146,7 +166,7 @@ export async function createNameFixBundleArchive(
 
   await new Promise<void>((resolve, reject) => {
     const output = fsSync.createWriteStream(archivePath);
-    const archive = archiver("zip", { zlib: { level: 9 } });
+    const archive = archiver("zip", { zlib: { level: NAME_FIX_RUNTIME_LIMITS.archiveCompressionLevel } });
 
     output.on("close", () => resolve());
     output.on("error", (error) => reject(error));
@@ -230,11 +250,7 @@ export async function writeExecutionReport(
       changedColumnCount: Number(payload.changedColumnCount ?? 0),
       skippedCount: Number(payload.skippedCount ?? 0),
       issues: Array.isArray(payload.issues)
-        ? payload.issues.map((item) => ({
-            sheetName: String((item as any).sheetName ?? ""),
-            sourceAddress: String((item as any).sourceAddress ?? ""),
-            reason: String((item as any).reason ?? ""),
-          }))
+        ? payload.issues.map((item) => toPlainReportIssue(item))
         : [],
     }),
     "utf-8",
@@ -306,7 +322,6 @@ export function validateTargetDirectory(
   }
   const uploadsRoot = path.resolve(process.env.UPLOADS_DIR || "uploads");
   if (!isPathWithin(uploadsRoot, targetDirectory)) {
-    throw new Error("targetDirectory is outside allowed uploads directory.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.targetDirectoryOutsideUploads);
   }
 }
-

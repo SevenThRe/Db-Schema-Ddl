@@ -1,4 +1,5 @@
 import * as fs from "fs/promises";
+import { NAME_FIX_RUNTIME_MESSAGES } from "./constants";
 import {
   cleanupExpiredDownloadTokens,
   downloadTokenCache,
@@ -10,11 +11,11 @@ export async function resolveNameFixDownloadTicket(
   cleanupExpiredDownloadTokens();
   const ticket = downloadTokenCache.get(token);
   if (!ticket) {
-    throw new Error("Download token not found or expired.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.downloadTokenNotFound);
   }
   if (ticket.expiresAt <= Date.now()) {
     downloadTokenCache.delete(token);
-    throw new Error("Download token has expired.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.downloadTokenExpired);
   }
   await fs.access(ticket.outputPath);
   return {
@@ -22,4 +23,3 @@ export async function resolveNameFixDownloadTicket(
     downloadFilename: ticket.downloadFilename,
   };
 }
-

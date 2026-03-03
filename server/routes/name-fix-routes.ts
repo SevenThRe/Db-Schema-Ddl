@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { api } from "@shared/routes";
+import { API_ERROR_CODES, API_RESPONSE_MESSAGES, HTTP_STATUS } from "../constants/api-response";
+import { HTTP_HEADER_NAMES } from "../constants/http-headers";
+import { NAME_FIX_RUNTIME_MARKERS } from "../lib/name-fix-service/constants";
 import { sendApiError } from "../lib/api-error";
 import {
   applyNameFixPlanById,
@@ -29,22 +32,23 @@ export function registerNameFixRoutes(app: Express, deps: NameFixRouteDeps): voi
       } catch (err) {
         if (err instanceof z.ZodError) {
           return sendApiError(res, {
-            status: 400,
-            code: "INVALID_REQUEST",
+            status: HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.invalidRequest,
             message: err.errors[0].message,
           });
         }
         const message = (err as Error).message;
-        if (message.toLowerCase().includes("file not found")) {
+        const normalizedMessage = message.toLowerCase();
+        if (normalizedMessage.includes(NAME_FIX_RUNTIME_MARKERS.fileNotFoundText)) {
           return sendApiError(res, {
-            status: 404,
-            code: "FILE_NOT_FOUND",
+            status: HTTP_STATUS.NOT_FOUND,
+            code: API_ERROR_CODES.fileNotFound,
             message,
           });
         }
         return sendApiError(res, {
-          status: 400,
-          code: "REQUEST_FAILED",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.requestFailed,
           message,
         });
       }
@@ -60,30 +64,30 @@ export function registerNameFixRoutes(app: Express, deps: NameFixRouteDeps): voi
       try {
         const request = api.nameFix.apply.input.parse(req.body);
         const response = await applyNameFixPlanById(request);
-        res.setHeader("X-NameFix-JobId", response.jobId);
-        res.setHeader("X-NameFix-PlanHash", response.planHash);
-        res.setHeader("X-NameFix-Changed-Tables", String(response.summary.changedTableCount));
-        res.setHeader("X-NameFix-Changed-Columns", String(response.summary.changedColumnCount));
+        res.setHeader(HTTP_HEADER_NAMES.nameFixJobId, response.jobId);
+        res.setHeader(HTTP_HEADER_NAMES.nameFixPlanHash, response.planHash);
+        res.setHeader(HTTP_HEADER_NAMES.nameFixChangedTables, String(response.summary.changedTableCount));
+        res.setHeader(HTTP_HEADER_NAMES.nameFixChangedColumns, String(response.summary.changedColumnCount));
         res.json(response);
       } catch (err) {
         if (err instanceof z.ZodError) {
           return sendApiError(res, {
-            status: 400,
-            code: "INVALID_REQUEST",
+            status: HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.invalidRequest,
             message: err.errors[0].message,
           });
         }
         const message = (err as Error).message;
-        if (message.toLowerCase().includes("not found")) {
+        if (message.toLowerCase().includes(NAME_FIX_RUNTIME_MARKERS.notFoundText)) {
           return sendApiError(res, {
-            status: 404,
-            code: "TASK_NOT_FOUND",
+            status: HTTP_STATUS.NOT_FOUND,
+            code: API_ERROR_CODES.taskNotFound,
             message,
           });
         }
         return sendApiError(res, {
-          status: 400,
-          code: "REQUEST_FAILED",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.requestFailed,
           message,
         });
       }
@@ -103,22 +107,22 @@ export function registerNameFixRoutes(app: Express, deps: NameFixRouteDeps): voi
       } catch (err) {
         if (err instanceof z.ZodError) {
           return sendApiError(res, {
-            status: 400,
-            code: "INVALID_REQUEST",
+            status: HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.invalidRequest,
             message: err.errors[0].message,
           });
         }
         const message = (err as Error).message;
-        if (message.toLowerCase().includes("not found")) {
+        if (message.toLowerCase().includes(NAME_FIX_RUNTIME_MARKERS.notFoundText)) {
           return sendApiError(res, {
-            status: 404,
-            code: "TASK_NOT_FOUND",
+            status: HTTP_STATUS.NOT_FOUND,
+            code: API_ERROR_CODES.taskNotFound,
             message,
           });
         }
         return sendApiError(res, {
-          status: 400,
-          code: "REQUEST_FAILED",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.requestFailed,
           message,
         });
       }
@@ -132,16 +136,16 @@ export function registerNameFixRoutes(app: Express, deps: NameFixRouteDeps): voi
       res.json(detail);
     } catch (err) {
       const message = (err as Error).message;
-      if (message.toLowerCase().includes("not found")) {
+      if (message.toLowerCase().includes(NAME_FIX_RUNTIME_MARKERS.notFoundText)) {
         return sendApiError(res, {
-          status: 404,
-          code: "TASK_NOT_FOUND",
+          status: HTTP_STATUS.NOT_FOUND,
+          code: API_ERROR_CODES.taskNotFound,
           message,
         });
       }
       return sendApiError(res, {
-        status: 400,
-        code: "REQUEST_FAILED",
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.requestFailed,
         message,
       });
     }
@@ -152,28 +156,31 @@ export function registerNameFixRoutes(app: Express, deps: NameFixRouteDeps): voi
       const token = String(req.params.token ?? "").trim();
       if (!token) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
-          message: "Download token is required.",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: API_RESPONSE_MESSAGES.downloadTokenRequired,
         });
       }
       const ticket = await resolveNameFixDownloadTicket(token);
       res.download(ticket.outputPath, ticket.downloadFilename);
     } catch (err) {
       const message = (err as Error).message;
-      if (message.toLowerCase().includes("not found") || message.toLowerCase().includes("expired")) {
+      const normalizedMessage = message.toLowerCase();
+      if (
+        normalizedMessage.includes(NAME_FIX_RUNTIME_MARKERS.notFoundText) ||
+        normalizedMessage.includes(NAME_FIX_RUNTIME_MARKERS.expiredText)
+      ) {
         return sendApiError(res, {
-          status: 404,
-          code: "FILE_NOT_FOUND",
+          status: HTTP_STATUS.NOT_FOUND,
+          code: API_ERROR_CODES.fileNotFound,
           message,
         });
       }
       return sendApiError(res, {
-        status: 400,
-        code: "REQUEST_FAILED",
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.requestFailed,
         message,
       });
     }
   });
 }
-

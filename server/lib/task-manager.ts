@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import crypto from 'crypto';
 import { type ParseOptions } from './excel';
 import { runParseWorkbookBundle } from './excel-executor';
+import { TASK_RUNTIME_DEFAULTS } from '../constants/task-runtime';
 
 function parsePositiveIntOrDefault(value: string | undefined, fallback: number): number {
   const parsed = Number(value ?? '');
@@ -28,11 +29,11 @@ export interface Task {
   parseOptions?: ParseOptions;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
-  result?: any;
+  result?: unknown;
   error?: string;
   createdAt: Date;
   onProgress?: (progress: number) => void;
-  onComplete?: (result: any) => void | Promise<void>;
+  onComplete?: (result: unknown) => void | Promise<void>;
   onError?: (error: string) => void | Promise<void>;
 }
 
@@ -45,9 +46,15 @@ export class TaskQueueOverflowError extends Error {
 
 class TaskManager {
   private tasks: Map<string, Task> = new Map();
-  private maxWorkers = 4;
-  private maxQueueLength = parsePositiveIntOrDefault(process.env.TASK_MANAGER_MAX_QUEUE_LENGTH, 200);
-  private stalePendingMs = parsePositiveIntOrDefault(process.env.TASK_MANAGER_STALE_PENDING_MS, 30 * 60 * 1000);
+  private maxWorkers = TASK_RUNTIME_DEFAULTS.maxWorkers;
+  private maxQueueLength = parsePositiveIntOrDefault(
+    process.env.TASK_MANAGER_MAX_QUEUE_LENGTH,
+    TASK_RUNTIME_DEFAULTS.maxQueueLength,
+  );
+  private stalePendingMs = parsePositiveIntOrDefault(
+    process.env.TASK_MANAGER_STALE_PENDING_MS,
+    TASK_RUNTIME_DEFAULTS.stalePendingMs,
+  );
   private activeWorkers = 0;
   private queue: Task[] = [];
   private inFlightTaskByDedupeKey: Map<string, string> = new Map();
@@ -61,7 +68,7 @@ class TaskManager {
       dedupeKey?: string;
       parseOptions?: ParseOptions;
       onProgress?: (progress: number) => void;
-      onComplete?: (result: any) => void | Promise<void>;
+      onComplete?: (result: unknown) => void | Promise<void>;
       onError?: (error: string) => void | Promise<void>;
     }
   ): Task {
@@ -80,7 +87,9 @@ class TaskManager {
     }
 
     const task: Task = {
-      id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `${type}_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 2 + TASK_RUNTIME_DEFAULTS.dedupeIdRandomLength)}`,
       type,
       filePath,
       fileHash: options?.fileHash,
@@ -110,10 +119,18 @@ class TaskManager {
     stalePendingMs?: number;
   }): void {
     if (typeof options.maxQueueLength === 'number' && Number.isFinite(options.maxQueueLength)) {
-      this.maxQueueLength = clampInt(options.maxQueueLength, 10, 1000);
+      this.maxQueueLength = clampInt(
+        options.maxQueueLength,
+        TASK_RUNTIME_DEFAULTS.queueLengthMin,
+        TASK_RUNTIME_DEFAULTS.queueLengthMax,
+      );
     }
     if (typeof options.stalePendingMs === 'number' && Number.isFinite(options.stalePendingMs)) {
-      this.stalePendingMs = clampInt(options.stalePendingMs, 60_000, 3_600_000);
+      this.stalePendingMs = clampInt(
+        options.stalePendingMs,
+        TASK_RUNTIME_DEFAULTS.stalePendingMinMs,
+        TASK_RUNTIME_DEFAULTS.stalePendingMaxMs,
+      );
     }
   }
 
@@ -220,26 +237,29 @@ class TaskManager {
     try {
       switch (task.type) {
         case 'hash': {
-          task.progress = 10;
+          task.progress = TASK_RUNTIME_DEFAULTS.hashTaskProgressReadStarted;
           if (task.onProgress) task.onProgress(task.progress);
 
           // Read file asynchronously in chunks to avoid blocking
           const fileBuffer = await fs.readFile(task.filePath);
 
-          task.progress = 50;
+          task.progress = TASK_RUNTIME_DEFAULTS.hashTaskProgressReadCompleted;
           if (task.onProgress) task.onProgress(task.progress);
 
           // Calculate hash asynchronously
           const fileHash = await new Promise<string>((resolve) => {
             setImmediate(() => {
-              const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+              const hash = crypto
+                .createHash(TASK_RUNTIME_DEFAULTS.hashAlgorithm)
+                .update(fileBuffer)
+                .digest('hex');
               resolve(hash);
             });
           });
 
           const fileSize = fileBuffer.length;
 
-          task.progress = 100;
+          task.progress = TASK_RUNTIME_DEFAULTS.taskProgressCompleted;
           task.result = { fileHash, fileSize };
           task.status = 'completed';
           if (task.onProgress) task.onProgress(task.progress);
@@ -248,19 +268,19 @@ class TaskManager {
         }
 
         case 'parse_sheets': {
-          task.progress = 10;
+          task.progress = TASK_RUNTIME_DEFAULTS.parseTaskProgressStarted;
           if (task.onProgress) task.onProgress(task.progress);
 
           const bundle = await runParseWorkbookBundle(task.filePath, task.parseOptions, task.fileHash);
 
-          task.progress = 30;
+          task.progress = TASK_RUNTIME_DEFAULTS.parseTaskProgressReady;
           if (task.onProgress) task.onProgress(task.progress);
 
           const sheetsWithInfo = bundle.sheetSummaries;
-          task.progress = 90;
+          task.progress = TASK_RUNTIME_DEFAULTS.parseTaskProgressNearComplete;
           if (task.onProgress) task.onProgress(task.progress);
 
-          task.progress = 100;
+          task.progress = TASK_RUNTIME_DEFAULTS.taskProgressCompleted;
           task.result = sheetsWithInfo;
           task.status = 'completed';
           if (task.onProgress) task.onProgress(task.progress);
@@ -273,13 +293,13 @@ class TaskManager {
             throw new Error('Sheet name is required for parse_table task');
           }
 
-          task.progress = 10;
+          task.progress = TASK_RUNTIME_DEFAULTS.parseTaskProgressStarted;
           if (task.onProgress) task.onProgress(task.progress);
 
           const bundle = await runParseWorkbookBundle(task.filePath, task.parseOptions, task.fileHash);
           const tables = bundle.tablesBySheet[task.sheetName!] ?? [];
 
-          task.progress = 100;
+          task.progress = TASK_RUNTIME_DEFAULTS.taskProgressCompleted;
           task.result = tables;
           task.status = 'completed';
           if (task.onProgress) task.onProgress(task.progress);
@@ -288,7 +308,7 @@ class TaskManager {
         }
 
         default:
-          throw new Error(`Unknown task type: ${(task as any).type}`);
+          throw new Error(`Unknown task type: ${String(task.type)}`);
       }
     } catch (error) {
       task.status = 'failed';
@@ -298,7 +318,7 @@ class TaskManager {
     }
   }
 
-  clearCompletedTasks(olderThan: number = 60000) {
+  clearCompletedTasks(olderThan: number = TASK_RUNTIME_DEFAULTS.cleanupCompletedTaskOlderThanMs) {
     const now = Date.now();
     const stalePendingBefore = now - this.stalePendingMs;
 
@@ -330,5 +350,5 @@ export const taskManager = new TaskManager();
 
 // Clean up old tasks every 5 minutes
 setInterval(() => {
-  taskManager.clearCompletedTasks(5 * 60 * 1000);
-}, 5 * 60 * 1000);
+  taskManager.clearCompletedTasks(TASK_RUNTIME_DEFAULTS.cleanupIntervalMs);
+}, TASK_RUNTIME_DEFAULTS.cleanupIntervalMs);

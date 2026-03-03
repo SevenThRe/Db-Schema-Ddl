@@ -6,6 +6,11 @@ import type {
   NameFixMode,
 } from "@shared/schema";
 import { applyExcelNameChanges } from "../excel-writeback";
+import {
+  NAME_FIX_RUNTIME_ID_PREFIX,
+  NAME_FIX_RUNTIME_LIMITS,
+  NAME_FIX_RUNTIME_MESSAGES,
+} from "./constants";
 import { storage } from "../../storage";
 import {
   cleanupExpiredDownloadTokens,
@@ -72,7 +77,7 @@ async function executeFilePlanApply(
         changedTableCount: filePlan.changedTableCount,
         changedColumnCount: filePlan.changedColumnCount,
         skippedChanges: filePlan.cellChanges.length,
-        error: "File is currently locked by another name-fix operation.",
+        error: NAME_FIX_RUNTIME_MESSAGES.fileLockedByAnotherOperation,
       },
     };
   }
@@ -89,8 +94,8 @@ async function executeFilePlanApply(
         skippedChanges: filePlan.cellChanges.length,
         error:
           filePlan.blockingConflictCount > 0
-            ? "Blocking naming conflicts detected. Please adjust strategy and preview again."
-            : "Missing sourceRef detected. Apply operation is blocked for this file.",
+            ? NAME_FIX_RUNTIME_MESSAGES.blockingConflictsDetected
+            : NAME_FIX_RUNTIME_MESSAGES.missingSourceRefBlocked,
       },
     };
   }
@@ -126,7 +131,7 @@ async function executeFilePlanApply(
 
     if (writeResult.backupPath && writeResult.backupHash) {
       const expiresAt = new Date(
-        Date.now() + backupRetentionDays * 24 * 60 * 60 * 1000,
+        Date.now() + backupRetentionDays * NAME_FIX_RUNTIME_LIMITS.msPerDay,
       ).toISOString();
       await storage.createNameFixBackup({
         jobId,
@@ -192,9 +197,13 @@ async function createJobRecord(
   plan: StoredPreviewPlan,
   mode: NameFixMode,
 ): Promise<NameFixJob> {
-  const jobId = randomId("name_fix_job");
-  const sourcePath = plan.files.length === 1 ? plan.files[0].sourcePath : "[multiple]";
-  const fileId = plan.files.length === 1 ? plan.files[0].fileId : 0;
+  const jobId = randomId(NAME_FIX_RUNTIME_ID_PREFIX.job);
+  const sourcePath =
+    plan.files.length === 1
+      ? plan.files[0].sourcePath
+      : NAME_FIX_RUNTIME_MESSAGES.multipleSourcePathPlaceholder;
+  const fileId =
+    plan.files.length === 1 ? plan.files[0].fileId : NAME_FIX_RUNTIME_LIMITS.multipleFilePlaceholderId;
   return storage.createNameFixJob({
     id: jobId,
     fileId,
@@ -227,20 +236,20 @@ export async function applyNameFixPlanById(
   cleanupExpiredDownloadTokens();
   const plan = previewPlanCache.get(request.planId);
   if (!plan) {
-    throw new Error("Preview plan expired or not found. Please run preview again.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.previewPlanExpiredOrMissing);
   }
   if (plan.expiresAt <= Date.now()) {
     previewPlanCache.delete(plan.planId);
-    throw new Error("Preview plan has expired. Please run preview again.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.previewPlanExpired);
   }
 
   const settings = await storage.getSettings();
   const mode = request.mode;
   if (mode === "overwrite" && process.env.ELECTRON_MODE !== "true") {
-    throw new Error("Overwrite mode is only available in Electron.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.overwriteModeElectronOnly);
   }
   if (mode === "overwrite" && !settings.allowOverwriteInElectron) {
-    throw new Error("Overwrite mode is disabled by current settings.");
+    throw new Error(NAME_FIX_RUNTIME_MESSAGES.overwriteModeDisabledBySettings);
   }
   validateTargetDirectory(request.targetDirectory, settings.allowExternalPathWrite);
 
@@ -275,8 +284,11 @@ export async function applyNameFixPlanById(
 
   const fileApplyResults: FilePlanApplyOutcome[] = new Array(plan.files.length);
   const maxBatchConcurrency = Math.max(
-    1,
-    Math.min(settings.nameFixMaxBatchConcurrency || 1, plan.files.length || 1),
+    NAME_FIX_RUNTIME_LIMITS.minBatchConcurrency,
+    Math.min(
+      settings.nameFixMaxBatchConcurrency || NAME_FIX_RUNTIME_LIMITS.minBatchConcurrency,
+      plan.files.length || NAME_FIX_RUNTIME_LIMITS.minBatchConcurrency,
+    ),
   );
   let nextFileIndex = 0;
   await Promise.all(
@@ -377,4 +389,3 @@ export async function applyNameFixPlanById(
     files: fileResults,
   };
 }
-

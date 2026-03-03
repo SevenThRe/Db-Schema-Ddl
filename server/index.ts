@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { sendApiError } from "./lib/api-error";
 import { runUploadsBackfill } from "./lib/uploads-backfill";
 import { isSqliteStorageEnabled } from "./app-config";
+import { ROUTE_PATHS } from "./constants/route-runtime";
 
 const app = express();
 const httpServer = createServer(app);
@@ -147,7 +148,7 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
+    if (path.startsWith(ROUTE_PATHS.apiPrefix)) {
       const requestId = (res.getHeader("X-Request-Id") || req.header("x-request-id")) ?? undefined;
       const logPayload: Record<string, unknown> = {
         status: res.statusCode,
@@ -184,9 +185,10 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const normalizedError = err as { status?: number; statusCode?: number; message?: string };
+    const status = normalizedError.status || normalizedError.statusCode || 500;
+    const message = normalizedError.message || "Internal Server Error";
     const code = status >= 500 ? "INTERNAL_SERVER_ERROR" : "REQUEST_FAILED";
 
     console.error("Internal Server Error:", err);

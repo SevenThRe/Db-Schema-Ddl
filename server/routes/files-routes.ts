@@ -2,12 +2,38 @@ import type { Express, Response } from "express";
 import fs from "fs";
 import type multer from "multer";
 import { api } from "@shared/routes";
+import { APP_DEFAULTS } from "@shared/config";
+import { API_ERROR_CODES, API_RESPONSE_MESSAGES, HTTP_STATUS } from "../constants/api-response";
+import { HTTP_HEADER_NAMES } from "../constants/http-headers";
 import { sendApiError } from "../lib/api-error";
+import {
+  ROUTE_RUNTIME_DEFAULTS,
+  ROUTE_STRING_MARKERS,
+  ROUTE_UPLOAD_FILE_NAMING,
+} from "../constants/route-runtime";
 import { getSheetData } from "../lib/excel";
+import { assertValidExcelFile, ExcelValidationError } from "../lib/excel-validation";
 import { runParseRegion, runParseWorkbookBundle } from "../lib/excel-executor";
 import { taskManager, TaskQueueOverflowError } from "../lib/task-manager";
 import { storage } from "../storage";
 import type { UploadMiddlewares } from "./module-types";
+
+interface DecodedFilenameRequest {
+  decodedFileName?: string;
+}
+
+interface HashTaskResult {
+  fileHash: string;
+  fileSize: number;
+}
+
+function isHashTaskResult(value: unknown): value is HashTaskResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<HashTaskResult>;
+  return typeof candidate.fileHash === "string" && typeof candidate.fileSize === "number";
+}
 
 interface FileRouteDeps extends UploadMiddlewares {
   upload: multer.Multer;
@@ -32,6 +58,15 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
     sendTaskQueueBusyError,
   } = deps;
 
+  async function resolveParseOptions() {
+    const settings = await storage.getSettings();
+    return {
+      maxConsecutiveEmptyRows:
+        settings?.maxConsecutiveEmptyRows ?? ROUTE_RUNTIME_DEFAULTS.maxConsecutiveEmptyRows,
+      pkMarkers: settings?.pkMarkers ?? defaultPkMarkers,
+    };
+  }
+
   app.get(api.files.list.path, async (_req, res) => {
     const files = await storage.getUploadedFiles();
     res.json(files);
@@ -42,23 +77,54 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
     globalProtectRateLimit,
     globalProtectInFlightLimit,
     uploadRateLimit,
-    upload.single("file"),
+    upload.single(ROUTE_STRING_MARKERS.uploadFieldName),
     async (req, res) => {
       if (!req.file) {
         return sendApiError(res, {
-          status: 400,
-          code: "NO_FILE_UPLOADED",
-          message: "No file uploaded",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.noFileUploaded,
+          message: API_RESPONSE_MESSAGES.noFileUploaded,
         });
       }
 
-      const decodedName = (req as any).decodedFileName || req.file.originalname;
+      const decodedName =
+        (req as DecodedFilenameRequest).decodedFileName ||
+        Buffer.from(req.file.originalname, ROUTE_UPLOAD_FILE_NAMING.originalNameEncoding).toString(
+          ROUTE_UPLOAD_FILE_NAMING.decodedNameEncoding,
+        );
       const filePath = req.file.path;
+      try {
+        assertValidExcelFile(filePath, {
+          maxFileSizeMb: APP_DEFAULTS.excel.maxFileSizeMb,
+          maxRowsPerSheet: APP_DEFAULTS.excel.maxRowsPerSheet,
+        });
+      } catch (error) {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        if (error instanceof ExcelValidationError) {
+          const fileTooLarge = error.issues.some((issue) => issue.code === "FILE_TOO_LARGE");
+          return sendApiError(res, {
+            status: fileTooLarge ? HTTP_STATUS.PAYLOAD_TOO_LARGE : HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.readExcelFailed,
+            message: API_RESPONSE_MESSAGES.excelValidationFailed,
+            params: {
+              issueCount: error.issues.length,
+            },
+            issues: error.issues,
+          });
+        }
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.readExcelFailed,
+          message: API_RESPONSE_MESSAGES.invalidExcelWorkbook,
+        });
+      }
 
       const tempFile = await storage.createUploadedFile({
         filePath,
         originalName: decodedName,
-        fileHash: "processing",
+        fileHash: ROUTE_STRING_MARKERS.uploadProcessingHash,
         fileSize: 0,
       });
 
@@ -67,6 +133,9 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
         task = taskManager.createTask("hash", filePath, {
           onComplete: async (result) => {
             try {
+              if (!isHashTaskResult(result)) {
+                throw new Error("Invalid hash task result");
+              }
               const { fileHash, fileSize } = result;
               const existingFile = await storage.findFileByHash(fileHash);
 
@@ -111,13 +180,13 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
           return;
         }
         return sendApiError(res, {
-          status: 500,
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to schedule upload processing task",
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.internalServerError,
+          message: API_RESPONSE_MESSAGES.uploadTaskScheduleFailed,
         });
       }
 
-      res.status(201).json({
+      res.status(HTTP_STATUS.CREATED).json({
         ...tempFile,
         taskId: task.id,
         processing: true,
@@ -125,14 +194,14 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
     },
   );
 
-  app.delete("/api/files/:id", async (req, res) => {
+  app.delete(api.files.remove.path, async (req, res) => {
     const id = Number(req.params.id);
     const file = await storage.getUploadedFile(id);
     if (!file) {
       return sendApiError(res, {
-        status: 404,
-        code: "FILE_NOT_FOUND",
-        message: "File not found",
+        status: HTTP_STATUS.NOT_FOUND,
+        code: API_ERROR_CODES.fileNotFound,
+        message: API_RESPONSE_MESSAGES.fileNotFound,
       });
     }
     try {
@@ -149,27 +218,27 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
 
       await storage.deleteUploadedFile(id);
       res.json({
-        message: "File deleted",
+        message: API_RESPONSE_MESSAGES.fileDeleted,
         fileCleanupWarning,
       });
     } catch (_err) {
       return sendApiError(res, {
-        status: 500,
-        code: "FILE_DELETE_FAILED",
-        message: "Failed to delete file",
+        status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: API_ERROR_CODES.fileDeleteFailed,
+        message: API_RESPONSE_MESSAGES.fileDeleteFailed,
       });
     }
   });
 
-  app.get("/api/files/:id/sheets/:sheetName/data", async (req, res) => {
+  app.get(api.files.getSheetData.path, async (req, res) => {
     const id = Number(req.params.id);
     const sheetName = decodeURIComponent(req.params.sheetName);
     const file = await storage.getUploadedFile(id);
     if (!file) {
       return sendApiError(res, {
-        status: 404,
-        code: "FILE_NOT_FOUND",
-        message: "File not found",
+        status: HTTP_STATUS.NOT_FOUND,
+        code: API_ERROR_CODES.fileNotFound,
+        message: API_RESPONSE_MESSAGES.fileNotFound,
       });
     }
     try {
@@ -177,8 +246,8 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
       res.json(data);
     } catch (err) {
       return sendApiError(res, {
-        status: 400,
-        code: "READ_SHEET_FAILED",
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.readSheetFailed,
         message: `Failed to read sheet: ${(err as Error).message}`,
         params: { sheetName },
       });
@@ -186,39 +255,38 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
   });
 
   app.post(
-    "/api/files/:id/parse-region",
+    api.files.parseRegion.path,
     globalProtectRateLimit,
     globalProtectInFlightLimit,
     parseRateLimit,
     async (req, res) => {
       const id = Number(req.params.id);
       const file = await storage.getUploadedFile(id);
-      if (!file) {
-        return sendApiError(res, {
-          status: 404,
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
-        });
-      }
+    if (!file) {
+      return sendApiError(res, {
+        status: HTTP_STATUS.NOT_FOUND,
+        code: API_ERROR_CODES.fileNotFound,
+        message: API_RESPONSE_MESSAGES.fileNotFound,
+      });
+    }
       try {
         const { sheetName, startRow, endRow, startCol, endCol } = req.body;
-        const settings = await storage.getSettings();
+        const parseOptions = await resolveParseOptions();
         const tables = await runParseRegion(file.filePath, sheetName, startRow, endRow, startCol, endCol, {
-          maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
-          pkMarkers: settings?.pkMarkers ?? defaultPkMarkers,
+          ...parseOptions,
         });
         res.json(tables);
       } catch (err) {
         if (isExecutorOverloadedError(err)) {
           return sendApiError(res, {
-            status: 503,
-            code: "REQUEST_FAILED",
-            message: "Excel parser is busy. Please retry shortly.",
+            status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+            code: API_ERROR_CODES.requestFailed,
+            message: API_RESPONSE_MESSAGES.excelParserBusy,
           });
         }
         return sendApiError(res, {
-          status: 400,
-          code: "PARSE_REGION_FAILED",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.parseRegionFailed,
           message: `Failed to parse region: ${(err as Error).message}`,
         });
       }
@@ -235,21 +303,18 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
       const file = await storage.getUploadedFile(id);
       if (!file) {
         return sendApiError(res, {
-          status: 404,
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          status: HTTP_STATUS.NOT_FOUND,
+          code: API_ERROR_CODES.fileNotFound,
+          message: API_RESPONSE_MESSAGES.fileNotFound,
         });
       }
 
       try {
-        const settings = await storage.getSettings();
+        const parseOptions = await resolveParseOptions();
         const task = taskManager.createTask("parse_sheets", file.filePath, {
           fileHash: file.fileHash,
-          dedupeKey: `parse_sheets:${file.id}`,
-          parseOptions: {
-            maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
-            pkMarkers: settings?.pkMarkers ?? defaultPkMarkers,
-          },
+          dedupeKey: `${ROUTE_STRING_MARKERS.parseSheetsTaskPrefix}:${file.id}`,
+          parseOptions,
           onComplete: () => undefined,
           onError: (error) => {
             console.error("Failed to parse sheets:", error);
@@ -266,9 +331,9 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
           return;
         }
         return sendApiError(res, {
-          status: 500,
-          code: "READ_EXCEL_FAILED",
-          message: "Failed to read Excel file",
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.readExcelFailed,
+          message: API_RESPONSE_MESSAGES.readExcelFailed,
         });
       }
     },
@@ -286,30 +351,27 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
       const file = await storage.getUploadedFile(id);
       if (!file) {
         return sendApiError(res, {
-          status: 404,
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          status: HTTP_STATUS.NOT_FOUND,
+          code: API_ERROR_CODES.fileNotFound,
+          message: API_RESPONSE_MESSAGES.fileNotFound,
         });
       }
 
       try {
         if (!sheetName) {
           return sendApiError(res, {
-            status: 400,
-            code: "INVALID_REQUEST",
-            message: "Sheet name is required",
+            status: HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.invalidRequest,
+            message: API_RESPONSE_MESSAGES.sheetNameRequired,
           });
         }
 
-        const settings = await storage.getSettings();
+        const parseOptions = await resolveParseOptions();
         const task = taskManager.createTask("parse_table", file.filePath, {
           fileHash: file.fileHash,
           sheetName,
-          dedupeKey: `parse_table:${file.id}:${sheetName}`,
-          parseOptions: {
-            maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
-            pkMarkers: settings?.pkMarkers ?? defaultPkMarkers,
-          },
+          dedupeKey: `${ROUTE_STRING_MARKERS.parseTableTaskPrefix}:${file.id}:${sheetName}`,
+          parseOptions,
           onComplete: () => undefined,
           onError: (error) => {
             console.error("Failed to parse table:", error);
@@ -326,8 +388,8 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
           return;
         }
         return sendApiError(res, {
-          status: 400,
-          code: "PARSE_SHEET_FAILED",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.parseSheetFailed,
           message: `Failed to parse sheet: ${(err as Error).message}`,
           params: { sheetName: sheetName ?? null },
         });
@@ -340,9 +402,9 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
     const task = taskManager.getTask(id);
     if (!task) {
       return sendApiError(res, {
-        status: 404,
-        code: "TASK_NOT_FOUND",
-        message: "Task not found",
+        status: HTTP_STATUS.NOT_FOUND,
+        code: API_ERROR_CODES.taskNotFound,
+        message: API_RESPONSE_MESSAGES.taskNotFound,
       });
     }
     res.json({
@@ -367,39 +429,35 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
       const file = await storage.getUploadedFile(id);
       if (!file) {
         return sendApiError(res, {
-          status: 404,
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          status: HTTP_STATUS.NOT_FOUND,
+          code: API_ERROR_CODES.fileNotFound,
+          message: API_RESPONSE_MESSAGES.fileNotFound,
         });
       }
 
       try {
-        const settings = await storage.getSettings();
+        const parseOptions = await resolveParseOptions();
         const bundle = await runParseWorkbookBundle(
           file.filePath,
-          {
-            maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
-            pkMarkers: settings?.pkMarkers ?? defaultPkMarkers,
-          },
+          parseOptions,
           file.fileHash,
         );
-        res.setHeader("X-Parse-Mode", bundle.stats.parseMode);
+        res.setHeader(HTTP_HEADER_NAMES.parseMode, bundle.stats.parseMode);
         res.json(bundle.searchIndex);
       } catch (err) {
         if (isExecutorOverloadedError(err)) {
           return sendApiError(res, {
-            status: 503,
-            code: "REQUEST_FAILED",
-            message: "Excel parser is busy. Please retry shortly.",
+            status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+            code: API_ERROR_CODES.requestFailed,
+            message: API_RESPONSE_MESSAGES.excelParserBusy,
           });
         }
         return sendApiError(res, {
-          status: 500,
-          code: "SEARCH_INDEX_FAILED",
-          message: "Failed to generate search index",
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.searchIndexFailed,
+          message: API_RESPONSE_MESSAGES.searchIndexFailed,
         });
       }
     },
   );
 }
-

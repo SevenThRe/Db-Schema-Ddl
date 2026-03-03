@@ -1,49 +1,8 @@
 import { type TableInfo, type ColumnInfo, type GenerateDdlRequest, type DdlSettings } from '@shared/schema';
+import { createDefaultDdlSettings } from "@shared/config";
 import { normalizeDataTypeAndSize, validateGenerateDdlRequest } from './ddl-validation';
 
-const DEFAULT_SETTINGS: DdlSettings = {
-  mysqlEngine: "InnoDB",
-  mysqlCharset: "utf8mb4",
-  mysqlCollate: "utf8mb4_bin",
-  varcharCharset: "utf8mb4",
-  varcharCollate: "utf8mb4_bin",
-  exportFilenamePrefix: "Crt_",
-  exportFilenameSuffix: "",
-  includeCommentHeader: true,
-  authorName: "ISI",
-  includeSetNames: true,
-  includeDropTable: true,
-  downloadPath: undefined,
-  excelReadPath: undefined,
-  customHeaderTemplate: undefined,
-  useCustomHeader: false,
-  mysqlDataTypeCase: "lower",
-  mysqlBooleanMode: "tinyint(1)",
-  pkMarkers: ["\u3007"],
-  maxConsecutiveEmptyRows: 10,
-  uploadRateLimitWindowMs: 60000,
-  uploadRateLimitMaxRequests: 20,
-  parseRateLimitWindowMs: 60000,
-  parseRateLimitMaxRequests: 40,
-  globalProtectRateLimitWindowMs: 60000,
-  globalProtectRateLimitMaxRequests: 240,
-  globalProtectMaxInFlight: 80,
-  prewarmEnabled: true,
-  prewarmMaxConcurrency: 1,
-  prewarmQueueMax: 12,
-  prewarmMaxFileMb: 20,
-  taskManagerMaxQueueLength: 200,
-  taskManagerStalePendingMs: 1800000,
-  nameFixDefaultMode: "copy",
-  nameFixConflictStrategy: "suffix_increment",
-  nameFixReservedWordStrategy: "prefix",
-  nameFixLengthOverflowStrategy: "truncate_hash",
-  nameFixMaxIdentifierLength: 64,
-  nameFixBackupRetentionDays: 30,
-  nameFixMaxBatchConcurrency: 4,
-  allowOverwriteInElectron: true,
-  allowExternalPathWrite: false,
-};
+const DEFAULT_SETTINGS: DdlSettings = createDefaultDdlSettings();
 
 const MYSQL_AUTO_INCREMENT_DATA_TYPES = new Set([
   "tinyint",
@@ -52,6 +11,25 @@ const MYSQL_AUTO_INCREMENT_DATA_TYPES = new Set([
   "integer",
   "bigint",
 ]);
+
+const DDL_GENERATION_DEFAULTS = {
+  fallbackAuthor: "ISI",
+  fallbackUnknownTableName: "(unknown_table)",
+  fallbackUnknownColumnName: "(unknown_column)",
+  fallbackVarcharSize: "255",
+  fallbackCharSize: "1",
+  fallbackDecimalSize: "10,2",
+  fallbackMySqlCharset: "utf8mb4",
+  fallbackMySqlCollate: "utf8mb4_bin",
+  fallbackTypeCase: "lower",
+  fallbackBooleanMode: "tinyint(1)",
+  typeTokenUpper: "upper",
+  booleanKeyword: "boolean",
+  oracleNumberOneType: "NUMBER(1)",
+  chunkSeparator: "\n\n",
+  dateSeparator: "/",
+  datePadLength: 2,
+} as const;
 
 type AutoIncrementIgnoreReason = "not_primary_key" | "non_numeric_type";
 
@@ -83,14 +61,21 @@ function resolveMySqlAutoIncrementEligibility(column: ColumnInfo): {
 }
 
 function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+  const dateStr = formatDdlDate(new Date());
 
   return template
     .replace(/\$\{logical_name\}/g, table.logicalTableName)
     .replace(/\$\{physical_name\}/g, table.physicalTableName)
-    .replace(/\$\{author\}/g, authorName || 'ISI')
+    .replace(/\$\{author\}/g, authorName || DDL_GENERATION_DEFAULTS.fallbackAuthor)
     .replace(/\$\{date\}/g, dateStr);
+}
+
+function formatDdlDate(date: Date): string {
+  return `${date.getFullYear()}${DDL_GENERATION_DEFAULTS.dateSeparator}${String(
+    date.getMonth() + 1,
+  ).padStart(DDL_GENERATION_DEFAULTS.datePadLength, "0")}${DDL_GENERATION_DEFAULTS.dateSeparator}${String(
+    date.getDate(),
+  ).padStart(DDL_GENERATION_DEFAULTS.datePadLength, "0")}`;
 }
 
 // Export function for use in routes (for filename suffix substitution)
@@ -104,7 +89,7 @@ export function generateDDL(request: GenerateDdlRequest): string {
   let isFirst = true;
   renderDDLChunks(request, (chunk) => {
     if (!isFirst) {
-      chunks.push('\n\n');
+      chunks.push(DDL_GENERATION_DEFAULTS.chunkSeparator);
     }
     chunks.push(chunk);
     isFirst = false;
@@ -122,8 +107,10 @@ export function collectDdlGenerationWarnings(request: GenerateDdlRequest): DdlGe
         return;
       }
 
-      const tableName = table.physicalTableName || table.logicalTableName || "(unknown_table)";
-      const columnName = column.physicalName || column.logicalName || "(unknown_column)";
+      const tableName =
+        table.physicalTableName || table.logicalTableName || DDL_GENERATION_DEFAULTS.fallbackUnknownTableName;
+      const columnName =
+        column.physicalName || column.logicalName || DDL_GENERATION_DEFAULTS.fallbackUnknownColumnName;
 
       if (dialect !== "mysql") {
         warnings.push({
@@ -190,7 +177,7 @@ export async function streamDDL(
   validateGenerateDdlRequest({ tables, dialect });
   for (const table of tables) {
     if (!isFirst) {
-      await writeChunk('\n\n');
+      await writeChunk(DDL_GENERATION_DEFAULTS.chunkSeparator);
     }
     const ddlChunk = dialect === 'mysql'
       ? generateMySQL(table, settings)
@@ -220,7 +207,7 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
       lines.push('');
     } else {
       // Use default header format
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+      const today = formatDdlDate(new Date());
       lines.push('/*');
       lines.push(` TableName: ${table.logicalTableName}`);
       lines.push(` Author: ${settings.authorName}`);
@@ -304,7 +291,7 @@ function generateOracle(table: TableInfo, settings: DdlSettings = DEFAULT_SETTIN
       lines.push('');
     } else {
       // Use default header format
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+      const today = formatDdlDate(new Date());
       lines.push('/*');
       lines.push(` TableName: ${table.logicalTableName}`);
       lines.push(` Author: ${settings.authorName}`);
@@ -361,19 +348,21 @@ function escapeSql(str: string): string {
 }
 
 function mapDataTypeMySQL(type?: string, size?: string, settings?: DdlSettings): string {
-  const charset = settings?.varcharCharset || 'utf8mb4';
-  const collate = settings?.varcharCollate || 'utf8mb4_bin';
-  const typeCase = settings?.mysqlDataTypeCase || 'lower';
-  const booleanMode = settings?.mysqlBooleanMode || 'tinyint(1)';
+  const charset = settings?.varcharCharset || DDL_GENERATION_DEFAULTS.fallbackMySqlCharset;
+  const collate = settings?.varcharCollate || DDL_GENERATION_DEFAULTS.fallbackMySqlCollate;
+  const typeCase = settings?.mysqlDataTypeCase || DDL_GENERATION_DEFAULTS.fallbackTypeCase;
+  const booleanMode = settings?.mysqlBooleanMode || DDL_GENERATION_DEFAULTS.fallbackBooleanMode;
 
   const formatTypeToken = (token: string): string => {
-    return typeCase === 'upper' ? token.toUpperCase() : token.toLowerCase();
+    return typeCase === DDL_GENERATION_DEFAULTS.typeTokenUpper ? token.toUpperCase() : token.toLowerCase();
   };
 
-  if (!type) return `${formatTypeToken('varchar')}(255) CHARACTER SET ${charset} COLLATE ${collate}`;
+  if (!type) {
+    return `${formatTypeToken("varchar")}(${DDL_GENERATION_DEFAULTS.fallbackVarcharSize}) CHARACTER SET ${charset} COLLATE ${collate}`;
+  }
   const t = type.toLowerCase().trim();
   if (t === 'varchar' || t === 'char') {
-    return `${formatTypeToken(t)}(${size || '255'}) CHARACTER SET ${charset} COLLATE ${collate}`;
+    return `${formatTypeToken(t)}(${size || DDL_GENERATION_DEFAULTS.fallbackVarcharSize}) CHARACTER SET ${charset} COLLATE ${collate}`;
   }
   if (t === 'tinyint') return size ? `${formatTypeToken('tinyint')}(${size})` : formatTypeToken('tinyint');
   if (t === 'smallint') return size ? `${formatTypeToken('smallint')}(${size})` : formatTypeToken('smallint');
@@ -385,34 +374,38 @@ function mapDataTypeMySQL(type?: string, size?: string, settings?: DdlSettings):
   if (t === 'text') return size ? `${formatTypeToken('text')}(${size})` : formatTypeToken('text');
   if (t === 'longtext') return formatTypeToken('longtext');
   if (t === 'mediumtext') return formatTypeToken('mediumtext');
-  if (t === 'decimal' || t === 'numeric') return `${formatTypeToken('decimal')}(${size || '10,2'})`;
+  if (t === 'decimal' || t === 'numeric') {
+    return `${formatTypeToken("decimal")}(${size || DDL_GENERATION_DEFAULTS.fallbackDecimalSize})`;
+  }
   if (t === 'float') return size ? `${formatTypeToken('float')}(${size})` : formatTypeToken('float');
   if (t === 'double') return size ? `${formatTypeToken('double')}(${size})` : formatTypeToken('double');
   if (t === 'boolean' || t === 'bool') {
-    if (booleanMode === 'boolean') {
-      return formatTypeToken('boolean');
+    if (booleanMode === DDL_GENERATION_DEFAULTS.booleanKeyword) {
+      return formatTypeToken(DDL_GENERATION_DEFAULTS.booleanKeyword);
     }
-    return `${formatTypeToken('tinyint')}(1)`;
+    return `${formatTypeToken("tinyint")}(1)`;
   }
   if (t === 'blob') return formatTypeToken('blob');
   return size ? `${formatTypeToken(t)}(${size})` : formatTypeToken(t);
 }
 
 function mapDataTypeOracle(type?: string, size?: string): string {
-  if (!type) return 'VARCHAR2(255)';
+  if (!type) return `VARCHAR2(${DDL_GENERATION_DEFAULTS.fallbackVarcharSize})`;
   const t = type.toLowerCase().trim();
-  if (t === 'varchar') return `VARCHAR2(${size || '255'})`;
-  if (t === 'char') return `CHAR(${size || '1'})`;
+  if (t === 'varchar') return `VARCHAR2(${size || DDL_GENERATION_DEFAULTS.fallbackVarcharSize})`;
+  if (t === 'char') return `CHAR(${size || DDL_GENERATION_DEFAULTS.fallbackCharSize})`;
   if (t === 'tinyint' || t === 'smallint' || t === 'int' || t === 'integer' || t === 'bigint') {
     return size ? `NUMBER(${size})` : 'NUMBER';
   }
   if (t === 'date') return 'DATE';
   if (t === 'datetime' || t === 'timestamp') return size ? `TIMESTAMP(${size})` : 'TIMESTAMP';
   if (t === 'text' || t === 'longtext' || t === 'mediumtext') return 'CLOB';
-  if (t === 'decimal' || t === 'numeric') return `NUMBER(${size || '10,2'})`;
+  if (t === 'decimal' || t === 'numeric') {
+    return `NUMBER(${size || DDL_GENERATION_DEFAULTS.fallbackDecimalSize})`;
+  }
   if (t === 'float') return size ? `FLOAT(${size})` : 'FLOAT';
   if (t === 'double') return 'BINARY_DOUBLE';
-  if (t === 'boolean' || t === 'bool') return 'NUMBER(1)';
+  if (t === 'boolean' || t === 'bool') return DDL_GENERATION_DEFAULTS.oracleNumberOneType;
   if (t === 'blob') return 'BLOB';
   return size ? `${t.toUpperCase()}(${size})` : t.toUpperCase();
 }

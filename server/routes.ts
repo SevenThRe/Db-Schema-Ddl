@@ -10,9 +10,25 @@ import type {
   TableInfo,
 } from "@shared/schema";
 import { sendApiError } from "./lib/api-error";
-import { ExcelExecutorQueueOverflowError, runParseWorkbookBundle } from "./lib/excel-executor";
+import {
+  ExcelExecutorQueueOverflowError,
+  getExcelExecutorDiagnostics,
+  runParseWorkbookBundle,
+} from "./lib/excel-executor";
 import { startNameFixMaintenance } from "./lib/name-fix-service";
 import { taskManager } from "./lib/task-manager";
+import { API_ERROR_CODES, API_RESPONSE_MESSAGES, HTTP_STATUS } from "./constants/api-response";
+import {
+  BYTES_PER_MB,
+  ROUTE_BOOL_TRUE_VALUES,
+  ROUTE_RATE_COUNTER_SWEEP,
+  ROUTE_RUNTIME_CLAMP_MIN,
+  ROUTE_RUNTIME_DEFAULTS,
+  ROUTE_RUNTIME_HARD_CAPS,
+  ROUTE_STRING_MARKERS,
+  ROUTE_UPLOAD_FILE_NAMING,
+  ROUTE_UPLOAD_RULES,
+} from "./constants/route-runtime";
 import { registerDdlRoutes } from "./routes/ddl-routes";
 import { registerFileRoutes } from "./routes/files-routes";
 import { registerNameFixRoutes } from "./routes/name-fix-routes";
@@ -24,32 +40,39 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+interface DecodedFilenameRequest extends Request {
+  decodedFileName?: string;
+}
+
 const customStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
-    const decodedName = Buffer.from(file.originalname, "latin1").toString("utf8");
-    (req as any).decodedFileName = decodedName;
+    const decodedName = Buffer.from(
+      file.originalname,
+      ROUTE_UPLOAD_FILE_NAMING.originalNameEncoding,
+    ).toString(ROUTE_UPLOAD_FILE_NAMING.decodedNameEncoding);
+    (req as DecodedFilenameRequest).decodedFileName = decodedName;
 
     const ext = path.extname(decodedName);
     const nameWithoutExt = path.basename(decodedName, ext);
     const timestamp = Date.now();
-    const hash = crypto.createHash("md5").update(decodedName + timestamp).digest("hex").slice(0, 8);
+    const hash = crypto
+      .createHash(ROUTE_UPLOAD_FILE_NAMING.hashAlgorithm)
+      .update(decodedName + timestamp)
+      .digest(ROUTE_UPLOAD_FILE_NAMING.hashEncoding)
+      .slice(0, ROUTE_UPLOAD_FILE_NAMING.hashLength);
     cb(null, `${hash}_${timestamp}_${nameWithoutExt}${ext}`);
   },
 });
 
-const ALLOWED_MIME_TYPES = new Set([
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "application/octet-stream",
-]);
-const ALLOWED_EXTENSIONS = new Set([".xlsx", ".xls"]);
+const ALLOWED_MIME_TYPES = new Set<string>(ROUTE_UPLOAD_RULES.allowedMimeTypes);
+const ALLOWED_EXTENSIONS = new Set<string>(ROUTE_UPLOAD_RULES.allowedExtensions);
 
 const upload = multer({
   storage: customStorage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: ROUTE_UPLOAD_RULES.maxFileSizeBytes },
   fileFilter: (_req, file, cb) => {
     const decodedName = Buffer.from(file.originalname, "latin1").toString("utf8");
     const ext = path.extname(decodedName).toLowerCase();
@@ -61,31 +84,7 @@ const upload = multer({
   },
 });
 
-const DEFAULT_PK_MARKERS = ["\u3007"];
-
-const DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS = 20;
-const DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS = 40;
-const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS = 240;
-const DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT = 80;
-const DEFAULT_PREWARM_MAX_CONCURRENCY = 1;
-const DEFAULT_PREWARM_QUEUE_MAX = 12;
-const DEFAULT_PREWARM_MAX_FILE_MB = 20;
-
-const HARD_CAP_UPLOAD_RATE_LIMIT_WINDOW_MS = 300_000;
-const HARD_CAP_UPLOAD_RATE_LIMIT_MAX_REQUESTS = 500;
-const HARD_CAP_PARSE_RATE_LIMIT_WINDOW_MS = 300_000;
-const HARD_CAP_PARSE_RATE_LIMIT_MAX_REQUESTS = 1_000;
-const HARD_CAP_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS = 300_000;
-const HARD_CAP_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS = 5_000;
-const HARD_CAP_GLOBAL_PROTECT_MAX_INFLIGHT = 500;
-const HARD_CAP_PREWARM_MAX_CONCURRENCY = 8;
-const HARD_CAP_PREWARM_QUEUE_MAX = 100;
-const HARD_CAP_PREWARM_MAX_FILE_MB = 100;
-const HARD_CAP_TASK_MANAGER_MAX_QUEUE_LENGTH = 1_000;
-const HARD_CAP_TASK_MANAGER_STALE_PENDING_MS = 3_600_000;
+const DEFAULT_PK_MARKERS = [...ROUTE_RUNTIME_DEFAULTS.pkMarkers];
 
 function parsePositiveIntEnv(name: string, fallback: number): number {
   const raw = Number(process.env[name] ?? "");
@@ -108,24 +107,24 @@ function parseBoolEnv(name: string, fallback: boolean): boolean {
     return fallback;
   }
   const normalized = String(raw).trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+  return ROUTE_BOOL_TRUE_VALUES.has(normalized);
 }
 
-let uploadRateLimitWindowMs = parsePositiveIntEnv("UPLOAD_RATE_LIMIT_WINDOW_MS", DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS);
-let uploadRateLimitMaxRequests = parsePositiveIntEnv("UPLOAD_RATE_LIMIT_MAX_REQUESTS", DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS);
-let parseRateLimitWindowMs = parsePositiveIntEnv("PARSE_RATE_LIMIT_WINDOW_MS", DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS);
-let parseRateLimitMaxRequests = parsePositiveIntEnv("PARSE_RATE_LIMIT_MAX_REQUESTS", DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS);
+let uploadRateLimitWindowMs = parsePositiveIntEnv("UPLOAD_RATE_LIMIT_WINDOW_MS", ROUTE_RUNTIME_DEFAULTS.uploadRateLimitWindowMs);
+let uploadRateLimitMaxRequests = parsePositiveIntEnv("UPLOAD_RATE_LIMIT_MAX_REQUESTS", ROUTE_RUNTIME_DEFAULTS.uploadRateLimitMaxRequests);
+let parseRateLimitWindowMs = parsePositiveIntEnv("PARSE_RATE_LIMIT_WINDOW_MS", ROUTE_RUNTIME_DEFAULTS.parseRateLimitWindowMs);
+let parseRateLimitMaxRequests = parsePositiveIntEnv("PARSE_RATE_LIMIT_MAX_REQUESTS", ROUTE_RUNTIME_DEFAULTS.parseRateLimitMaxRequests);
 let globalProtectRateLimitWindowMs = parsePositiveIntEnv(
   "GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS",
-  DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
+  ROUTE_RUNTIME_DEFAULTS.globalProtectRateLimitWindowMs,
 );
 let globalProtectRateLimitMaxRequests = parsePositiveIntEnv(
   "GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS",
-  DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
+  ROUTE_RUNTIME_DEFAULTS.globalProtectRateLimitMaxRequests,
 );
 let globalProtectMaxInFlight = parsePositiveIntEnv(
   "GLOBAL_PROTECT_MAX_INFLIGHT",
-  DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
+  ROUTE_RUNTIME_DEFAULTS.globalProtectMaxInFlight,
 );
 const uploadRateCounter = new Map<string, { windowStartedAt: number; count: number }>();
 const parseRateCounter = new Map<string, { windowStartedAt: number; count: number }>();
@@ -138,7 +137,10 @@ function resolveClientKey(req: Request): string {
 
 function isLocalRequest(req: Request): boolean {
   const clientKey = resolveClientKey(req).replace(/^::ffff:/, "");
-  return clientKey === "127.0.0.1" || clientKey === "::1";
+  return (
+    clientKey === ROUTE_STRING_MARKERS.loopbackIpv4 ||
+    clientKey === ROUTE_STRING_MARKERS.loopbackIpv6
+  );
 }
 
 function consumeRateLimitSlot(
@@ -170,9 +172,9 @@ function consumeGlobalRateLimitSlot(windowMs: number): number {
 
 function sendGlobalProtectBusyError(res: Response): void {
   sendApiError(res, {
-    status: 503,
-    code: "REQUEST_FAILED",
-    message: "Service is temporarily busy. Please retry shortly.",
+    status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+    code: API_ERROR_CODES.requestFailed,
+    message: API_RESPONSE_MESSAGES.serviceBusy,
     params: {
       retryAfterMs: globalProtectRateLimitWindowMs,
     },
@@ -184,9 +186,9 @@ function uploadRateLimit(req: Request, res: Response, next: NextFunction): void 
   const count = consumeRateLimitSlot(uploadRateCounter, key, uploadRateLimitWindowMs);
   if (count > uploadRateLimitMaxRequests) {
     sendApiError(res, {
-      status: 429,
-      code: "REQUEST_FAILED",
-      message: "Too many uploads. Please retry later.",
+      status: HTTP_STATUS.TOO_MANY_REQUESTS,
+      code: API_ERROR_CODES.requestFailed,
+      message: API_RESPONSE_MESSAGES.tooManyUploads,
       params: {
         retryAfterMs: uploadRateLimitWindowMs,
       },
@@ -201,9 +203,9 @@ function parseRateLimit(req: Request, res: Response, next: NextFunction): void {
   const count = consumeRateLimitSlot(parseRateCounter, key, parseRateLimitWindowMs);
   if (count > parseRateLimitMaxRequests) {
     sendApiError(res, {
-      status: 429,
-      code: "REQUEST_FAILED",
-      message: "Too many parse requests. Please retry later.",
+      status: HTTP_STATUS.TOO_MANY_REQUESTS,
+      code: API_ERROR_CODES.requestFailed,
+      message: API_RESPONSE_MESSAGES.tooManyParses,
       params: {
         retryAfterMs: parseRateLimitWindowMs,
       },
@@ -249,47 +251,87 @@ interface PrewarmQueueItem {
   fileSize: number;
 }
 
-let prewarmEnabled = parseBoolEnv("EXCEL_PREWARM_ENABLED", true);
-let prewarmMaxConcurrency = parsePositiveIntEnv("EXCEL_PREWARM_MAX_CONCURRENCY", DEFAULT_PREWARM_MAX_CONCURRENCY);
-let prewarmQueueMax = parsePositiveIntEnv("EXCEL_PREWARM_QUEUE_MAX", DEFAULT_PREWARM_QUEUE_MAX);
-let prewarmMaxFileMb = parsePositiveIntEnv("EXCEL_PREWARM_MAX_FILE_MB", DEFAULT_PREWARM_MAX_FILE_MB);
-let prewarmMaxFileBytes = prewarmMaxFileMb * 1024 * 1024;
+let prewarmEnabled = parseBoolEnv("EXCEL_PREWARM_ENABLED", ROUTE_RUNTIME_DEFAULTS.prewarmEnabled);
+let prewarmMaxConcurrency = parsePositiveIntEnv("EXCEL_PREWARM_MAX_CONCURRENCY", ROUTE_RUNTIME_DEFAULTS.prewarmMaxConcurrency);
+let prewarmQueueMax = parsePositiveIntEnv("EXCEL_PREWARM_QUEUE_MAX", ROUTE_RUNTIME_DEFAULTS.prewarmQueueMax);
+let prewarmMaxFileMb = parsePositiveIntEnv("EXCEL_PREWARM_MAX_FILE_MB", ROUTE_RUNTIME_DEFAULTS.prewarmMaxFileMb);
+let prewarmMaxFileBytes = prewarmMaxFileMb * BYTES_PER_MB;
 const prewarmQueue: PrewarmQueueItem[] = [];
 const prewarmDedup = new Set<string>();
 let activePrewarmCount = 0;
 
 function applyRuntimeLimitsFromSettings(settings: DdlSettings): void {
-  uploadRateLimitWindowMs = clampInt(settings.uploadRateLimitWindowMs, 1_000, HARD_CAP_UPLOAD_RATE_LIMIT_WINDOW_MS);
-  uploadRateLimitMaxRequests = clampInt(settings.uploadRateLimitMaxRequests, 1, HARD_CAP_UPLOAD_RATE_LIMIT_MAX_REQUESTS);
-  parseRateLimitWindowMs = clampInt(settings.parseRateLimitWindowMs, 1_000, HARD_CAP_PARSE_RATE_LIMIT_WINDOW_MS);
-  parseRateLimitMaxRequests = clampInt(settings.parseRateLimitMaxRequests, 1, HARD_CAP_PARSE_RATE_LIMIT_MAX_REQUESTS);
+  uploadRateLimitWindowMs = clampInt(
+    settings.uploadRateLimitWindowMs,
+    ROUTE_RUNTIME_CLAMP_MIN.rateLimitWindowMs,
+    ROUTE_RUNTIME_HARD_CAPS.uploadRateLimitWindowMs,
+  );
+  uploadRateLimitMaxRequests = clampInt(
+    settings.uploadRateLimitMaxRequests,
+    ROUTE_RUNTIME_CLAMP_MIN.uploadRateLimitMaxRequests,
+    ROUTE_RUNTIME_HARD_CAPS.uploadRateLimitMaxRequests,
+  );
+  parseRateLimitWindowMs = clampInt(
+    settings.parseRateLimitWindowMs,
+    ROUTE_RUNTIME_CLAMP_MIN.rateLimitWindowMs,
+    ROUTE_RUNTIME_HARD_CAPS.parseRateLimitWindowMs,
+  );
+  parseRateLimitMaxRequests = clampInt(
+    settings.parseRateLimitMaxRequests,
+    ROUTE_RUNTIME_CLAMP_MIN.parseRateLimitMaxRequests,
+    ROUTE_RUNTIME_HARD_CAPS.parseRateLimitMaxRequests,
+  );
   globalProtectRateLimitWindowMs = clampInt(
     settings.globalProtectRateLimitWindowMs,
-    1_000,
-    HARD_CAP_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
+    ROUTE_RUNTIME_CLAMP_MIN.rateLimitWindowMs,
+    ROUTE_RUNTIME_HARD_CAPS.globalProtectRateLimitWindowMs,
   );
   globalProtectRateLimitMaxRequests = clampInt(
     settings.globalProtectRateLimitMaxRequests,
-    10,
-    HARD_CAP_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
+    ROUTE_RUNTIME_CLAMP_MIN.globalProtectRateLimitMaxRequests,
+    ROUTE_RUNTIME_HARD_CAPS.globalProtectRateLimitMaxRequests,
   );
-  globalProtectMaxInFlight = clampInt(settings.globalProtectMaxInFlight, 1, HARD_CAP_GLOBAL_PROTECT_MAX_INFLIGHT);
+  globalProtectMaxInFlight = clampInt(
+    settings.globalProtectMaxInFlight,
+    ROUTE_RUNTIME_CLAMP_MIN.globalProtectMaxInFlight,
+    ROUTE_RUNTIME_HARD_CAPS.globalProtectMaxInFlight,
+  );
   prewarmEnabled = settings.prewarmEnabled;
-  prewarmMaxConcurrency = clampInt(settings.prewarmMaxConcurrency, 1, HARD_CAP_PREWARM_MAX_CONCURRENCY);
-  prewarmQueueMax = clampInt(settings.prewarmQueueMax, 1, HARD_CAP_PREWARM_QUEUE_MAX);
-  prewarmMaxFileMb = clampInt(settings.prewarmMaxFileMb, 1, HARD_CAP_PREWARM_MAX_FILE_MB);
-  prewarmMaxFileBytes = prewarmMaxFileMb * 1024 * 1024;
+  prewarmMaxConcurrency = clampInt(
+    settings.prewarmMaxConcurrency,
+    ROUTE_RUNTIME_CLAMP_MIN.prewarmMaxConcurrency,
+    ROUTE_RUNTIME_HARD_CAPS.prewarmMaxConcurrency,
+  );
+  prewarmQueueMax = clampInt(
+    settings.prewarmQueueMax,
+    ROUTE_RUNTIME_CLAMP_MIN.prewarmQueueMax,
+    ROUTE_RUNTIME_HARD_CAPS.prewarmQueueMax,
+  );
+  prewarmMaxFileMb = clampInt(
+    settings.prewarmMaxFileMb,
+    ROUTE_RUNTIME_CLAMP_MIN.prewarmMaxFileMb,
+    ROUTE_RUNTIME_HARD_CAPS.prewarmMaxFileMb,
+  );
+  prewarmMaxFileBytes = prewarmMaxFileMb * BYTES_PER_MB;
 
   taskManager.configureRuntimeLimits({
-    maxQueueLength: clampInt(settings.taskManagerMaxQueueLength, 10, HARD_CAP_TASK_MANAGER_MAX_QUEUE_LENGTH),
-    stalePendingMs: clampInt(settings.taskManagerStalePendingMs, 60_000, HARD_CAP_TASK_MANAGER_STALE_PENDING_MS),
+    maxQueueLength: clampInt(
+      settings.taskManagerMaxQueueLength,
+      ROUTE_RUNTIME_CLAMP_MIN.taskManagerMaxQueueLength,
+      ROUTE_RUNTIME_HARD_CAPS.taskManagerMaxQueueLength,
+    ),
+    stalePendingMs: clampInt(
+      settings.taskManagerStalePendingMs,
+      ROUTE_RUNTIME_CLAMP_MIN.taskManagerStalePendingMs,
+      ROUTE_RUNTIME_HARD_CAPS.taskManagerStalePendingMs,
+    ),
   });
 }
 
 setInterval(() => {
   const now = Date.now();
-  const staleUploadWindowMs = uploadRateLimitWindowMs * 2;
-  const staleParseWindowMs = parseRateLimitWindowMs * 2;
+  const staleUploadWindowMs = uploadRateLimitWindowMs * ROUTE_RATE_COUNTER_SWEEP.staleWindowMultiplier;
+  const staleParseWindowMs = parseRateLimitWindowMs * ROUTE_RATE_COUNTER_SWEEP.staleWindowMultiplier;
 
   uploadRateCounter.forEach((counter, key) => {
     if (now - counter.windowStartedAt > staleUploadWindowMs) {
@@ -302,24 +344,24 @@ setInterval(() => {
       parseRateCounter.delete(key);
     }
   });
-}, Math.max(10_000, Math.min(uploadRateLimitWindowMs, parseRateLimitWindowMs)));
+}, Math.max(ROUTE_RATE_COUNTER_SWEEP.minSweepIntervalMs, Math.min(uploadRateLimitWindowMs, parseRateLimitWindowMs)));
 
 function sendTaskQueueBusyError(res: Response): void {
   sendApiError(res, {
-    status: 503,
-    code: "REQUEST_FAILED",
-    message: "Task queue is busy. Please retry shortly.",
+    status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+    code: API_ERROR_CODES.requestFailed,
+    message: API_RESPONSE_MESSAGES.taskQueueBusy,
   });
 }
 
 class ReferenceRequestError extends Error {
   readonly status: number;
-  readonly code: "INVALID_REQUEST" | "FILE_NOT_FOUND" | "REQUEST_FAILED";
+  readonly code: (typeof API_ERROR_CODES)[keyof typeof API_ERROR_CODES];
   readonly params?: Record<string, string | number | boolean | null>;
 
   constructor(
     status: number,
-    code: "INVALID_REQUEST" | "FILE_NOT_FOUND" | "REQUEST_FAILED",
+    code: (typeof API_ERROR_CODES)[keyof typeof API_ERROR_CODES],
     message: string,
     params?: Record<string, string | number | boolean | null>,
   ) {
@@ -351,14 +393,19 @@ async function resolveTablesByReference(
 ): Promise<{ tables: TableInfo[]; persistedSettings: DdlSettings }> {
   const file = await storage.getUploadedFile(request.fileId);
   if (!file) {
-    throw new ReferenceRequestError(404, "FILE_NOT_FOUND", "File not found");
+    throw new ReferenceRequestError(
+      HTTP_STATUS.NOT_FOUND,
+      API_ERROR_CODES.fileNotFound,
+      API_RESPONSE_MESSAGES.fileNotFound,
+    );
   }
 
   const persistedSettings = await storage.getSettings();
   const bundle = await runParseWorkbookBundle(
     file.filePath,
     {
-      maxConsecutiveEmptyRows: persistedSettings?.maxConsecutiveEmptyRows ?? 10,
+      maxConsecutiveEmptyRows:
+        persistedSettings?.maxConsecutiveEmptyRows ?? ROUTE_RUNTIME_DEFAULTS.maxConsecutiveEmptyRows,
       pkMarkers: persistedSettings?.pkMarkers ?? DEFAULT_PK_MARKERS,
     },
     file.fileHash,
@@ -366,19 +413,19 @@ async function resolveTablesByReference(
 
   const parsedTables = bundle.tablesBySheet[request.sheetName];
   if (!parsedTables) {
-    throw new ReferenceRequestError(400, "INVALID_REQUEST", "Sheet not found in file", {
+    throw new ReferenceRequestError(HTTP_STATUS.BAD_REQUEST, API_ERROR_CODES.invalidRequest, "Sheet not found in file", {
       sheetName: request.sheetName,
     });
   }
 
   const selectedIndexes = normalizeSelectedTableIndexes(request.selectedTableIndexes);
   if (selectedIndexes.length === 0) {
-    throw new ReferenceRequestError(400, "INVALID_REQUEST", "No table selected");
+    throw new ReferenceRequestError(HTTP_STATUS.BAD_REQUEST, API_ERROR_CODES.invalidRequest, "No table selected");
   }
 
   selectedIndexes.forEach((index) => {
     if (index < 0 || index >= parsedTables.length) {
-      throw new ReferenceRequestError(400, "INVALID_REQUEST", "Selected table index out of range", {
+      throw new ReferenceRequestError(HTTP_STATUS.BAD_REQUEST, API_ERROR_CODES.invalidRequest, "Selected table index out of range", {
         index,
         tableCount: parsedTables.length,
       });
@@ -389,15 +436,15 @@ async function resolveTablesByReference(
   const overrideByIndex = new Map<number, TableInfo>();
   (request.tableOverrides ?? []).forEach((override) => {
     if (override.tableIndex < 0 || override.tableIndex >= parsedTables.length) {
-      throw new ReferenceRequestError(400, "INVALID_REQUEST", "Override table index out of range", {
+      throw new ReferenceRequestError(HTTP_STATUS.BAD_REQUEST, API_ERROR_CODES.invalidRequest, "Override table index out of range", {
         index: override.tableIndex,
         tableCount: parsedTables.length,
       });
     }
     if (!selectedIndexSet.has(override.tableIndex)) {
       throw new ReferenceRequestError(
-        400,
-        "INVALID_REQUEST",
+        HTTP_STATUS.BAD_REQUEST,
+        API_ERROR_CODES.invalidRequest,
         "Override table index must exist in selectedTableIndexes",
         { index: override.tableIndex },
       );
@@ -415,20 +462,20 @@ async function prewarmWorkbookBundle(filePath: string, fileHash: string): Promis
     const bundle = await runParseWorkbookBundle(
       filePath,
       {
-        maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? 10,
-        pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
+      maxConsecutiveEmptyRows: settings?.maxConsecutiveEmptyRows ?? ROUTE_RUNTIME_DEFAULTS.maxConsecutiveEmptyRows,
+      pkMarkers: settings?.pkMarkers ?? DEFAULT_PK_MARKERS,
       },
       fileHash,
     );
     console.info(
-      `[parse-prewarm] file=${filePath} mode=${bundle.stats.parseMode} readMode=${bundle.stats.readMode} totalMs=${Math.round(bundle.stats.totalMs)}`,
+      `${ROUTE_STRING_MARKERS.prewarmLogPrefix} file=${filePath} mode=${bundle.stats.parseMode} readMode=${bundle.stats.readMode} totalMs=${Math.round(bundle.stats.totalMs)}`,
     );
   } catch (error) {
     if (isExecutorOverloadedError(error)) {
-      console.warn(`[parse-prewarm] executor busy for ${filePath}`);
+      console.warn(`${ROUTE_STRING_MARKERS.prewarmLogPrefix} executor busy for ${filePath}`);
       return;
     }
-    console.warn("[parse-prewarm] failed:", error);
+    console.warn(`${ROUTE_STRING_MARKERS.prewarmLogPrefix} failed:`, error);
   }
 }
 
@@ -444,14 +491,18 @@ function maybeSchedulePrewarm(filePath: string, fileHash: string, fileSize: numb
     return;
   }
   if (fileSize > prewarmMaxFileBytes) {
-    console.info(`[parse-prewarm] skip large file (size=${fileSize} bytes) path=${filePath}`);
+    console.info(
+      `${ROUTE_STRING_MARKERS.prewarmLogPrefix} skip large file (size=${fileSize} bytes) path=${filePath}`,
+    );
     return;
   }
   if (prewarmDedup.has(fileHash)) {
     return;
   }
   if (prewarmQueue.length >= prewarmQueueMax) {
-    console.warn(`[parse-prewarm] queue overflow. drop task for ${filePath} (queueMax=${prewarmQueueMax})`);
+    console.warn(
+      `${ROUTE_STRING_MARKERS.prewarmLogPrefix} queue overflow. drop task for ${filePath} (queueMax=${prewarmQueueMax})`,
+    );
     return;
   }
 
@@ -471,7 +522,9 @@ function drainPrewarmQueue(): void {
     void prewarmWorkbookBundle(task.filePath, task.fileHash)
       .catch((error) => {
         if (isExecutorOverloadedError(error)) {
-          console.warn(`[parse-prewarm] executor busy while prewarming ${task.filePath}`);
+          console.warn(
+            `${ROUTE_STRING_MARKERS.prewarmLogPrefix} executor busy while prewarming ${task.filePath}`,
+          );
         }
       })
       .finally(() => {
@@ -487,7 +540,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const persistedSettings = await storage.getSettings();
     applyRuntimeLimitsFromSettings(persistedSettings);
   } catch (error) {
-    console.warn("[settings] failed to load runtime limits from storage, fallback to env defaults:", error);
+    console.warn(
+      `${ROUTE_STRING_MARKERS.settingsLogPrefix} failed to load runtime limits from storage, fallback to env defaults:`,
+      error,
+    );
   }
 
   startNameFixMaintenance();
@@ -530,9 +586,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerSettingsRoutes(app, {
     applyRuntimeLimitsFromSettings,
     canEnableExternalPathWrite: (req) => process.env.ELECTRON_MODE === "true" && isLocalRequest(req),
+    getRuntimeDiagnostics: () => ({
+      excelExecutor: getExcelExecutorDiagnostics(),
+    }),
   });
 
-  const seedFileName = "\u0033\u0030.\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u5b9a\u7fa9\u66f8-\u7d66\u4e0e_ISI_20260209_1770863427874.xlsx";
+  const seedFileName = ROUTE_STRING_MARKERS.storageSeedFilename;
   const attachedFile = process.env.RESOURCES_PATH
     ? path.join(process.env.RESOURCES_PATH, seedFileName)
     : path.join("attached_assets", seedFileName);
@@ -552,4 +611,3 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   return httpServer;
 }
-

@@ -80,6 +80,42 @@ export const api = {
         404: apiErrorSchema,
       },
     },
+    remove: {
+      method: 'DELETE' as const,
+      path: '/api/files/:id' as const,
+      responses: {
+        200: z.object({
+          message: z.string(),
+          fileCleanupWarning: z.string().nullable(),
+        }),
+        404: apiErrorSchema,
+      },
+    },
+    getSheetData: {
+      method: 'GET' as const,
+      path: '/api/files/:id/sheets/:sheetName/data' as const,
+      responses: {
+        200: z.array(z.array(z.unknown())),
+        404: apiErrorSchema,
+        400: apiErrorSchema,
+      },
+    },
+    parseRegion: {
+      method: 'POST' as const,
+      path: '/api/files/:id/parse-region' as const,
+      input: z.object({
+        sheetName: z.string().min(1),
+        startRow: z.number().int().min(0),
+        endRow: z.number().int().min(0),
+        startCol: z.number().int().min(0),
+        endCol: z.number().int().min(0),
+      }),
+      responses: {
+        200: z.array(tableInfoSchema),
+        404: apiErrorSchema,
+        400: apiErrorSchema,
+      },
+    },
   },
   ddl: {
     generate: {
@@ -143,6 +179,35 @@ export const api = {
       path: '/api/settings' as const,
       responses: {
         200: ddlSettingsSchema,
+      },
+    },
+    getRuntime: {
+      method: 'GET' as const,
+      path: '/api/settings/runtime' as const,
+      responses: {
+        200: z.object({
+          excelExecutor: z.object({
+            disabled: z.boolean(),
+            timeoutMs: z.number(),
+            queueLength: z.number(),
+            inFlightCount: z.number(),
+            workerCount: z.number(),
+            cacheEntries: z.number(),
+            cacheBytes: z.number(),
+            cacheTtlMs: z.number(),
+            cacheMaxEntries: z.number(),
+            cacheMaxTotalBytes: z.number(),
+            cacheMaxBundleBytes: z.number(),
+            queueMaxLength: z.number(),
+            metrics: z.object({
+              cacheHits: z.number(),
+              cacheMisses: z.number(),
+              cacheEvictions: z.number(),
+              workerTimeouts: z.number(),
+              workerRestarts: z.number(),
+            }),
+          }),
+        }),
       },
     },
     update: {

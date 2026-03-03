@@ -13,32 +13,43 @@ import {
   nameFixJobItems as nameFixJobItemsTable,
   nameFixBackups as nameFixBackupsTable,
 } from "@shared/schema";
+import { APP_DEFAULTS, createDefaultDdlSettings } from "@shared/config";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 
-const DEFAULT_PK_MARKERS = ["\u3007"];
-const DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS = 20;
-const DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS = 40;
-const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS = 240;
-const DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT = 80;
-const DEFAULT_PREWARM_ENABLED = true;
-const DEFAULT_PREWARM_MAX_CONCURRENCY = 1;
-const DEFAULT_PREWARM_QUEUE_MAX = 12;
-const DEFAULT_PREWARM_MAX_FILE_MB = 20;
-const DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH = 200;
-const DEFAULT_TASK_MANAGER_STALE_PENDING_MS = 30 * 60 * 1000;
-const DEFAULT_NAME_FIX_DEFAULT_MODE = "copy";
-const DEFAULT_NAME_FIX_CONFLICT_STRATEGY = "suffix_increment";
-const DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY = "prefix";
-const DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY = "truncate_hash";
-const DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH = 64;
-const DEFAULT_NAME_FIX_BACKUP_RETENTION_DAYS = 30;
-const DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY = 4;
-const DEFAULT_ALLOW_OVERWRITE_IN_ELECTRON = true;
-const DEFAULT_ALLOW_EXTERNAL_PATH_WRITE = false;
+const DEFAULT_PK_MARKERS = [...APP_DEFAULTS.excel.pkMarkers];
+const DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS = APP_DEFAULTS.rateLimit.uploadWindowMs;
+const DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS = APP_DEFAULTS.rateLimit.uploadMaxRequests;
+const DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS = APP_DEFAULTS.rateLimit.parseWindowMs;
+const DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS = APP_DEFAULTS.rateLimit.parseMaxRequests;
+const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS = APP_DEFAULTS.rateLimit.globalProtectWindowMs;
+const DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS = APP_DEFAULTS.rateLimit.globalProtectMaxRequests;
+const DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT = APP_DEFAULTS.rateLimit.globalProtectMaxInFlight;
+const DEFAULT_PREWARM_ENABLED = APP_DEFAULTS.prewarm.enabled;
+const DEFAULT_PREWARM_MAX_CONCURRENCY = APP_DEFAULTS.prewarm.maxConcurrency;
+const DEFAULT_PREWARM_QUEUE_MAX = APP_DEFAULTS.prewarm.queueMax;
+const DEFAULT_PREWARM_MAX_FILE_MB = APP_DEFAULTS.prewarm.maxFileMb;
+const DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH = APP_DEFAULTS.taskManager.maxQueueLength;
+const DEFAULT_TASK_MANAGER_STALE_PENDING_MS = APP_DEFAULTS.taskManager.stalePendingMs;
+const DEFAULT_NAME_FIX_DEFAULT_MODE = APP_DEFAULTS.nameFix.defaultMode;
+const DEFAULT_NAME_FIX_CONFLICT_STRATEGY = APP_DEFAULTS.nameFix.conflictStrategy;
+const DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY = APP_DEFAULTS.nameFix.reservedWordStrategy;
+const DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY = APP_DEFAULTS.nameFix.lengthOverflowStrategy;
+const DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH = APP_DEFAULTS.nameFix.maxIdentifierLength;
+const DEFAULT_NAME_FIX_BACKUP_RETENTION_DAYS = APP_DEFAULTS.nameFix.backupRetentionDays;
+const DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY = APP_DEFAULTS.nameFix.maxBatchConcurrency;
+const DEFAULT_ALLOW_OVERWRITE_IN_ELECTRON = APP_DEFAULTS.nameFix.allowOverwriteInElectron;
+const DEFAULT_ALLOW_EXTERNAL_PATH_WRITE = APP_DEFAULTS.nameFix.allowExternalPathWrite;
+
+type AppDatabase = BetterSQLite3Database<typeof import("@shared/schema")>;
+type UploadedFileRow = typeof uploadedFilesTable.$inferSelect;
+type DdlSettingsRow = typeof ddlSettingsTable.$inferSelect;
+type DdlSettingsInsertRow = typeof ddlSettingsTable.$inferInsert;
+type ProcessingTaskRow = typeof processingTasksTable.$inferSelect;
+type NameFixJobRow = typeof nameFixJobsTable.$inferSelect;
+type NameFixJobItemRow = typeof nameFixJobItemsTable.$inferSelect;
+type NameFixBackupRow = typeof nameFixBackupsTable.$inferSelect;
 
 function normalizePkMarkers(markers?: string[]): string[] {
   const source = Array.isArray(markers) ? markers : DEFAULT_PK_MARKERS;
@@ -66,6 +77,63 @@ function parsePkMarkers(raw: unknown): string[] {
 
 function serializePkMarkers(markers?: string[]): string {
   return JSON.stringify(normalizePkMarkers(markers));
+}
+
+function toOptionalString(value: string | null | undefined): string | undefined {
+  if (value == null || value === "") {
+    return undefined;
+  }
+  return value;
+}
+
+function toMysqlDataTypeCase(value: string | null | undefined): "lower" | "upper" {
+  return value === "upper" ? "upper" : "lower";
+}
+
+function toMysqlBooleanMode(value: string | null | undefined): "tinyint(1)" | "boolean" {
+  return value === "boolean" ? "boolean" : "tinyint(1)";
+}
+
+function toNameFixMode(value: string | null | undefined): "copy" | "overwrite" | "replace_download" {
+  if (value === "overwrite" || value === "replace_download") {
+    return value;
+  }
+  return "copy";
+}
+
+function toNameFixScope(value: string | null | undefined): "current_sheet" | "selected_sheets" | "all_sheets" {
+  if (value === "selected_sheets" || value === "all_sheets") {
+    return value;
+  }
+  return "current_sheet";
+}
+
+function toNameFixStatus(
+  value: string | null | undefined,
+): "pending" | "processing" | "completed" | "failed" | "rolled_back" {
+  if (value === "processing" || value === "completed" || value === "failed" || value === "rolled_back") {
+    return value;
+  }
+  return "pending";
+}
+
+function toNameFixConflictStrategy(value: string | null | undefined): "suffix_increment" | "hash_suffix" | "abort" {
+  if (value === "hash_suffix" || value === "abort") {
+    return value;
+  }
+  return "suffix_increment";
+}
+
+function toReservedWordStrategy(value: string | null | undefined): "prefix" | "abort" {
+  return value === "abort" ? "abort" : "prefix";
+}
+
+function toLengthOverflowStrategy(value: string | null | undefined): "truncate_hash" | "abort" {
+  return value === "abort" ? "abort" : "truncate_hash";
+}
+
+function toNameFixTarget(value: string | null | undefined): "table" | "column" {
+  return value === "column" ? "column" : "table";
 }
 
 export interface IStorage {
@@ -113,49 +181,7 @@ export class MemoryStorage implements IStorage {
   private nextTaskId = 1;
   private nextNameFixItemId = 1;
   private nextNameFixBackupId = 1;
-  private settings: DdlSettings = {
-    mysqlEngine: "InnoDB",
-    mysqlCharset: "utf8mb4",
-    mysqlCollate: "utf8mb4_bin",
-    varcharCharset: "utf8mb4",
-    varcharCollate: "utf8mb4_bin",
-    exportFilenamePrefix: "Crt_",
-    exportFilenameSuffix: "",
-    includeCommentHeader: true,
-    authorName: "ISI",
-    includeSetNames: true,
-    includeDropTable: true,
-    downloadPath: undefined,
-    excelReadPath: undefined,
-    customHeaderTemplate: undefined,
-    useCustomHeader: false,
-    mysqlDataTypeCase: "lower",
-    mysqlBooleanMode: "tinyint(1)",
-    pkMarkers: DEFAULT_PK_MARKERS,
-    maxConsecutiveEmptyRows: 10,
-    uploadRateLimitWindowMs: DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
-    uploadRateLimitMaxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
-    parseRateLimitWindowMs: DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS,
-    parseRateLimitMaxRequests: DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS,
-    globalProtectRateLimitWindowMs: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
-    globalProtectRateLimitMaxRequests: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
-    globalProtectMaxInFlight: DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
-    prewarmEnabled: DEFAULT_PREWARM_ENABLED,
-    prewarmMaxConcurrency: DEFAULT_PREWARM_MAX_CONCURRENCY,
-    prewarmQueueMax: DEFAULT_PREWARM_QUEUE_MAX,
-    prewarmMaxFileMb: DEFAULT_PREWARM_MAX_FILE_MB,
-    taskManagerMaxQueueLength: DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
-    taskManagerStalePendingMs: DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
-    nameFixDefaultMode: DEFAULT_NAME_FIX_DEFAULT_MODE,
-    nameFixConflictStrategy: DEFAULT_NAME_FIX_CONFLICT_STRATEGY,
-    nameFixReservedWordStrategy: DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY,
-    nameFixLengthOverflowStrategy: DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY,
-    nameFixMaxIdentifierLength: DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH,
-    nameFixBackupRetentionDays: DEFAULT_NAME_FIX_BACKUP_RETENTION_DAYS,
-    nameFixMaxBatchConcurrency: DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY,
-    allowOverwriteInElectron: DEFAULT_ALLOW_OVERWRITE_IN_ELECTRON,
-    allowExternalPathWrite: DEFAULT_ALLOW_EXTERNAL_PATH_WRITE,
-  };
+  private settings: DdlSettings = createDefaultDdlSettings();
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
     const file: UploadedFile = {
@@ -309,31 +335,22 @@ export class MemoryStorage implements IStorage {
 
 // Database storage (requires PostgreSQL)
 export class DatabaseStorage implements IStorage {
-  private db: any;
-  private uploadedFiles: any;
-  private ddlSettings: any;
-  private processingTasks: any;
-  private nameFixJobs: any;
-  private nameFixJobItems: any;
-  private nameFixBackups: any;
+  private readonly db: AppDatabase;
+  private readonly uploadedFiles = uploadedFilesTable;
+  private readonly ddlSettings = ddlSettingsTable;
+  private readonly processingTasks = processingTasksTable;
+  private readonly nameFixJobs = nameFixJobsTable;
+  private readonly nameFixJobItems = nameFixJobItemsTable;
+  private readonly nameFixBackups = nameFixBackupsTable;
 
   constructor() {
     if (!db) {
       throw new Error("DatabaseStorage requires configured database connection.");
     }
-    this.db = db;
-    this.uploadedFiles = uploadedFilesTable;
-    this.ddlSettings = ddlSettingsTable;
-    this.processingTasks = processingTasksTable;
-    this.nameFixJobs = nameFixJobsTable;
-    this.nameFixJobItems = nameFixJobItemsTable;
-    this.nameFixBackups = nameFixBackupsTable;
-    this.eq = eq;
+    this.db = db as AppDatabase;
   }
 
-  private eq: any;
-
-  private mapDbSettings(row: any): DdlSettings {
+  private mapDbSettings(row: DdlSettingsRow): DdlSettings {
     return {
       mysqlEngine: row.mysqlEngine,
       mysqlCharset: row.mysqlCharset,
@@ -346,12 +363,12 @@ export class DatabaseStorage implements IStorage {
       authorName: row.authorName,
       includeSetNames: row.includeSetNames,
       includeDropTable: row.includeDropTable,
-      downloadPath: row.downloadPath,
-      excelReadPath: row.excelReadPath,
-      customHeaderTemplate: row.customHeaderTemplate,
+      downloadPath: toOptionalString(row.downloadPath),
+      excelReadPath: toOptionalString(row.excelReadPath),
+      customHeaderTemplate: toOptionalString(row.customHeaderTemplate),
       useCustomHeader: row.useCustomHeader,
-      mysqlDataTypeCase: row.mysqlDataTypeCase,
-      mysqlBooleanMode: row.mysqlBooleanMode,
+      mysqlDataTypeCase: toMysqlDataTypeCase(row.mysqlDataTypeCase),
+      mysqlBooleanMode: toMysqlBooleanMode(row.mysqlBooleanMode),
       pkMarkers: parsePkMarkers(row.pkMarkers),
       maxConsecutiveEmptyRows: row.maxConsecutiveEmptyRows,
       uploadRateLimitWindowMs: row.uploadRateLimitWindowMs ?? DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
@@ -369,10 +386,16 @@ export class DatabaseStorage implements IStorage {
       prewarmMaxFileMb: row.prewarmMaxFileMb ?? DEFAULT_PREWARM_MAX_FILE_MB,
       taskManagerMaxQueueLength: row.taskManagerMaxQueueLength ?? DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
       taskManagerStalePendingMs: row.taskManagerStalePendingMs ?? DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
-      nameFixDefaultMode: row.nameFixDefaultMode ?? DEFAULT_NAME_FIX_DEFAULT_MODE,
-      nameFixConflictStrategy: row.nameFixConflictStrategy ?? DEFAULT_NAME_FIX_CONFLICT_STRATEGY,
-      nameFixReservedWordStrategy: row.nameFixReservedWordStrategy ?? DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY,
-      nameFixLengthOverflowStrategy: row.nameFixLengthOverflowStrategy ?? DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY,
+      nameFixDefaultMode: toNameFixMode(row.nameFixDefaultMode ?? DEFAULT_NAME_FIX_DEFAULT_MODE),
+      nameFixConflictStrategy: toNameFixConflictStrategy(
+        row.nameFixConflictStrategy ?? DEFAULT_NAME_FIX_CONFLICT_STRATEGY,
+      ),
+      nameFixReservedWordStrategy: toReservedWordStrategy(
+        row.nameFixReservedWordStrategy ?? DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY,
+      ),
+      nameFixLengthOverflowStrategy: toLengthOverflowStrategy(
+        row.nameFixLengthOverflowStrategy ?? DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY,
+      ),
       nameFixMaxIdentifierLength: row.nameFixMaxIdentifierLength ?? DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH,
       nameFixBackupRetentionDays: row.nameFixBackupRetentionDays ?? DEFAULT_NAME_FIX_BACKUP_RETENTION_DAYS,
       nameFixMaxBatchConcurrency: row.nameFixMaxBatchConcurrency ?? DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY,
@@ -381,42 +404,42 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  private toDbSettingsInput(settings: DdlSettings): Record<string, unknown> {
+  private toDbSettingsInput(settings: DdlSettings): DdlSettingsInsertRow {
     return {
       ...settings,
       pkMarkers: serializePkMarkers(settings.pkMarkers),
     };
   }
 
-  private mapNameFixJobRow(row: any): NameFixJob {
+  private mapNameFixJobRow(row: NameFixJobRow): NameFixJob {
     return {
       id: row.id,
       fileId: row.fileId,
       planId: row.planId,
       planHash: row.planHash,
-      mode: row.mode,
-      scope: row.scope,
-      status: row.status,
+      mode: toNameFixMode(row.mode),
+      scope: toNameFixScope(row.scope),
+      status: toNameFixStatus(row.status),
       sourcePath: row.sourcePath,
       outputPath: row.outputPath ?? undefined,
       backupPath: row.backupPath ?? undefined,
       reportJsonPath: row.reportJsonPath ?? undefined,
       reportTextPath: row.reportTextPath ?? undefined,
-      conflictStrategy: row.conflictStrategy,
-      reservedWordStrategy: row.reservedWordStrategy,
-      lengthOverflowStrategy: row.lengthOverflowStrategy,
+      conflictStrategy: toNameFixConflictStrategy(row.conflictStrategy),
+      reservedWordStrategy: toReservedWordStrategy(row.reservedWordStrategy),
+      lengthOverflowStrategy: toLengthOverflowStrategy(row.lengthOverflowStrategy),
       maxIdentifierLength: row.maxIdentifierLength ?? DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH,
       changedTableCount: row.changedTableCount ?? 0,
       changedColumnCount: row.changedColumnCount ?? 0,
       blockingConflictCount: row.blockingConflictCount ?? 0,
       unresolvedSourceRefCount: row.unresolvedSourceRefCount ?? 0,
       error: row.error ?? undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+      createdAt: row.createdAt ?? new Date().toISOString(),
+      updatedAt: row.updatedAt ?? new Date().toISOString(),
     };
   }
 
-  private mapNameFixJobItemRow(row: any): NameFixJobItem {
+  private mapNameFixJobItemRow(row: NameFixJobItemRow): NameFixJobItem {
     return {
       id: row.id,
       jobId: row.jobId,
@@ -424,18 +447,18 @@ export class DatabaseStorage implements IStorage {
       sheetName: row.sheetName,
       tableIndex: row.tableIndex,
       columnIndex: row.columnIndex ?? undefined,
-      target: row.target,
+      target: toNameFixTarget(row.target),
       beforeName: row.beforeName,
       afterName: row.afterName,
       action: row.action,
       reason: row.reason ?? undefined,
       sourceAddress: row.sourceAddress ?? undefined,
       blocking: Boolean(row.blocking),
-      createdAt: row.createdAt,
+      createdAt: row.createdAt ?? new Date().toISOString(),
     };
   }
 
-  private mapNameFixBackupRow(row: any): NameFixBackup {
+  private mapNameFixBackupRow(row: NameFixBackupRow): NameFixBackup {
     return {
       id: row.id,
       jobId: row.jobId,
@@ -444,8 +467,30 @@ export class DatabaseStorage implements IStorage {
       backupPath: row.backupPath,
       backupHash: row.backupHash,
       restorable: Boolean(row.restorable),
-      expiresAt: row.expiresAt,
-      createdAt: row.createdAt,
+      expiresAt: row.expiresAt ?? new Date().toISOString(),
+      createdAt: row.createdAt ?? new Date().toISOString(),
+    };
+  }
+
+  private mapProcessingTaskRow(row: ProcessingTaskRow): ProcessingTask {
+    let parsedResult: unknown;
+    if (row.result) {
+      try {
+        parsedResult = JSON.parse(row.result);
+      } catch {
+        parsedResult = row.result;
+      }
+    }
+    return {
+      id: row.id,
+      fileId: row.fileId ?? undefined,
+      taskType: row.taskType,
+      status: row.status as ProcessingTask["status"],
+      progress: row.progress,
+      error: row.error ?? undefined,
+      result: parsedResult,
+      createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
+      updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
     };
   }
 
@@ -459,24 +504,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
-    const [file] = await this.db.select().from(this.uploadedFiles).where(this.eq(this.uploadedFiles.id, id));
+    const [file] = await this.db.select().from(this.uploadedFiles).where(eq(this.uploadedFiles.id, id));
     return file;
   }
 
   async findFileByHash(hash: string): Promise<UploadedFile | undefined> {
-    const [file] = await this.db.select().from(this.uploadedFiles).where(this.eq(this.uploadedFiles.fileHash, hash));
+    const [file] = await this.db.select().from(this.uploadedFiles).where(eq(this.uploadedFiles.fileHash, hash));
     return file;
   }
 
   async deleteUploadedFile(id: number): Promise<void> {
-    await this.db.delete(this.uploadedFiles).where(this.eq(this.uploadedFiles.id, id));
+    await this.db.delete(this.uploadedFiles).where(eq(this.uploadedFiles.id, id));
   }
 
   async updateUploadedFile(id: number, updates: Pick<InsertUploadedFile, 'fileHash' | 'fileSize'>): Promise<UploadedFile | undefined> {
     const [updated] = await this.db
       .update(this.uploadedFiles)
       .set(updates)
-      .where(this.eq(this.uploadedFiles.id, id))
+      .where(eq(this.uploadedFiles.id, id))
       .returning();
     return updated;
   }
@@ -484,49 +529,7 @@ export class DatabaseStorage implements IStorage {
   async getSettings(): Promise<DdlSettings> {
     const [settings] = await this.db.select().from(this.ddlSettings).limit(1);
     if (!settings) {
-      const defaultSettings: DdlSettings = {
-        mysqlEngine: "InnoDB",
-        mysqlCharset: "utf8mb4",
-        mysqlCollate: "utf8mb4_bin",
-        varcharCharset: "utf8mb4",
-        varcharCollate: "utf8mb4_bin",
-        exportFilenamePrefix: "Crt_",
-        exportFilenameSuffix: "",
-        includeCommentHeader: true,
-        authorName: "ISI",
-        includeSetNames: true,
-        includeDropTable: true,
-        downloadPath: undefined,
-        excelReadPath: undefined,
-        customHeaderTemplate: undefined,
-        useCustomHeader: false,
-        mysqlDataTypeCase: "lower",
-        mysqlBooleanMode: "tinyint(1)",
-        pkMarkers: DEFAULT_PK_MARKERS,
-        maxConsecutiveEmptyRows: 10,
-        uploadRateLimitWindowMs: DEFAULT_UPLOAD_RATE_LIMIT_WINDOW_MS,
-        uploadRateLimitMaxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
-        parseRateLimitWindowMs: DEFAULT_PARSE_RATE_LIMIT_WINDOW_MS,
-        parseRateLimitMaxRequests: DEFAULT_PARSE_RATE_LIMIT_MAX_REQUESTS,
-        globalProtectRateLimitWindowMs: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_WINDOW_MS,
-        globalProtectRateLimitMaxRequests: DEFAULT_GLOBAL_PROTECT_RATE_LIMIT_MAX_REQUESTS,
-        globalProtectMaxInFlight: DEFAULT_GLOBAL_PROTECT_MAX_INFLIGHT,
-        prewarmEnabled: DEFAULT_PREWARM_ENABLED,
-        prewarmMaxConcurrency: DEFAULT_PREWARM_MAX_CONCURRENCY,
-        prewarmQueueMax: DEFAULT_PREWARM_QUEUE_MAX,
-        prewarmMaxFileMb: DEFAULT_PREWARM_MAX_FILE_MB,
-        taskManagerMaxQueueLength: DEFAULT_TASK_MANAGER_MAX_QUEUE_LENGTH,
-        taskManagerStalePendingMs: DEFAULT_TASK_MANAGER_STALE_PENDING_MS,
-        nameFixDefaultMode: DEFAULT_NAME_FIX_DEFAULT_MODE,
-        nameFixConflictStrategy: DEFAULT_NAME_FIX_CONFLICT_STRATEGY,
-        nameFixReservedWordStrategy: DEFAULT_NAME_FIX_RESERVED_WORD_STRATEGY,
-        nameFixLengthOverflowStrategy: DEFAULT_NAME_FIX_LENGTH_OVERFLOW_STRATEGY,
-        nameFixMaxIdentifierLength: DEFAULT_NAME_FIX_MAX_IDENTIFIER_LENGTH,
-        nameFixBackupRetentionDays: DEFAULT_NAME_FIX_BACKUP_RETENTION_DAYS,
-        nameFixMaxBatchConcurrency: DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY,
-        allowOverwriteInElectron: DEFAULT_ALLOW_OVERWRITE_IN_ELECTRON,
-        allowExternalPathWrite: DEFAULT_ALLOW_EXTERNAL_PATH_WRITE,
-      };
+      const defaultSettings: DdlSettings = createDefaultDdlSettings();
       const [created] = await this.db
         .insert(this.ddlSettings)
         .values(this.toDbSettingsInput(defaultSettings))
@@ -556,68 +559,42 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await this.db
       .update(this.ddlSettings)
       .set(dbUpdatePayload)
-      .where(this.eq(this.ddlSettings.id, existing.id))
+      .where(eq(this.ddlSettings.id, existing.id))
       .returning();
     return this.mapDbSettings(updated);
   }
 
   async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {
-    const [created] = await this.db.insert(this.processingTasks).values(task).returning();
-    return {
-      id: created.id,
-      fileId: created.fileId,
-      taskType: created.taskType,
-      status: created.status,
-      progress: created.progress,
-      error: created.error,
-      result: created.result ? JSON.parse(created.result) : undefined,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
+    const payload = {
+      ...task,
+      result: task.result === undefined ? undefined : JSON.stringify(task.result),
     };
+    const [created] = await this.db.insert(this.processingTasks).values(payload).returning();
+    return this.mapProcessingTaskRow(created);
   }
 
   async getTask(id: number): Promise<ProcessingTask | undefined> {
-    const [task] = await this.db.select().from(this.processingTasks).where(this.eq(this.processingTasks.id, id));
+    const [task] = await this.db.select().from(this.processingTasks).where(eq(this.processingTasks.id, id));
     if (!task) return undefined;
-    return {
-      id: task.id,
-      fileId: task.fileId,
-      taskType: task.taskType,
-      status: task.status,
-      progress: task.progress,
-      error: task.error,
-      result: task.result ? JSON.parse(task.result) : undefined,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-    };
+    return this.mapProcessingTaskRow(task);
   }
 
   async updateTask(id: number, updates: Partial<Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ProcessingTask | undefined> {
-    const updateData = { ...updates };
-    if (updateData.result !== undefined) {
-      (updateData as any).result = JSON.stringify(updateData.result);
+    const updateData: Record<string, unknown> = { ...updates };
+    if ("result" in updateData && updateData.result !== undefined) {
+      updateData.result = JSON.stringify(updateData.result);
     }
     const [updated] = await this.db
       .update(this.processingTasks)
-      .set({ ...updateData, updatedAt: new Date() })
-      .where(this.eq(this.processingTasks.id, id))
+      .set({ ...updateData, updatedAt: new Date().toISOString() })
+      .where(eq(this.processingTasks.id, id))
       .returning();
     if (!updated) return undefined;
-    return {
-      id: updated.id,
-      fileId: updated.fileId,
-      taskType: updated.taskType,
-      status: updated.status,
-      progress: updated.progress,
-      error: updated.error,
-      result: updated.result ? JSON.parse(updated.result) : undefined,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
-    };
+    return this.mapProcessingTaskRow(updated);
   }
 
   async deleteTask(id: number): Promise<void> {
-    await this.db.delete(this.processingTasks).where(this.eq(this.processingTasks.id, id));
+    await this.db.delete(this.processingTasks).where(eq(this.processingTasks.id, id));
   }
 
   async createNameFixJob(job: Omit<NameFixJob, "createdAt" | "updatedAt">): Promise<NameFixJob> {
@@ -631,7 +608,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getNameFixJob(id: string): Promise<NameFixJob | undefined> {
-    const [job] = await this.db.select().from(this.nameFixJobs).where(this.eq(this.nameFixJobs.id, id));
+    const [job] = await this.db.select().from(this.nameFixJobs).where(eq(this.nameFixJobs.id, id));
     return job ? this.mapNameFixJobRow(job) : undefined;
   }
 
@@ -645,7 +622,7 @@ export class DatabaseStorage implements IStorage {
         ...updates,
         updatedAt: new Date().toISOString(),
       })
-      .where(this.eq(this.nameFixJobs.id, id))
+      .where(eq(this.nameFixJobs.id, id))
       .returning();
     return updated ? this.mapNameFixJobRow(updated) : undefined;
   }
@@ -660,12 +637,12 @@ export class DatabaseStorage implements IStorage {
       createdAt: now,
     }));
     const created = await this.db.insert(this.nameFixJobItems).values(payload).returning();
-    return created.map((row: any) => this.mapNameFixJobItemRow(row));
+    return created.map((row: NameFixJobItemRow) => this.mapNameFixJobItemRow(row));
   }
 
   async listNameFixJobItems(jobId: string): Promise<NameFixJobItem[]> {
-    const rows = await this.db.select().from(this.nameFixJobItems).where(this.eq(this.nameFixJobItems.jobId, jobId));
-    return rows.map((row: any) => this.mapNameFixJobItemRow(row));
+    const rows = await this.db.select().from(this.nameFixJobItems).where(eq(this.nameFixJobItems.jobId, jobId));
+    return rows.map((row: NameFixJobItemRow) => this.mapNameFixJobItemRow(row));
   }
 
   async createNameFixBackup(backup: Omit<NameFixBackup, "id" | "createdAt">): Promise<NameFixBackup> {
@@ -678,13 +655,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getNameFixBackupsByJob(jobId: string): Promise<NameFixBackup[]> {
-    const rows = await this.db.select().from(this.nameFixBackups).where(this.eq(this.nameFixBackups.jobId, jobId));
-    return rows.map((row: any) => this.mapNameFixBackupRow(row));
+    const rows = await this.db.select().from(this.nameFixBackups).where(eq(this.nameFixBackups.jobId, jobId));
+    return rows.map((row: NameFixBackupRow) => this.mapNameFixBackupRow(row));
   }
 
   async listNameFixBackups(): Promise<NameFixBackup[]> {
     const rows = await this.db.select().from(this.nameFixBackups);
-    return rows.map((row: any) => this.mapNameFixBackupRow(row));
+    return rows.map((row: NameFixBackupRow) => this.mapNameFixBackupRow(row));
   }
 
   async updateNameFixBackup(
@@ -694,7 +671,7 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await this.db
       .update(this.nameFixBackups)
       .set(updates)
-      .where(this.eq(this.nameFixBackups.id, id))
+      .where(eq(this.nameFixBackups.id, id))
       .returning();
     return updated ? this.mapNameFixBackupRow(updated) : undefined;
   }

@@ -4,6 +4,9 @@ import { once } from "events";
 import { z } from "zod";
 import { api } from "@shared/routes";
 import type { DdlSettings, GenerateDdlByReferenceRequest, TableInfo } from "@shared/schema";
+import { API_ERROR_CODES, API_RESPONSE_MESSAGES, HTTP_STATUS } from "../constants/api-response";
+import { DDL_RUNTIME_DEFAULTS, DDL_STREAM_QUERY_TRUE_VALUES } from "../constants/ddl-runtime";
+import { HTTP_HEADER_NAMES, HTTP_HEADER_VALUES } from "../constants/http-headers";
 import { sendApiError } from "../lib/api-error";
 import { collectDdlGenerationWarnings, generateDDL, streamDDL, substituteFilenameSuffix } from "../lib/ddl";
 import { DdlValidationError } from "../lib/ddl-validation";
@@ -41,7 +44,7 @@ function sanitizeSheetNameForFilename(sheetName: string): string {
     .replace(/\s+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^[_\-.]+|[_\-.]+$/g, "")
-    .slice(0, 64);
+    .slice(0, DDL_RUNTIME_DEFAULTS.zipFallbackSheetNameLength);
 }
 
 function deriveSheetNameHintFromTables(tables: TableInfo[]): string | undefined {
@@ -65,13 +68,13 @@ function buildZipDownloadFilename(
 ): string {
   const timestamp = formatZipTimestamp(date);
   if (!sheetNameHint) {
-    return `ddl_${dialect}_${timestamp}.zip`;
+    return `${DDL_RUNTIME_DEFAULTS.zipFilenamePrefix}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${dialect}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${timestamp}${DDL_RUNTIME_DEFAULTS.zipFilenameExtension}`;
   }
   const safeSheetName = sanitizeSheetNameForFilename(sheetNameHint);
   if (!safeSheetName) {
-    return `ddl_${dialect}_${timestamp}.zip`;
+    return `${DDL_RUNTIME_DEFAULTS.zipFilenamePrefix}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${dialect}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${timestamp}${DDL_RUNTIME_DEFAULTS.zipFilenameExtension}`;
   }
-  return `ddl_${dialect}_${safeSheetName}_${timestamp}.zip`;
+  return `${DDL_RUNTIME_DEFAULTS.zipFilenamePrefix}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${dialect}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${safeSheetName}${DDL_RUNTIME_DEFAULTS.zipFilenameSeparator}${timestamp}${DDL_RUNTIME_DEFAULTS.zipFilenameExtension}`;
 }
 
 function buildContentDisposition(filename: string): string {
@@ -96,9 +99,9 @@ function collectZipEntries(
     issues?: unknown[];
   }>;
 } {
-  const prefix = effectiveSettings?.exportFilenamePrefix || "Crt_";
-  const suffixTemplate = effectiveSettings?.exportFilenameSuffix || "";
-  const authorName = effectiveSettings?.authorName || "ISI";
+  const prefix = effectiveSettings?.exportFilenamePrefix || DDL_RUNTIME_DEFAULTS.exportFilenamePrefix;
+  const suffixTemplate = effectiveSettings?.exportFilenameSuffix || DDL_RUNTIME_DEFAULTS.exportFilenameSuffix;
+  const authorName = effectiveSettings?.authorName || DDL_RUNTIME_DEFAULTS.exportAuthorName;
 
   const zipEntries: Array<{ filename: string; content: string }> = [];
   const tolerantErrors: Array<{
@@ -159,16 +162,19 @@ async function streamZipResponse(
     ),
   );
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = archiver("zip", { zlib: { level: DDL_RUNTIME_DEFAULTS.zipCompressionLevel } });
   const zipFilename = buildZipDownloadFilename(dialect, sheetNameHint);
 
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", buildContentDisposition(zipFilename));
-  res.setHeader("X-Zip-Export-Success-Count", String(successfulTableCount));
-  res.setHeader("X-Zip-Export-Skipped-Count", String(tolerantErrors.length));
-  res.setHeader("X-Zip-Partial-Export", tolerantErrors.length > 0 ? "1" : "0");
+  res.setHeader(HTTP_HEADER_NAMES.contentType, HTTP_HEADER_VALUES.contentTypeZip);
+  res.setHeader(HTTP_HEADER_NAMES.contentDisposition, buildContentDisposition(zipFilename));
+  res.setHeader(HTTP_HEADER_NAMES.zipExportSuccessCount, String(successfulTableCount));
+  res.setHeader(HTTP_HEADER_NAMES.zipExportSkippedCount, String(tolerantErrors.length));
+  res.setHeader(HTTP_HEADER_NAMES.zipPartialExport, tolerantErrors.length > 0 ? "1" : "0");
   if (skippedTableNames.length > 0) {
-    res.setHeader("X-Zip-Export-Skipped-Tables", encodeURIComponent(JSON.stringify(skippedTableNames)));
+    res.setHeader(
+      HTTP_HEADER_NAMES.zipExportSkippedTables,
+      encodeURIComponent(JSON.stringify(skippedTableNames)),
+    );
   }
 
   archive.pipe(res);
@@ -208,7 +214,7 @@ async function streamZipResponse(
     const onClose = () => {
       if (!res.writableEnded) {
         archive.abort();
-        settleReject(new Error("Client disconnected during ZIP export"));
+        settleReject(new Error(DDL_RUNTIME_DEFAULTS.zipDisconnectMessage));
       }
     };
 
@@ -235,7 +241,7 @@ function addTolerantErrorReport(
 
   const generatedAt = new Date().toISOString();
   const reportLines: string[] = [
-    "DDL export completed with tolerated errors.",
+    DDL_RUNTIME_DEFAULTS.zipErrorReportTitle,
     `generatedAt: ${generatedAt}`,
     `selectedTableCount: ${tables.length}`,
     `successCount: ${zipEntries.length}`,
@@ -252,15 +258,15 @@ function addTolerantErrorReport(
   });
 
   zipEntries.push({
-    filename: "__export_errors.txt",
-    content: reportLines.join("\n"),
+    filename: DDL_RUNTIME_DEFAULTS.zipErrorReportFilename,
+    content: reportLines.join(DDL_RUNTIME_DEFAULTS.zipErrorReportLineBreak),
   });
 }
 
 export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
   app.post(api.ddl.generate.path, async (req, res) => {
     const streamQuery = String(req.query.stream ?? "").toLowerCase();
-    const streamResponse = streamQuery === "1" || streamQuery === "true";
+    const streamResponse = DDL_STREAM_QUERY_TRUE_VALUES.has(streamQuery);
 
     try {
       const request = api.ddl.generate.input.parse(req.body);
@@ -269,8 +275,8 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       const effectiveRequest = { ...request, settings: effectiveSettings };
 
       if (streamResponse) {
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader(HTTP_HEADER_NAMES.contentType, HTTP_HEADER_VALUES.contentTypePlainTextUtf8);
+        res.setHeader(HTTP_HEADER_NAMES.transferEncoding, HTTP_HEADER_VALUES.transferEncodingChunked);
         await streamDDL(effectiveRequest, async (chunk) => {
           const accepted = res.write(chunk);
           if (!accepted) {
@@ -287,7 +293,7 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
     } catch (err) {
       if (streamResponse && res.headersSent) {
         const streamError = err instanceof Error ? err : new Error(String(err));
-        console.error("[ddl-stream] stream failed after headers sent:", streamError);
+        console.error(DDL_RUNTIME_DEFAULTS.streamDdlErrorPrefix, streamError);
         if (!res.destroyed) {
           res.destroy(streamError);
         }
@@ -295,30 +301,30 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       }
       if (err instanceof z.ZodError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.errors[0].message,
         });
       }
       if (err instanceof DdlValidationError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.message,
           issues: err.issues,
         });
       }
       return sendApiError(res, {
-        status: 500,
-        code: "DDL_GENERATE_FAILED",
-        message: "Failed to generate DDL",
+        status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: API_ERROR_CODES.ddlGenerateFailed,
+        message: API_RESPONSE_MESSAGES.ddlGenerateFailed,
       });
     }
   });
 
   app.post(api.ddl.generateByReference.path, async (req, res) => {
     const streamQuery = String(req.query.stream ?? "").toLowerCase();
-    const streamResponse = streamQuery === "1" || streamQuery === "true";
+    const streamResponse = DDL_STREAM_QUERY_TRUE_VALUES.has(streamQuery);
 
     try {
       const request = api.ddl.generateByReference.input.parse(req.body);
@@ -330,8 +336,8 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       };
 
       if (streamResponse) {
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader(HTTP_HEADER_NAMES.contentType, HTTP_HEADER_VALUES.contentTypePlainTextUtf8);
+        res.setHeader(HTTP_HEADER_NAMES.transferEncoding, HTTP_HEADER_VALUES.transferEncodingChunked);
         await streamDDL(effectiveRequest, async (chunk) => {
           const accepted = res.write(chunk);
           if (!accepted) {
@@ -348,7 +354,7 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
     } catch (err) {
       if (streamResponse && res.headersSent) {
         const streamError = err instanceof Error ? err : new Error(String(err));
-        console.error("[ddl-stream-by-reference] stream failed after headers sent:", streamError);
+        console.error(DDL_RUNTIME_DEFAULTS.streamDdlByReferenceErrorPrefix, streamError);
         if (!res.destroyed) {
           res.destroy(streamError);
         }
@@ -356,8 +362,8 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       }
       if (err instanceof z.ZodError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.errors[0].message,
         });
       }
@@ -366,16 +372,16 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       }
       if (err instanceof DdlValidationError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.message,
           issues: err.issues,
         });
       }
       return sendApiError(res, {
-        status: 500,
-        code: "DDL_GENERATE_FAILED",
-        message: "Failed to generate DDL",
+        status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: API_ERROR_CODES.ddlGenerateFailed,
+        message: API_RESPONSE_MESSAGES.ddlGenerateFailed,
       });
     }
   });
@@ -396,11 +402,11 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
 
       if (zipEntries.length === 0) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: tolerantMode
-            ? "No DDL files could be generated. All selected tables failed validation."
-            : "Failed to generate ZIP",
+            ? DDL_RUNTIME_DEFAULTS.tolerantZipAllFailedMessage
+            : DDL_RUNTIME_DEFAULTS.zipGenerateFailedMessage,
           issues: tolerantErrors.flatMap((item) => (Array.isArray(item.issues) ? item.issues : [])),
           params: {
             selectedTableCount: tables.length,
@@ -419,8 +425,8 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
     } catch (err) {
       if (err instanceof z.ZodError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.errors[0].message,
         });
       }
@@ -429,18 +435,18 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       }
       if (err instanceof DdlValidationError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.message,
           issues: err.issues,
         });
       }
-      console.error("ZIP export by reference error:", err);
+      console.error(DDL_RUNTIME_DEFAULTS.zipExportByReferenceErrorPrefix, err);
       if (!res.headersSent) {
         return sendApiError(res, {
-          status: 500,
-          code: "ZIP_GENERATE_FAILED",
-          message: "Failed to generate ZIP",
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.zipGenerateFailed,
+          message: API_RESPONSE_MESSAGES.zipGenerateFailed,
         });
       }
       if (!res.destroyed) {
@@ -466,11 +472,11 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
 
       if (zipEntries.length === 0) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: tolerantMode
-            ? "No DDL files could be generated. All selected tables failed validation."
-            : "Failed to generate ZIP",
+            ? DDL_RUNTIME_DEFAULTS.tolerantZipAllFailedMessage
+            : DDL_RUNTIME_DEFAULTS.zipGenerateFailedMessage,
           issues: tolerantErrors.flatMap((item) => (Array.isArray(item.issues) ? item.issues : [])),
           params: {
             selectedTableCount: tables.length,
@@ -490,25 +496,25 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
     } catch (err) {
       if (err instanceof z.ZodError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.errors[0].message,
         });
       }
       if (err instanceof DdlValidationError) {
         return sendApiError(res, {
-          status: 400,
-          code: "INVALID_REQUEST",
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
           message: err.message,
           issues: err.issues,
         });
       }
-      console.error("ZIP export error:", err);
+      console.error(DDL_RUNTIME_DEFAULTS.zipExportErrorPrefix, err);
       if (!res.headersSent) {
         return sendApiError(res, {
-          status: 500,
-          code: "ZIP_GENERATE_FAILED",
-          message: "Failed to generate ZIP",
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.zipGenerateFailed,
+          message: API_RESPONSE_MESSAGES.zipGenerateFailed,
         });
       }
       if (!res.destroyed) {

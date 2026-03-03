@@ -5,8 +5,26 @@ import path from "path";
 import { isSqliteStorageEnabled } from "../app-config";
 import { storage } from "../storage";
 
-const SUPPORTED_EXCEL_EXTENSIONS = new Set([".xlsx", ".xls"]);
-const BACKFILL_MARKER_FILENAME = ".uploads-backfill.done.json";
+const UPLOADS_BACKFILL_DEFAULTS = {
+  supportedExtensions: [".xlsx", ".xls"],
+  markerFilename: ".uploads-backfill.done.json",
+  uploadsDir: "uploads",
+  markerVersion: 1,
+  forceTrueValues: ["1", "true"],
+  hashAlgorithm: "sha256",
+  hashEncoding: "hex",
+  recoveredNamePattern: /^[a-f0-9]{8}_\d+_(.+)$/i,
+  disabledLogMessage: "[uploads-backfill] disabled by UPLOAD_BACKFILL_DISABLED",
+  skipByMarkerLogPrefix: "[uploads-backfill] marker exists, skip scanning",
+  fileFailedLogPrefix: "[uploads-backfill] failed for",
+  markerWriteFailedLogPrefix: "[uploads-backfill] failed to write marker",
+  summaryLogPrefix: "[uploads-backfill]",
+  markerFileEncoding: "utf-8",
+} as const;
+
+const SUPPORTED_EXCEL_EXTENSIONS = new Set<string>(UPLOADS_BACKFILL_DEFAULTS.supportedExtensions);
+const BACKFILL_MARKER_FILENAME = UPLOADS_BACKFILL_DEFAULTS.markerFilename;
+const BACKFILL_TRUE_VALUES = new Set<string>(UPLOADS_BACKFILL_DEFAULTS.forceTrueValues);
 
 export interface UploadsBackfillSummary {
   mode: "executed" | "skipped_by_marker";
@@ -26,7 +44,7 @@ interface UploadsBackfillOptions {
 }
 
 function isEnabled(value: string | undefined): boolean {
-  return value === "1" || value === "true";
+  return BACKFILL_TRUE_VALUES.has(String(value ?? ""));
 }
 
 function usesPersistentStorage(): boolean {
@@ -37,20 +55,20 @@ function buildStoredFilePath(configuredUploadsDir: string, fileName: string): st
   if (path.isAbsolute(configuredUploadsDir)) {
     return path.join(configuredUploadsDir, fileName);
   }
-  return path.join(configuredUploadsDir || "uploads", fileName);
+  return path.join(configuredUploadsDir || UPLOADS_BACKFILL_DEFAULTS.uploadsDir, fileName);
 }
 
 function recoverOriginalName(fileName: string): string {
-  const matched = fileName.match(/^[a-f0-9]{8}_\d+_(.+)$/i);
+  const matched = fileName.match(UPLOADS_BACKFILL_DEFAULTS.recoveredNamePattern);
   return matched?.[1] || fileName;
 }
 
 async function hashFileSha256(filePath: string): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
-    const hash = crypto.createHash("sha256");
+    const hash = crypto.createHash(UPLOADS_BACKFILL_DEFAULTS.hashAlgorithm);
     const stream = fs.createReadStream(filePath);
     stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("end", () => resolve(hash.digest(UPLOADS_BACKFILL_DEFAULTS.hashEncoding)));
     stream.on("error", reject);
   });
 }
@@ -60,16 +78,20 @@ async function writeBackfillMarker(
   summary: Omit<UploadsBackfillSummary, "mode">,
 ): Promise<void> {
   const markerPayload = {
-    version: 1,
+    version: UPLOADS_BACKFILL_DEFAULTS.markerVersion,
     completedAt: new Date().toISOString(),
     ...summary,
   };
-  await fsPromises.writeFile(markerPath, JSON.stringify(markerPayload, null, 2), "utf-8");
+  await fsPromises.writeFile(
+    markerPath,
+    JSON.stringify(markerPayload, null, 2),
+    UPLOADS_BACKFILL_DEFAULTS.markerFileEncoding,
+  );
 }
 
 export async function runUploadsBackfill(options: UploadsBackfillOptions = {}): Promise<UploadsBackfillSummary> {
   const log = options.logger ?? ((message: string) => console.log(message));
-  const configuredUploadsDir = process.env.UPLOADS_DIR || "uploads";
+  const configuredUploadsDir = process.env.UPLOADS_DIR || UPLOADS_BACKFILL_DEFAULTS.uploadsDir;
   const uploadsDir = path.resolve(process.cwd(), configuredUploadsDir);
   const markerPath = path.join(uploadsDir, BACKFILL_MARKER_FILENAME);
   const markerEnabled = usesPersistentStorage();
@@ -87,7 +109,7 @@ export async function runUploadsBackfill(options: UploadsBackfillOptions = {}): 
       errors: 0,
       durationMs: 0,
     };
-    log("[uploads-backfill] disabled by UPLOAD_BACKFILL_DISABLED");
+    log(UPLOADS_BACKFILL_DEFAULTS.disabledLogMessage);
     return summary;
   }
 
@@ -107,7 +129,7 @@ export async function runUploadsBackfill(options: UploadsBackfillOptions = {}): 
         errors: 0,
         durationMs: 0,
       };
-      log(`[uploads-backfill] marker exists, skip scanning (${markerPath})`);
+      log(`${UPLOADS_BACKFILL_DEFAULTS.skipByMarkerLogPrefix} (${markerPath})`);
       return summary;
     } catch {
       // marker missing, continue
@@ -161,7 +183,7 @@ export async function runUploadsBackfill(options: UploadsBackfillOptions = {}): 
       inserted += 1;
     } catch (error) {
       errors += 1;
-      log(`[uploads-backfill] failed for "${entry.name}": ${(error as Error).message}`);
+      log(`${UPLOADS_BACKFILL_DEFAULTS.fileFailedLogPrefix} "${entry.name}": ${(error as Error).message}`);
     }
   }
 
@@ -181,12 +203,12 @@ export async function runUploadsBackfill(options: UploadsBackfillOptions = {}): 
     try {
       await writeBackfillMarker(markerPath, summaryBase);
     } catch (error) {
-      log(`[uploads-backfill] failed to write marker: ${(error as Error).message}`);
+      log(`${UPLOADS_BACKFILL_DEFAULTS.markerWriteFailedLogPrefix}: ${(error as Error).message}`);
     }
   }
 
   log(
-    `[uploads-backfill] scanned=${scanned}, inserted=${inserted}, skippedExisting=${skippedExisting}, skippedUnsupported=${skippedUnsupported}, errors=${errors}, durationMs=${durationMs}`,
+    `${UPLOADS_BACKFILL_DEFAULTS.summaryLogPrefix} scanned=${scanned}, inserted=${inserted}, skippedExisting=${skippedExisting}, skippedUnsupported=${skippedUnsupported}, errors=${errors}, durationMs=${durationMs}`,
   );
 
   return {
