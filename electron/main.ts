@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -210,6 +210,8 @@ function createWindow() {
   });
 
   // 完全移除菜单栏
+  Menu.setApplicationMenu(null);
+  mainWindow.removeMenu();
   mainWindow.setMenuBarVisibility(false);
 
   // Express サーバーにアクセス
@@ -222,7 +224,14 @@ function createWindow() {
 
   // F12 キーで DevTools を開く（プロダクション環境でもデバッグ可能）
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'Alt') {
+      // Windows で Alt キー押下時にネイティブメニューバーが出る挙動を抑止
+      event.preventDefault();
+      return;
+    }
+
     if (input.key === 'F12') {
+      event.preventDefault();
       if (mainWindow?.webContents.isDevToolsOpened()) {
         mainWindow.webContents.closeDevTools();
       } else {
@@ -369,4 +378,27 @@ ipcMain.handle('select-excel-file', async () => {
   }
 
   return result.filePaths[0];
+});
+
+ipcMain.handle('open-external', async (_event, rawUrl: string) => {
+  if (typeof rawUrl !== 'string') {
+    return false;
+  }
+
+  const targetUrl = rawUrl.trim();
+  if (!targetUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+
+    await shell.openExternal(parsed.toString());
+    return true;
+  } catch {
+    return false;
+  }
 });

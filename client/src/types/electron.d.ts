@@ -8,8 +8,16 @@ export interface ElectronAPI {
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => () => void;
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void;
   onUpdateError: (callback: (error: { message: string }) => void) => () => void;
+  onUpdateNotAvailable: (callback: (info: { version: string }) => void) => () => void;
   installUpdate: () => void;
   startDownload: () => void;
+  checkForUpdates: () => Promise<{
+    ok: boolean;
+    updateAvailable: boolean;
+    currentVersion: string;
+    latestVersion: string;
+    message?: string;
+  }>;
   getAppVersion: () => Promise<string>;
   selectDirectory: () => Promise<string | null>;
   selectExcelFile: () => Promise<string | null>;

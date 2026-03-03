@@ -8,11 +8,14 @@
     "collapseSidebar": "サイドバーを折りたたむ",
     "uploadExcel": "Excel をアップロード",
     "uploading": "アップロード中...",
-    "dropExcelToUpload": "Drop Excel file to upload",
-    "dropFileHint": "Support .xlsx / .xls",
+    "dropExcelToUpload": "Excel ファイルをドロップしてアップロード",
+    "dropFileHint": ".xlsx / .xls に対応",
     "definitionFiles": "定義ファイル",
     "noFilesYet": "まだファイルがアップロードされていません",
     "settings": "設定",
+    "docs": "ドキュメント",
+    "docsHint": "取込や解析で迷ったときは、クイックスタートとトラブルシューティングを確認できます。",
+    "openGuide": "ガイドを開く",
     "deleteFile": "ファイルを削除"
   },
   "sheet": {
@@ -413,6 +416,9 @@
   "update": {
     "available": "新しいバージョンが利用可能です",
     "availableDesc": "バージョン {{version}} をダウンロードしています...",
+    "manualFoundDesc": "新しいバージョン {{version}} を検出しました。ダウンロード確認を表示します。",
+    "manualCheckedTitle": "更新を確認しました",
+    "manualCheckedDesc": "現在のバージョン {{version}} は最新です。",
     "askDownload": "新しいバージョンをダウンロードしますか？",
     "askDownloadDesc": "バージョン {{version}} が利用可能です。今すぐダウンロードしますか？",
     "downloadNow": "今すぐダウンロード",

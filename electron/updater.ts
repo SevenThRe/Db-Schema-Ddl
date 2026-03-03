@@ -36,6 +36,9 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
    */
   autoUpdater.on('update-not-available', (info) => {
     console.log('Update not available. Current version:', info.version);
+    mainWindow.webContents.send('update-not-available', {
+      version: info.version,
+    });
   });
 
   /**
@@ -91,6 +94,13 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
   });
 
   /**
+   * レンダラープロセスからの手動更新チェック要求ハンドラー
+   */
+  ipcMain.handle('check-for-updates', async () => {
+    return await checkForUpdates();
+  });
+
+  /**
    * 起動時に更新をチェック
    */
   setTimeout(() => {
@@ -110,8 +120,29 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
  */
 async function checkForUpdates() {
   try {
-    await autoUpdater.checkForUpdates();
+    const result = await autoUpdater.checkForUpdates();
+    const candidateVersion = result?.updateInfo?.version;
+    const currentVersion = app.getVersion();
+    const updateAvailable = Boolean(
+      candidateVersion &&
+      candidateVersion.trim() &&
+      candidateVersion !== currentVersion,
+    );
+
+    return {
+      ok: true,
+      updateAvailable,
+      currentVersion,
+      latestVersion: candidateVersion || currentVersion,
+    };
   } catch (err) {
     console.error('Failed to check for updates:', err);
+    return {
+      ok: false,
+      updateAvailable: false,
+      currentVersion: app.getVersion(),
+      latestVersion: app.getVersion(),
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 }

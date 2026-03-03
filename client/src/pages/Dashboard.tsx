@@ -5,19 +5,18 @@ import { TablePreview } from "@/components/TablePreview";
 import { DdlGenerator } from "@/components/DdlGenerator";
 import { SpreadsheetViewer } from "@/components/SpreadsheetViewer";
 import { SearchDialog } from "@/components/SearchDialog";
-import { Badge } from "@/components/ui/badge";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Layers3, Loader2, BookOpen } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw } from "lucide-react";
 import { useFiles, useSheets } from "@/hooks/use-ddl";
+import { useToast } from "@/hooks/use-toast";
 import type { TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
-const DOCS_URL = "https://seventhre.github.io/Db-Schema-Ddl/docs/manual-architecture";
 const PREVIEW_ACTION_BUTTON_CLASS =
   "h-6 px-2.5 gap-1.5 text-[11px] shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none backdrop-blur-[2px] hover:bg-accent/55";
 
@@ -89,6 +88,9 @@ export default function Dashboard() {
   const { data: files } = useFiles();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
   const { t } = useTranslation();
+  const { toast } = useToast();
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
     setCurrentTable(table);
@@ -210,6 +212,28 @@ export default function Dashboard() {
     }
   }, [isCompactLayout]);
 
+  useEffect(() => {
+    if (!window.electronAPI?.getAppVersion) {
+      return;
+    }
+
+    let mounted = true;
+    window.electronAPI
+      .getAppVersion()
+      .then((version) => {
+        if (mounted) {
+          setAppVersion(version);
+        }
+      })
+      .catch(() => {
+        // Ignore version read errors.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
   }, []);
@@ -280,20 +304,48 @@ export default function Dashboard() {
     !selectedSheet &&
     (isSheetsLoading || Boolean(sheets && sheets.length > 0));
   const layoutLabel = isCompactLayout ? "2-column" : "3-column";
+  const versionLabel = appVersion ? `v${appVersion}` : "v--";
 
-  const openDocs = useCallback(async () => {
-    if (window.electronAPI?.openExternal) {
-      const opened = await window.electronAPI.openExternal(DOCS_URL);
-      if (opened) {
+  const handleManualUpdateCheck = useCallback(async () => {
+    if (!window.electronAPI?.checkForUpdates || isCheckingUpdates) {
+      return;
+    }
+
+    setIsCheckingUpdates(true);
+    try {
+      const result = await window.electronAPI.checkForUpdates();
+
+      if (!result.ok) {
+        toast({
+          title: t("errors.common.title"),
+          description: result.message || t("errors.common.defaultDesc"),
+          variant: "destructive",
+        });
         return;
       }
-    }
 
-    const openedWindow = window.open(DOCS_URL, "_blank", "noopener,noreferrer");
-    if (!openedWindow) {
-      window.location.href = DOCS_URL;
+      if (result.updateAvailable) {
+        toast({
+          title: t("update.available"),
+          description: t("update.manualFoundDesc", { version: result.latestVersion }),
+        });
+        return;
+      }
+
+      toast({
+        title: t("update.manualCheckedTitle"),
+        description: t("update.manualCheckedDesc", { version: result.currentVersion }),
+      });
+    } catch (error) {
+      toast({
+        title: t("errors.common.title"),
+        description: error instanceof Error ? error.message : t("errors.common.defaultDesc"),
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingUpdates(false);
     }
-  }, []);
+  }, [isCheckingUpdates, t, toast]);
 
   const renderPreviewPane = (showSheetTrigger: boolean) => (
     <div className="flex flex-col h-full min-w-0">
@@ -383,32 +435,31 @@ export default function Dashboard() {
     <div className="h-screen w-full bg-background overflow-hidden flex flex-col">
       <header className="h-12 shrink-0 border-b border-border/60 bg-background/95 px-3">
         <div className="h-full flex items-center justify-between gap-3">
-          <div className="min-w-0 flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Layers3 className="w-3.5 h-3.5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold tracking-wide uppercase text-foreground truncate">
-                {t("app.title")}
-              </p>
-              <p className="text-[10px] text-muted-foreground truncate">
-                {selectedFileName || t("sidebar.noFilesYet")}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <p className="text-[10px] text-muted-foreground truncate">{t("app.title")}</p>
+            <p className="text-[11px] font-medium text-foreground truncate">
+              {selectedFileName || t("sidebar.noFilesYet")}
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Badge variant="outline" className="hidden md:inline-flex h-6 text-[10px]">
-              <LayoutPanelLeft className="mr-1 h-3 w-3" />
-              {layoutLabel}
-            </Badge>
-            <Badge variant="outline" className="hidden md:inline-flex h-6 max-w-[180px] text-[10px] truncate">
-              {selectedSheet || t("sheet.selectSheet")}
-            </Badge>
-            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={openDocs}>
-              <BookOpen className="h-3.5 w-3.5" />
-              {t("sidebar.docs")}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={handleManualUpdateCheck}
+              disabled={isCheckingUpdates || !window.electronAPI?.checkForUpdates}
+            >
+              {isCheckingUpdates ? <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> : null}
+              {versionLabel}
             </Button>
+            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <LayoutPanelLeft className="w-3 h-3" />
+              {layoutLabel}
+            </span>
+            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-[180px] truncate">
+              {selectedSheet || t("sheet.selectSheet")}
+            </span>
           </div>
         </div>
       </header>

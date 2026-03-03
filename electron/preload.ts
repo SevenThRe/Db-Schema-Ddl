@@ -50,6 +50,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * 更新不要（最新）時のコールバック登録
+   */
+  onUpdateNotAvailable: (callback: (info: { version: string }) => void) => {
+    const listener = (_event: unknown, info: { version: string }) => {
+      callback(info);
+    };
+    ipcRenderer.on('update-not-available', listener);
+    return () => ipcRenderer.removeListener('update-not-available', listener);
+  },
+
+  /**
    * アップデートのインストールとアプリケーションの再起動
    */
   installUpdate: () => {
@@ -61,6 +72,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   startDownload: () => {
     ipcRenderer.send('start-download');
+  },
+
+  /**
+   * 手動で更新チェックを実行
+   */
+  checkForUpdates: async (): Promise<{
+    ok: boolean;
+    updateAvailable: boolean;
+    currentVersion: string;
+    latestVersion: string;
+    message?: string;
+  }> => {
+    return await ipcRenderer.invoke('check-for-updates');
   },
 
   /**
