@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>下载最新版</title>
+    <meta http-equiv="refresh" content="3; url=https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest" />
+  </head>
+  <body>
+    <p>正在定位最新版本安装包，请稍候...</p>
+    <p>若未自动下载，请<a href="https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest">点此打开 Releases</a>。</p>
+
+    <script>
+      (async () => {
+        const fallback = 'https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest';
+        try {
+          const resp = await fetch('https://api.github.com/repos/SevenThRe/Db-Schema-Ddl/releases/latest', {
+            headers: { Accept: 'application/vnd.github+json' },
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+          const data = await resp.json();
+          const assets = Array.isArray(data.assets) ? data.assets : [];
+
+          const preferred = assets.find((a) => /\\.exe$/i.test(a.name)) || assets[0];
+          const target = preferred?.browser_download_url || data.html_url || fallback;
+          window.location.replace(target);
+        } catch {
+          window.location.replace(fallback);
+        }
+      })();
+    </script>
+  </body>
+</html>
