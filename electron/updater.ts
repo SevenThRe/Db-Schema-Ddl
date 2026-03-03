@@ -62,6 +62,9 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
    */
   autoUpdater.on('error', (err) => {
     console.error('AutoUpdater error:', err);
+    mainWindow.webContents.send('update-error', {
+      message: err instanceof Error ? err.message : String(err),
+    });
   });
 
   /**
@@ -77,8 +80,14 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
   /**
    * レンダラープロセスからのダウンロード開始要求ハンドラー
    */
-  ipcMain.on('start-download', () => {
-    autoUpdater.downloadUpdate();
+  ipcMain.on('start-download', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('Failed to start update download:', err);
+      mainWindow.webContents.send('update-error', { message });
+    }
   });
 
   /**

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings } from "lucide-react";
+import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen } from "lucide-react";
 import { useFiles, useUploadFile, useDeleteFile } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,6 +30,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleCollapse, className }: SidebarProps) {
+  const docsUrl = "https://seventhre.github.io/Db-Schema-Ddl/docs/manual-architecture";
   const { data: files, isLoading } = useFiles();
   const { mutate: uploadFile, isPending: isUploading } = useUploadFile();
   const { mutate: deleteFile } = useDeleteFile();
@@ -232,6 +233,18 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     }
   };
 
+  const openDocs = async () => {
+    if (window.electronAPI?.openExternal) {
+      const opened = await window.electronAPI.openExternal(docsUrl);
+      if (opened) return;
+    }
+
+    const openedWindow = window.open(docsUrl, "_blank", "noopener,noreferrer");
+    if (!openedWindow) {
+      window.location.href = docsUrl;
+    }
+  };
+
   // Collapsed mini sidebar
   if (collapsed) {
     return (
@@ -344,6 +357,14 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
         <div className="px-2 py-2 border-t border-border/60 flex flex-col items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={openDocs}>
+                <BookOpen className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{t("sidebar.docs")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Link href="/settings">
                 <Button variant="ghost" size="icon" className="h-8 w-8">
                   <Settings className="w-3.5 h-3.5" />
@@ -370,13 +391,15 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     >
       <div className="px-3 py-2.5 border-b border-border/60 bg-background/80">
         <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div className="h-7 w-7 bg-primary/10 rounded-md flex items-center justify-center text-primary">
               <Database className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h2 className="font-semibold text-xs tracking-wide uppercase">{t("app.title")}</h2>
-              <p className="text-[10px] text-muted-foreground">{t("app.subtitle")}</p>
+              <h2 className="font-semibold text-xs tracking-wide uppercase">{t("sidebar.definitionFiles")}</h2>
+              <p className="text-[10px] text-muted-foreground">
+                {t("sidebar.uploadExcel")}
+              </p>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-7 w-7 text-muted-foreground hover:text-foreground">
@@ -412,6 +435,28 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
               </div>
             </Button>
           </label>
+        </div>
+
+        <div className="mt-2 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
+          <div className="flex items-start gap-2">
+            <BookOpen className="mt-0.5 h-3.5 w-3.5 text-primary shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium leading-none">{t("sidebar.docs")}</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                {t("sidebar.docsHint", {
+                  defaultValue: "Open Quick Start and troubleshooting when import or parsing feels unclear.",
+                })}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-0.5 h-auto px-0 py-0 text-[11px] text-primary hover:bg-transparent hover:text-primary/80"
+                onClick={openDocs}
+              >
+                {t("sidebar.openGuide", { defaultValue: "Open guide" })}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -524,6 +569,10 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
       {/* Settings and Language Switcher at the bottom */}
       <div className="p-2.5 border-t border-border/50 space-y-1.5">
+        <Button variant="ghost" className="w-full justify-start gap-2 h-8 text-xs" onClick={openDocs}>
+          <BookOpen className="w-3.5 h-3.5" />
+          {t("sidebar.docs")}
+        </Button>
         <Link href="/settings">
           <Button variant="ghost" className="w-full justify-start gap-2 h-8 text-xs">
             <Settings className="w-3.5 h-3.5" />
