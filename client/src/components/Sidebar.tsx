@@ -234,9 +234,13 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   };
 
   const openDocs = async () => {
-    if (window.electronAPI?.openExternal) {
-      const opened = await window.electronAPI.openExternal(docsUrl);
-      if (opened) return;
+    try {
+      if (window.electronAPI?.openExternal) {
+        const opened = await window.electronAPI.openExternal(docsUrl);
+        if (opened) return;
+      }
+    } catch {
+      // Fallback to browser navigation below.
     }
 
     const openedWindow = window.open(docsUrl, "_blank", "noopener,noreferrer");
