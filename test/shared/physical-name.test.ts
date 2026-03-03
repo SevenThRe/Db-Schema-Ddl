@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  autoFixTablePhysicalNames,
+  isValidPhysicalName,
   applyNameFixPlan,
   normalizePhysicalName,
   validateTablePhysicalNames,
@@ -133,5 +135,139 @@ test("truncate_hash strategy is deterministic for length overflow", () => {
   assert.equal(tableNameA, tableNameB);
   assert.equal(columnNameA, columnNameB);
   assert.ok(tableNameA.length <= 30);
-  assert.ok((columnNameA ?? "").length <= 30);
+  assert.ok(String(columnNameA).length <= 30);
+});
+
+test("applyNameFixPlan hash_suffix strategy resolves duplicates within max length", () => {
+  const plan = applyNameFixPlan(
+    [
+      {
+        logicalTableName: "Item",
+        physicalTableName: "item",
+        columns: [{ physicalName: "code" }, { physicalName: "code" }],
+      },
+      {
+        logicalTableName: "Item2",
+        physicalTableName: "item",
+        columns: [{ physicalName: "code" }],
+      },
+    ],
+    {
+      conflictStrategy: "hash_suffix",
+      maxIdentifierLength: 12,
+    },
+  );
+
+  assert.equal(plan.blockingConflicts.length, 0);
+  assert.notEqual(plan.fixedTables[0].physicalTableName, plan.fixedTables[1].physicalTableName);
+  assert.notEqual(plan.fixedTables[0].columns[0].physicalName, plan.fixedTables[0].columns[1].physicalName);
+  assert.ok(String(plan.fixedTables[1].physicalTableName).length <= 12);
+  assert.ok(String(plan.fixedTables[0].columns[1].physicalName).length <= 12);
+});
+
+test("applyNameFixPlan clamps identifier length and defaults reserved prefix when blank", () => {
+  const plan = applyNameFixPlan(
+    [
+      {
+        logicalTableName: "Group",
+        physicalTableName: "group",
+        columns: [{ logicalName: "Order", physicalName: "order" }],
+      },
+    ],
+    {
+      reservedWordStrategy: "prefix",
+      reservedPrefix: "   ",
+      maxIdentifierLength: 3,
+      lengthOverflowStrategy: "truncate_hash",
+    },
+  );
+
+  assert.equal(plan.fixedTables[0].physicalTableName.startsWith("n_"), true);
+  assert.equal(String(plan.fixedTables[0].columns[0].physicalName).startsWith("n_"), true);
+  assert.ok(String(plan.fixedTables[0].physicalTableName).length <= 8);
+  assert.ok(String(plan.fixedTables[0].columns[0].physicalName).length <= 8);
+});
+
+test("isValidPhysicalName and autoFixTablePhysicalNames expose helper-level behavior", () => {
+  assert.equal(isValidPhysicalName(undefined), false);
+  assert.equal(isValidPhysicalName("valid_name"), true);
+  assert.equal(isValidPhysicalName("Bad Name"), false);
+
+  const fixed = autoFixTablePhysicalNames({
+    logicalTableName: "Sample",
+    physicalTableName: "sample table",
+    columns: [{ logicalName: "User Id", physicalName: "User Id" }],
+  });
+
+  assert.equal(fixed.physicalTableName, "sample_table");
+  assert.equal(fixed.columns[0].physicalName, "user_id");
+});
+
+test("validateTablePhysicalNames returns clean result for already valid names", () => {
+  const validation = validateTablePhysicalNames({
+    logicalTableName: "Users",
+    physicalTableName: "users",
+    columns: [
+      { logicalName: "Id", physicalName: "id" },
+      { logicalName: "Name", physicalName: "name" },
+    ],
+  });
+
+  assert.equal(validation.hasIssues, false);
+  assert.equal(validation.hasInvalidTableName, false);
+  assert.deepEqual(validation.invalidColumns, []);
+});
+
+test("applyNameFixPlan normalizes option bounds for maxIdentifierLength", () => {
+  const planWithNaN = applyNameFixPlan(
+    [
+      {
+        logicalTableName: "T1",
+        physicalTableName: `table_${"x".repeat(80)}`,
+        columns: [{ physicalName: `column_${"x".repeat(80)}` }],
+      },
+    ],
+    {
+      maxIdentifierLength: Number.NaN,
+      lengthOverflowStrategy: "truncate_hash",
+    },
+  );
+
+  const planWithHugeLimit = applyNameFixPlan(
+    [
+      {
+        logicalTableName: "T2",
+        physicalTableName: `table_${"y".repeat(400)}`,
+        columns: [{ physicalName: `column_${"y".repeat(400)}` }],
+      },
+    ],
+    {
+      maxIdentifierLength: 1_000,
+      lengthOverflowStrategy: "truncate_hash",
+    },
+  );
+
+  assert.ok(String(planWithNaN.fixedTables[0].physicalTableName).length <= 64);
+  assert.ok(String(planWithNaN.fixedTables[0].columns[0].physicalName).length <= 64);
+  assert.ok(String(planWithHugeLimit.fixedTables[0].physicalTableName).length <= 255);
+  assert.ok(String(planWithHugeLimit.fixedTables[0].columns[0].physicalName).length <= 255);
+});
+
+test("applyNameFixPlan keeps unique identifiers unchanged", () => {
+  const plan = applyNameFixPlan([
+    {
+      logicalTableName: "Users",
+      physicalTableName: "users",
+      columns: [
+        { physicalName: "id" },
+        { physicalName: "name" },
+        { physicalName: "email" },
+      ],
+    },
+  ]);
+
+  assert.equal(plan.tableNamesChanged, 0);
+  assert.equal(plan.columnNamesChanged, 0);
+  assert.equal(plan.conflicts.length, 0);
+  assert.equal(plan.fixedTables[0].physicalTableName, "users");
 });

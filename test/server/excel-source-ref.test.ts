@@ -88,3 +88,31 @@ test("parseWorkbookBundle marks autoIncrement from comment/remarks text", async 
     assert.equal(table.columns[3].autoIncrement, false);
   });
 });
+
+test("parseWorkbookBundle resolves table names when logical/physical labels are adjacent on same row", async () => {
+  await withTempFile("adjacent-table-name-labels.xlsx", async (filePath) => {
+    const rows: Array<Array<string | number>> = [
+      [LABEL_LOGICAL_TABLE, LABEL_PHYSICAL_TABLE],
+      ["\u7d66\u4e0e\u4f1a\u793e\u30de\u30b9\u30bf", "kuyou_kaisya_master"], // 給与会社マスタ
+      [],
+      ["No", LABEL_LOGICAL, LABEL_PHYSICAL, LABEL_DATA_TYPE],
+      [1, "\u4f1a\u793eID", "company_id", "bigint"], // 会社ID
+      [2, "\u4f1a\u793e\u540d", "company_name", "varchar"], // 会社名
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+    XLSX.writeFile(workbook, filePath);
+
+    const bundle = parseWorkbookBundle(filePath);
+    const table = bundle.tablesBySheet.Sheet1?.[0];
+    assert.ok(table, "expected one parsed table");
+
+    assert.equal(table.logicalTableName, "\u7d66\u4e0e\u4f1a\u793e\u30de\u30b9\u30bf");
+    assert.equal(table.physicalTableName, "kuyou_kaisya_master");
+    assert.equal(table.sourceRef?.logicalName?.address, "A2");
+    assert.equal(table.sourceRef?.physicalName?.address, "B2");
+    assert.equal(table.columns.length, 2);
+  });
+});
