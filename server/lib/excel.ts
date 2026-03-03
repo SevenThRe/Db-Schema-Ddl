@@ -9,8 +9,17 @@ import type {
   CellSourceRef,
   TableSourceRef,
 } from '../../shared/schema.ts';
+import { APP_DEFAULTS } from '../../shared/config.ts';
+import {
+  EXCEL_PARSER_FALLBACKS,
+  EXCEL_LABELS,
+  EXCEL_NO_HEADER_TOKENS,
+  EXCEL_PARSER_DEFAULTS,
+  EXCEL_REQUIRED_COLUMN_HEADERS,
+  EXCEL_STANDARD_HEADERS,
+} from '../constants/excel-parser';
 
-const DEFAULT_PK_MARKERS = ['〇'];
+const DEFAULT_PK_MARKERS = [...APP_DEFAULTS.excel.pkMarkers];
 
 export interface SearchIndexItem {
   type: 'sheet' | 'table';
@@ -34,7 +43,21 @@ export interface WorkbookParseStats {
   extractMs: number;
   fallbackSheetCount: number;
   fallbackSheets: string[];
+  detectedFormatCounts: Record<'A' | 'B' | 'UNKNOWN', number>;
+  sheetParseTraces: SheetParseTrace[];
   cacheHit: boolean;
+}
+
+export interface SheetParseTrace {
+  sheetName: string;
+  detectedFormat: 'A' | 'B' | 'UNKNOWN';
+  confidence: number;
+  scoreA: number;
+  scoreB: number;
+  reasons: string[];
+  strategySteps: string[];
+  tableCount: number;
+  usedLegacyFallback: boolean;
 }
 
 export interface WorkbookBundle {
@@ -210,13 +233,23 @@ export function getSheetNames(filePath: string): string[] {
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
 
-function str(v: any): string {
+function str(v: unknown): string {
   if (v === null || v === undefined) return '';
   return String(v).trim();
 }
 
-function isEmpty(v: any): boolean {
+function isEmpty(v: unknown): boolean {
   return v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '　';
+}
+
+function normalizeToken(value: unknown): string {
+  const raw = String(value ?? '')
+    .normalize('NFKC')
+    .replace(/\u3000/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return raw;
 }
 
 /**
@@ -273,6 +306,60 @@ function buildCellSourceRef(sheetName: string, row: number, col: number): CellSo
     col,
     address: cellAddress(row, col),
   };
+}
+
+interface ResolvedLabelValue {
+  value: string;
+  row: number;
+  col: number;
+}
+
+const TABLE_META_LABELS = new Set([
+  '\u8ad6\u7406\u30c6\u30fc\u30d6\u30eb\u540d', // 論理テーブル名
+  '\u7269\u7406\u30c6\u30fc\u30d6\u30eb\u540d', // 物理テーブル名
+  '\u8aac\u660e', // 説明
+  'RDBMS',
+  'ENGINE',
+  'CHARSET',
+]);
+
+function resolveLabelValue(data: unknown[][], rowIndex: number, labelCol: number): ResolvedLabelValue | undefined {
+  const row = data[rowIndex] || [];
+
+  // 1) Prefer value to the right on the same row, but skip known labels
+  for (let k = labelCol + 1; k < row.length; k++) {
+    if (isEmpty(row[k])) continue;
+    const candidate = str(row[k]);
+    if (!TABLE_META_LABELS.has(candidate)) {
+      return { value: candidate, row: rowIndex, col: k };
+    }
+  }
+
+  // 2) Fallback to the next row (same column / adjacent columns)
+  const nextRow = data[rowIndex + 1];
+  if (!nextRow) {
+    return undefined;
+  }
+
+  const preferredCols = [labelCol, labelCol + 1];
+  for (const col of preferredCols) {
+    if (col < 0 || col >= nextRow.length) continue;
+    if (isEmpty(nextRow[col])) continue;
+    const candidate = str(nextRow[col]);
+    if (!TABLE_META_LABELS.has(candidate)) {
+      return { value: candidate, row: rowIndex + 1, col };
+    }
+  }
+
+  for (let col = 0; col < nextRow.length; col++) {
+    if (isEmpty(nextRow[col])) continue;
+    const candidate = str(nextRow[col]);
+    if (!TABLE_META_LABELS.has(candidate)) {
+      return { value: candidate, row: rowIndex + 1, col };
+    }
+  }
+
+  return undefined;
 }
 
 function parseCodeValueOptions(raw?: string): CodeValueOption[] | undefined {
@@ -404,9 +491,174 @@ function detectAutoIncrementFromComment(comment: string | undefined): boolean {
 //   Row 13+: data rows
 // Can also appear as a horizontal block at a column offset within Format B sheets.
 
-function isFormatA(data: any[][]): boolean {
-  if (data.length < 5) return false;
-  return str(data[0]?.[0]) === 'テーブル情報';
+export interface FormatDetectionResult {
+  format: 'A' | 'B' | 'UNKNOWN';
+  confidence: number;
+  reasons: string[];
+  scoreA: number;
+  scoreB: number;
+}
+
+const FORMAT_A_TITLE_TOKEN = normalizeToken(EXCEL_LABELS.tableInfo);
+const FORMAT_B_TITLE_TOKEN = normalizeToken(EXCEL_LABELS.databaseDefinition);
+const TABLE_LOGICAL_LABEL_TOKEN = normalizeToken(EXCEL_LABELS.logicalTableName);
+const TABLE_PHYSICAL_LABEL_TOKEN = normalizeToken(EXCEL_LABELS.physicalTableName);
+const COLUMN_LOGICAL_LABEL_TOKEN = normalizeToken(EXCEL_LABELS.logicalName);
+const COLUMN_PHYSICAL_LABEL_TOKEN = normalizeToken(EXCEL_LABELS.physicalName);
+const COLUMN_TYPE_LABEL_TOKEN = normalizeToken(EXCEL_LABELS.dataType);
+const FORMAT_B_NO_TOKEN_SET = new Set<string>(EXCEL_NO_HEADER_TOKENS);
+const STANDARD_HEADER_SET = new Set<string>(EXCEL_STANDARD_HEADERS);
+
+function rowTokenSet(row: unknown[] | undefined): Set<string> {
+  const tokens = new Set<string>();
+  if (!row) {
+    return tokens;
+  }
+  row.forEach((cell) => {
+    const token = normalizeToken(cell);
+    if (token) {
+      tokens.add(token);
+    }
+  });
+  return tokens;
+}
+
+function hasTokenWithinRange(data: unknown[][], target: string, maxRows: number, maxCols: number): boolean {
+  for (let i = 0; i < Math.min(maxRows, data.length); i++) {
+    const row = data[i] || [];
+    for (let j = 0; j < Math.min(maxCols, row.length); j++) {
+      if (normalizeToken(row[j]) === target) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasColumnHeaderSignature(data: unknown[][], maxRows: number): boolean {
+  for (let i = 0; i < Math.min(maxRows, data.length); i++) {
+    const tokens = rowTokenSet(data[i]);
+    if (
+      tokens.has(COLUMN_LOGICAL_LABEL_TOKEN) &&
+      tokens.has(COLUMN_PHYSICAL_LABEL_TOKEN) &&
+      tokens.has(COLUMN_TYPE_LABEL_TOKEN)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasFormatBVerticalHeaderSignature(data: unknown[][], maxRows: number): boolean {
+  for (let i = 0; i < Math.min(maxRows, data.length); i++) {
+    const tokens = rowTokenSet(data[i]);
+    const hasNo = Array.from(tokens).some((token) => FORMAT_B_NO_TOKEN_SET.has(token));
+    if (hasNo && tokens.has(TABLE_LOGICAL_LABEL_TOKEN) && tokens.has(TABLE_PHYSICAL_LABEL_TOKEN)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function detectExcelFormat(data: unknown[][]): FormatDetectionResult {
+  if (!Array.isArray(data) || data.length === 0) {
+    return {
+      format: 'UNKNOWN',
+      confidence: 0,
+      reasons: ['empty_sheet'],
+      scoreA: 0,
+      scoreB: 0,
+    };
+  }
+
+  let scoreA = 0;
+  let scoreB = 0;
+  const reasons: string[] = [];
+
+  const topLeftToken = normalizeToken(data[0]?.[0]);
+  if (topLeftToken === FORMAT_A_TITLE_TOKEN) {
+    scoreA += 5;
+    reasons.push('a_title_top_left');
+  }
+  if (topLeftToken === FORMAT_B_TITLE_TOKEN) {
+    scoreB += 6;
+    reasons.push('b_title_top_left');
+  }
+
+  if (hasTokenWithinRange(data, FORMAT_A_TITLE_TOKEN, 3, 3)) {
+    scoreA += 2;
+    reasons.push('a_title_near_top');
+  }
+
+  if (hasTokenWithinRange(data, FORMAT_B_TITLE_TOKEN, 3, 3)) {
+    scoreB += 2;
+    reasons.push('b_title_near_top');
+  }
+
+  const hasTableNameLabels =
+    hasTokenWithinRange(
+      data,
+      TABLE_LOGICAL_LABEL_TOKEN,
+      EXCEL_PARSER_DEFAULTS.formatMarkerScanRows,
+      EXCEL_PARSER_DEFAULTS.formatMarkerScanCols,
+    ) &&
+    hasTokenWithinRange(
+      data,
+      TABLE_PHYSICAL_LABEL_TOKEN,
+      EXCEL_PARSER_DEFAULTS.formatMarkerScanRows,
+      EXCEL_PARSER_DEFAULTS.formatMarkerScanCols,
+    );
+  if (hasTableNameLabels) {
+    scoreA += 1;
+    scoreB += 1;
+    reasons.push('table_name_labels_found');
+  }
+
+  if (hasColumnHeaderSignature(data, 40)) {
+    scoreA += 2;
+    reasons.push('column_header_signature');
+  }
+
+  if (hasFormatBVerticalHeaderSignature(data, 80)) {
+    scoreB += 3;
+    reasons.push('format_b_vertical_header_signature');
+  }
+
+  if (scoreA === 0 && scoreB === 0) {
+    return {
+      format: 'UNKNOWN',
+      confidence: 0,
+      reasons: ['no_known_markers'],
+      scoreA,
+      scoreB,
+    };
+  }
+
+  if (scoreA === scoreB) {
+    return {
+      format: 'UNKNOWN',
+      confidence: 0.5,
+      reasons: [...reasons, 'ambiguous_scores'],
+      scoreA,
+      scoreB,
+    };
+  }
+
+  const format: 'A' | 'B' = scoreA > scoreB ? 'A' : 'B';
+  const confidence = format === 'A'
+    ? scoreA / (scoreA + scoreB)
+    : scoreB / (scoreA + scoreB);
+  return {
+    format,
+    confidence,
+    reasons,
+    scoreA,
+    scoreB,
+  };
+}
+
+function isFormatA(data: unknown[][]): boolean {
+  return detectExcelFormat(data).format === 'A';
 }
 
 /**
@@ -415,11 +667,11 @@ function isFormatA(data: any[][]): boolean {
  */
 function parseFormatABlock(
   sheetName: string,
-  data: any[][],
+  data: unknown[][],
   colOffset: number,
   startRow: number,
   endRow?: number,
-  maxConsecutiveEmpty: number = 10,
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): TableInfo | null {
@@ -431,19 +683,25 @@ function parseFormatABlock(
   let physicalTableNameRef: CellSourceRef | undefined;
 
   // Find 論理テーブル名 and 物理テーブル名 labels within the header area
-  for (let i = startRow; i < Math.min(startRow + 15, maxRow); i++) {
+  for (let i = startRow; i < Math.min(startRow + EXCEL_PARSER_DEFAULTS.formatATableMetaScanRows, maxRow); i++) {
     const row = data[i];
     if (!row) continue;
 
     // Check at colOffset and colOffset+1 for labels
     for (let c = colOffset; c <= colOffset + 1; c++) {
       const label = str(row[c]);
-      if (label === '論理テーブル名') {
-        logicalTableName = str(row[c + 1]);
-        logicalTableNameRef = buildCellSourceRef(sheetName, i, c + 1);
-      } else if (label === '物理テーブル名') {
-        physicalTableName = str(row[c + 1]);
-        physicalTableNameRef = buildCellSourceRef(sheetName, i, c + 1);
+      if (label === EXCEL_LABELS.logicalTableName) {
+        const resolved = resolveLabelValue(data, i, c);
+        if (resolved) {
+          logicalTableName = resolved.value;
+          logicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
+        }
+      } else if (label === EXCEL_LABELS.physicalTableName) {
+        const resolved = resolveLabelValue(data, i, c);
+        if (resolved) {
+          physicalTableName = resolved.value;
+          physicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
+        }
       }
     }
   }
@@ -452,14 +710,18 @@ function parseFormatABlock(
 
   // Find column header row (must contain 論理名, 物理名, データ型)
   let headerRowIdx = -1;
-  for (let i = startRow; i < Math.min(startRow + 30, maxRow); i++) {
+  for (let i = startRow; i < Math.min(startRow + EXCEL_PARSER_DEFAULTS.formatAHeaderScanRows, maxRow); i++) {
     const row = data[i];
     if (!row) continue;
     const vals: string[] = [];
-    for (let j = colOffset; j < Math.min(colOffset + 15, row.length); j++) {
+    for (let j = colOffset; j < Math.min(colOffset + EXCEL_PARSER_DEFAULTS.formatBColumnScanLimit, row.length); j++) {
       vals.push(str(row[j]));
     }
-    if (vals.includes('論理名') && vals.includes('物理名') && vals.includes('データ型')) {
+    if (
+      vals.includes(EXCEL_LABELS.logicalName) &&
+      vals.includes(EXCEL_LABELS.physicalName) &&
+      vals.includes(EXCEL_LABELS.dataType)
+    ) {
       headerRowIdx = i;
       break;
     }
@@ -479,12 +741,12 @@ function parseFormatABlock(
   }
 
   // Detect actual column boundaries: from 'No' to '備考' or last standard column
-  const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+  const standardHeaders = STANDARD_HEADER_SET;
 
   // Find first standard header
   for (let j = colOffset; j < headerRow.length; j++) {
     const v = str(headerRow[j]);
-    if (standardHeaders.includes(v)) {
+    if (standardHeaders.has(v)) {
       tableStartCol = j;
       break;
     }
@@ -493,9 +755,9 @@ function parseFormatABlock(
   // Find last standard header
   for (let j = tableStartCol; j < headerRow.length; j++) {
     const v = str(headerRow[j]);
-    if (standardHeaders.includes(v)) {
+    if (standardHeaders.has(v)) {
       tableEndCol = j;
-    } else if (v !== '' && !standardHeaders.includes(v)) {
+    } else if (v !== '' && !standardHeaders.has(v)) {
       // Hit a non-standard column, stop here
       break;
     }
@@ -543,9 +805,8 @@ function parseFormatABlock(
 //   Vertical table blocks starting with [No., 論理テーブル名, 物理テーブル名, 説明]
 //   Horizontal Format A blocks at column offsets (15, 26, etc.)
 
-function isFormatB(data: any[][]): boolean {
-  if (data.length < 5) return false;
-  return str(data[0]?.[0]) === 'データベース定義書';
+function isFormatB(data: unknown[][]): boolean {
+  return detectExcelFormat(data).format === 'B';
 }
 
 /**
@@ -553,8 +814,8 @@ function isFormatB(data: any[][]): boolean {
  */
 function* findFormatBVerticalTables(
   sheetName: string,
-  data: any[][],
-  maxConsecutiveEmpty: number = 10,
+  data: unknown[][],
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): Generator<TableInfo> {
@@ -570,7 +831,11 @@ function* findFormatBVerticalTables(
       const c0 = str(row[0]);
       const c1 = str(row[1]);
       const c2 = str(row[2]);
-      if ((c0 === 'No.' || c0 === 'No') && c1 === '論理テーブル名' && c2 === '物理テーブル名') {
+      if (
+        (c0 === EXCEL_LABELS.noDot || c0 === EXCEL_LABELS.no) &&
+        c1 === EXCEL_LABELS.logicalTableName &&
+        c2 === EXCEL_LABELS.physicalTableName
+      ) {
         tableHeaderIdx = i;
         break;
       }
@@ -596,14 +861,22 @@ function* findFormatBVerticalTables(
 
     // Find column header row within cols 0-14
     let colHeaderIdx = -1;
-    for (let i = tableHeaderIdx + 2; i < Math.min(tableHeaderIdx + 30, totalRows); i++) {
+    for (
+      let i = tableHeaderIdx + 2;
+      i < Math.min(tableHeaderIdx + EXCEL_PARSER_DEFAULTS.formatBHeaderScanRows, totalRows);
+      i++
+    ) {
       const row = data[i];
       if (!row) continue;
       const vals: string[] = [];
-      for (let j = 0; j < Math.min(15, row.length); j++) {
+      for (let j = 0; j < Math.min(EXCEL_PARSER_DEFAULTS.formatBColumnScanLimit, row.length); j++) {
         vals.push(str(row[j]));
       }
-      if (vals.includes('論理名') && vals.includes('物理名') && vals.includes('データ型')) {
+      if (
+        vals.includes(EXCEL_LABELS.logicalName) &&
+        vals.includes(EXCEL_LABELS.physicalName) &&
+        vals.includes(EXCEL_LABELS.dataType)
+      ) {
         colHeaderIdx = i;
         break;
       }
@@ -621,7 +894,7 @@ function* findFormatBVerticalTables(
       if (!row) continue;
       const c0 = str(row[0]);
       const c1 = str(row[1]);
-      if ((c0 === 'No.' || c0 === 'No') && c1 === '論理テーブル名') {
+      if ((c0 === EXCEL_LABELS.noDot || c0 === EXCEL_LABELS.no) && c1 === EXCEL_LABELS.logicalTableName) {
         nextTableHeader = i;
         break;
       }
@@ -630,30 +903,30 @@ function* findFormatBVerticalTables(
     // Build column map and detect column boundaries
     const headerRow = data[colHeaderIdx];
     const colMap: Record<string, number> = {};
-    const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+    const standardHeaders = STANDARD_HEADER_SET;
 
     let tableStartCol = 0;
     let tableEndCol = 0;
 
-    for (let j = 0; j < Math.min(15, headerRow.length); j++) {
+    for (let j = 0; j < Math.min(EXCEL_PARSER_DEFAULTS.formatBColumnScanLimit, headerRow.length); j++) {
       const v = str(headerRow[j]);
       if (v !== '') colMap[v] = j;
     }
 
     // Find first and last standard header columns
-    for (let j = 0; j < Math.min(15, headerRow.length); j++) {
+    for (let j = 0; j < Math.min(EXCEL_PARSER_DEFAULTS.formatBColumnScanLimit, headerRow.length); j++) {
       const v = str(headerRow[j]);
-      if (standardHeaders.includes(v)) {
+      if (standardHeaders.has(v)) {
         tableStartCol = j;
         break;
       }
     }
 
-    for (let j = tableStartCol; j < Math.min(15, headerRow.length); j++) {
+    for (let j = tableStartCol; j < Math.min(EXCEL_PARSER_DEFAULTS.formatBColumnScanLimit, headerRow.length); j++) {
       const v = str(headerRow[j]);
-      if (standardHeaders.includes(v)) {
+      if (standardHeaders.has(v)) {
         tableEndCol = j;
-      } else if (v !== '' && !standardHeaders.includes(v)) {
+      } else if (v !== '' && !standardHeaders.has(v)) {
         break;
       }
     }
@@ -699,8 +972,8 @@ function* findFormatBVerticalTables(
  */
 function* findFormatBHorizontalTables(
   sheetName: string,
-  data: any[][],
-  maxConsecutiveEmpty: number = 10,
+  data: unknown[][],
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): Generator<TableInfo> {
@@ -709,8 +982,8 @@ function* findFormatBHorizontalTables(
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
     if (!row) continue;
-    for (let j = 10; j < row.length; j++) {
-      if (str(row[j]) === 'テーブル情報') {
+    for (let j = EXCEL_PARSER_DEFAULTS.horizontalBlockMinColumn; j < row.length; j++) {
+      if (str(row[j]) === EXCEL_LABELS.tableInfo) {
         const key = `${i},${j}`;
         if (foundBlocks.has(key)) continue;
         foundBlocks.add(key);
@@ -719,7 +992,7 @@ function* findFormatBHorizontalTables(
         let endRow = data.length;
         for (let k = i + 1; k < data.length; k++) {
           const r = data[k];
-          if (r && str(r[j]) === 'テーブル情報') {
+          if (r && str(r[j]) === EXCEL_LABELS.tableInfo) {
             endRow = k;
             break;
           }
@@ -749,8 +1022,8 @@ function* findFormatBHorizontalTables(
  */
 function* findSideBySideTables(
   sheetName: string,
-  data: any[][],
-  maxConsecutiveEmpty: number = 10,
+  data: unknown[][],
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): Generator<TableInfo> {
@@ -761,10 +1034,10 @@ function* findSideBySideTables(
     const row = data[i];
     if (!row) continue;
 
-    // Find all '物理テーブル名' labels in this row
+    // Find all physical table name labels in this row
     const tableNamePositions: number[] = [];
     for (let j = 0; j < row.length; j++) {
-      if (str(row[j]) === '物理テーブル名') {
+      if (str(row[j]) === EXCEL_LABELS.physicalTableName) {
         tableNamePositions.push(j);
       }
     }
@@ -784,7 +1057,11 @@ function* findSideBySideTables(
         let headerRowIdx = -1;
         const searchStartCol = Math.max(0, colPos - 2);
 
-        for (let r = i; r < Math.min(i + 30, totalRows); r++) {
+        for (
+          let r = i;
+          r < Math.min(i + EXCEL_PARSER_DEFAULTS.adjacentTableNameSearchRows, totalRows);
+          r++
+        ) {
           const searchRow = data[r];
           if (!searchRow) continue;
 
@@ -793,7 +1070,11 @@ function* findSideBySideTables(
             vals.push(str(searchRow[c]));
           }
 
-          if (vals.includes('論理名') && vals.includes('物理名') && vals.includes('データ型')) {
+          if (
+            vals.includes(EXCEL_LABELS.logicalName) &&
+            vals.includes(EXCEL_LABELS.physicalName) &&
+            vals.includes(EXCEL_LABELS.dataType)
+          ) {
             headerRowIdx = r;
             break;
           }
@@ -804,7 +1085,7 @@ function* findSideBySideTables(
         // Build column map and detect boundaries
         const headerRow = data[headerRowIdx];
         const colMap: Record<string, number> = {};
-        const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+        const standardHeaders = STANDARD_HEADER_SET;
 
         let tableStartCol = searchStartCol;
         let tableEndCol = searchStartCol;
@@ -818,7 +1099,7 @@ function* findSideBySideTables(
         // Find first and last standard header columns
         for (let c = searchStartCol; c < Math.min(nextTableCol, headerRow.length); c++) {
           const v = str(headerRow[c]);
-          if (standardHeaders.includes(v)) {
+          if (standardHeaders.has(v)) {
             tableStartCol = c;
             break;
           }
@@ -826,9 +1107,9 @@ function* findSideBySideTables(
 
         for (let c = tableStartCol; c < Math.min(nextTableCol, headerRow.length); c++) {
           const v = str(headerRow[c]);
-          if (standardHeaders.includes(v)) {
+          if (standardHeaders.has(v)) {
             tableEndCol = c;
-          } else if (v !== '' && !standardHeaders.includes(v)) {
+          } else if (v !== '' && !standardHeaders.has(v)) {
             break;
           }
         }
@@ -845,11 +1126,15 @@ function* findSideBySideTables(
         let logicalNameRef: CellSourceRef | undefined;
 
         // Search for logical table name nearby
-        for (let r = Math.max(0, i - 5); r <= Math.min(i + 5, totalRows - 1); r++) {
+        for (
+          let r = Math.max(0, i - EXCEL_PARSER_DEFAULTS.sideBySideLogicalNameNeighborRows);
+          r <= Math.min(i + EXCEL_PARSER_DEFAULTS.sideBySideLogicalNameNeighborRows, totalRows - 1);
+          r++
+        ) {
           const searchRow = data[r];
           if (!searchRow) continue;
           for (let c = searchStartCol; c < Math.min(nextTableCol, searchRow.length); c++) {
-            if (str(searchRow[c]) === '論理テーブル名' && c + 1 < searchRow.length) {
+            if (str(searchRow[c]) === EXCEL_LABELS.logicalTableName && c + 1 < searchRow.length) {
               logicalTableName = str(searchRow[c + 1]);
               logicalNameRef = buildCellSourceRef(sheetName, r, c + 1);
               break;
@@ -866,7 +1151,10 @@ function* findSideBySideTables(
 
           // Check if we hit another table name marker
           for (let c = searchStartCol; c < Math.min(nextTableCol, searchRow.length); c++) {
-            if (str(searchRow[c]) === '物理テーブル名' || str(searchRow[c]) === 'テーブル情報') {
+            if (
+              str(searchRow[c]) === EXCEL_LABELS.physicalTableName ||
+              str(searchRow[c]) === EXCEL_LABELS.tableInfo
+            ) {
               endRow = r;
               break;
             }
@@ -888,7 +1176,8 @@ function* findSideBySideTables(
         if (columns.length > 0) {
           yield {
             logicalTableName: logicalTableName || physicalTableName,
-            physicalTableName: physicalTableName || logicalTableName || 'unknown',
+            physicalTableName:
+              physicalTableName || logicalTableName || EXCEL_PARSER_FALLBACKS.unknownPhysicalTableName,
             columns,
             columnRange: {
               startCol: tableStartCol,
@@ -916,14 +1205,14 @@ function* findSideBySideTables(
 // ─── Generic column parser ────────────────────────────────────────────────────
 
 const HEADER_ALIASES: Record<string, string[]> = {
-  'no':          ['No', 'No.', 'No,', 'NO'],
-  'logicalName': ['論理名'],
-  'physicalName':['物理名'],
-  'dataType':    ['データ型'],
-  'size':        ['Size', 'サイズ'],
-  'notNull':     ['Not Null', 'NOT NULL', 'NotNull', 'NOTNULL', 'not null'],
-  'pk':          ['PK'],
-  'comment':     ['備考', '列とコードの説明 / 備考'],
+  no: [EXCEL_LABELS.no, EXCEL_LABELS.noDot, 'No,', 'NO', '\uff2e\uff4f', '\u756a\u53f7'], // Ｎｏ, 番号
+  logicalName: [EXCEL_LABELS.logicalName],
+  physicalName: [EXCEL_LABELS.physicalName],
+  dataType: [EXCEL_LABELS.dataType, '\u30c7\u30fc\u30bf\u30bf\u30a4\u30d7'], // データタイプ
+  size: [EXCEL_LABELS.size, EXCEL_LABELS.sizeAlt], // サイズ
+  notNull: [EXCEL_LABELS.notNull, 'NOT NULL', 'NotNull', 'NOTNULL', 'not null', '\u5fc5\u9808'], // 必須
+  pk: [EXCEL_LABELS.pk, '\u4e3b\u30ad\u30fc'], // 主キー
+  comment: [EXCEL_LABELS.remarks, EXCEL_LABELS.remarksAlt, '\u30b3\u30e1\u30f3\u30c8'], // 備考, 列とコードの説明 / 備考, コメント
 };
 
 function resolveColumn(colMap: Record<string, number>, field: string): number | undefined {
@@ -931,17 +1220,102 @@ function resolveColumn(colMap: Record<string, number>, field: string): number | 
   if (!aliases) return undefined;
   for (const alias of aliases) {
     if (colMap[alias] !== undefined) return colMap[alias];
+    const normalizedAlias = normalizeToken(alias);
+    if (normalizedAlias && colMap[normalizedAlias] !== undefined) {
+      return colMap[normalizedAlias];
+    }
   }
   return undefined;
 }
 
+const NOT_NULL_TRUE_MARKERS = new Set([
+  '1', 'true', 'yes', 'y', 'on', 'required',
+  normalizeToken('\u3007'),
+  normalizeToken('\u25cb'),
+  normalizeToken('\u25ef'),
+  normalizeToken('\u5fc5\u9808'),
+]);
+const NOT_NULL_FALSE_MARKERS = new Set([
+  '0', 'false', 'no', 'n', 'off', '-', normalizeToken('\u4efb\u610f'), // 任意
+]);
+const ROW_METADATA_LOGICAL_NAMES = new Set([
+  normalizeToken('RDBMS'),
+  normalizeToken('ENGINE'),
+  normalizeToken('CHARSET'),
+  normalizeToken('\u4f5c\u6210\u65e5 / \u4f5c\u6210\u8005'), // 作成日 / 作成者
+  normalizeToken('\u66f4\u65b0\u65e5 / \u66f4\u65b0\u8005'), // 更新日 / 更新者
+]);
+const ROW_METADATA_PHYSICAL_NAMES = new Set([
+  normalizeToken('MySQL'),
+  normalizeToken('InnoDB'),
+  normalizeToken('utf8mb4'),
+]);
+const NORMALIZED_HEADER_ALIAS_SET = new Set(
+  Object.values(HEADER_ALIASES)
+    .flat()
+    .map((alias) => normalizeToken(alias))
+    .filter(Boolean),
+);
+
+function parseOptionalRowNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const normalized = normalizeToken(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const parsed = Number(String(value).replace(/,/g, ''));
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+  return undefined;
+}
+
+function parseNotNullFlag(value: unknown): boolean {
+  const normalized = normalizeToken(value);
+  if (!normalized) {
+    return false;
+  }
+  if (NOT_NULL_FALSE_MARKERS.has(normalized)) {
+    return false;
+  }
+  if (NOT_NULL_TRUE_MARKERS.has(normalized)) {
+    return true;
+  }
+  return normalized.includes('not null');
+}
+
+function isLikelyRepeatedHeaderRow(
+  noValue: unknown,
+  logicalValue: string,
+  physicalValue: string,
+  dataTypeValue: string | undefined,
+): boolean {
+  const noToken = normalizeToken(noValue);
+  const logicalToken = normalizeToken(logicalValue);
+  const physicalToken = normalizeToken(physicalValue);
+  const dataTypeToken = normalizeToken(dataTypeValue);
+  if (noToken && NORMALIZED_HEADER_ALIAS_SET.has(noToken)) {
+    return true;
+  }
+  if (
+    logicalToken === COLUMN_LOGICAL_LABEL_TOKEN &&
+    physicalToken === COLUMN_PHYSICAL_LABEL_TOKEN &&
+    dataTypeToken === COLUMN_TYPE_LABEL_TOKEN
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function parseColumnsGeneric(
   sheetName: string,
-  data: any[][],
+  data: unknown[][],
   startRow: number,
   endRow: number,
   colMap: Record<string, number>,
-  maxConsecutiveEmpty: number = 10,
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): ColumnInfo[] {
@@ -953,7 +1327,11 @@ function parseColumnsGeneric(
   const idxNotNull  = resolveColumn(colMap, 'notNull');
   const idxPk       = resolveColumn(colMap, 'pk');
   const idxComment  = resolveColumn(colMap, 'comment');
-  const pkMarkerSet = new Set(normalizePkMarkers(pkMarkers));
+  const pkMarkerSet = new Set(normalizePkMarkers(pkMarkers).map((marker) => normalizeToken(marker)));
+
+  if (idxPhysical === undefined) {
+    return [];
+  }
 
   const columns: ColumnInfo[] = [];
   let consecutiveEmpty = 0;
@@ -966,7 +1344,18 @@ function parseColumnsGeneric(
       continue;
     }
 
-    const physicalName = idxPhysical !== undefined ? str(row[idxPhysical]) : '';
+    const physicalName = str(row[idxPhysical]);
+    const dataType = idxType !== undefined ? str(row[idxType]) || undefined : undefined;
+    const logicalName = idxLogical !== undefined ? str(row[idxLogical]) : '';
+    const noVal = idxNo !== undefined ? row[idxNo] : undefined;
+
+    const rowHasUsefulCell = Boolean(physicalName || logicalName || dataType);
+    if (!rowHasUsefulCell) {
+      consecutiveEmpty++;
+      if (consecutiveEmpty >= maxConsecutiveEmpty && columns.length > 0) break;
+      continue;
+    }
+
     if (physicalName === '') {
       consecutiveEmpty++;
       if (consecutiveEmpty >= maxConsecutiveEmpty && columns.length > 0) break;
@@ -975,15 +1364,19 @@ function parseColumnsGeneric(
     consecutiveEmpty = 0;
 
     // Skip metadata rows
-    const logicalName = idxLogical !== undefined ? str(row[idxLogical]) : '';
-    if (['RDBMS', 'ENGINE', 'CHARSET', '作成日 / 作成者', '更新日 / 更新者'].includes(logicalName)) continue;
-    if (['MySQL', 'InnoDB', 'utf8mb4'].includes(physicalName)) continue;
+    if (ROW_METADATA_LOGICAL_NAMES.has(normalizeToken(logicalName))) continue;
+    if (ROW_METADATA_PHYSICAL_NAMES.has(normalizeToken(physicalName))) continue;
 
-    // Skip rows where No column isn't a number (like repeated header rows)
-    const noVal = idxNo !== undefined ? row[idxNo] : undefined;
-    if (noVal !== undefined && noVal !== null) {
-      const num = Number(noVal);
-      if (isNaN(num)) continue;
+    if (isLikelyRepeatedHeaderRow(noVal, logicalName, physicalName, dataType)) {
+      continue;
+    }
+
+    const parsedNo = parseOptionalRowNumber(noVal);
+    if (noVal !== undefined && noVal !== null && parsedNo === undefined) {
+      const noToken = normalizeToken(noVal);
+      if (NORMALIZED_HEADER_ALIAS_SET.has(noToken)) {
+        continue;
+      }
     }
 
     const rawCommentCell = idxComment !== undefined ? row[idxComment] : undefined;
@@ -996,21 +1389,18 @@ function parseColumnsGeneric(
     const autoIncrement = detectAutoIncrementFromComment(commentRaw ?? comment);
 
     const col: ColumnInfo = {
-      no: noVal != null ? Number(noVal) : undefined,
+      no: parsedNo,
       logicalName: logicalName || undefined,
       physicalName,
-      dataType: idxType !== undefined ? str(row[idxType]) || undefined : undefined,
+      dataType,
       size: idxSize !== undefined && !isEmpty(row[idxSize]) ? str(row[idxSize]) : undefined,
-      notNull: idxNotNull !== undefined ? str(row[idxNotNull]).toLowerCase().includes('not null') : false,
-      isPk: idxPk !== undefined ? pkMarkerSet.has(str(row[idxPk])) : false,
+      notNull: idxNotNull !== undefined ? parseNotNullFlag(row[idxNotNull]) : false,
+      isPk: idxPk !== undefined ? pkMarkerSet.has(normalizeToken(row[idxPk])) : false,
       autoIncrement,
       comment,
       commentRaw,
       codeReferences,
-      sourceRef:
-        idxPhysical !== undefined
-          ? buildCellSourceRef(sheetName, i, idxPhysical)
-          : undefined,
+      sourceRef: buildCellSourceRef(sheetName, i, idxPhysical),
     };
 
     columns.push(col);
@@ -1021,7 +1411,7 @@ function parseColumnsGeneric(
 
 // ─── Legacy helpers (for fallback) ────────────────────────────────────────────
 
-function findCellRow(data: any[][], startRow: number, label: string): number {
+function findCellRow(data: unknown[][], startRow: number, label: string): number {
   for (let i = startRow; i < data.length; i++) {
     const row = data[i];
     if (!row) continue;
@@ -1032,44 +1422,49 @@ function findCellRow(data: any[][], startRow: number, label: string): number {
   return -1;
 }
 
-function getCellValue(data: any[][], rowIndex: number, label: string): string {
+function getCellValue(data: unknown[][], rowIndex: number, label: string): string {
   const row = data[rowIndex];
   if (!row) return '';
   for (let j = 0; j < row.length; j++) {
     if (str(row[j]) === label) {
-      for (let k = j + 1; k < row.length; k++) {
-        if (!isEmpty(row[k])) return str(row[k]);
-      }
-      const nextRow = data[rowIndex + 1];
-      if (nextRow && !isEmpty(nextRow[j])) return str(nextRow[j]);
+      const resolved = resolveLabelValue(data, rowIndex, j);
+      if (resolved) return resolved.value;
     }
   }
   return '';
 }
 
-function findHeaderRow(data: any[][], startRow: number): number {
-  const requiredHeaders = ['論理名', '物理名', 'データ型'];
-  for (let i = startRow; i < Math.min(startRow + 30, data.length); i++) {
+function findHeaderRow(data: unknown[][], startRow: number): number {
+  const requiredHeaders = EXCEL_REQUIRED_COLUMN_HEADERS;
+  for (let i = startRow; i < Math.min(startRow + EXCEL_PARSER_DEFAULTS.formatAHeaderScanRows, data.length); i++) {
     const row = data[i];
     if (!row) continue;
-    const rowVals = row.map((v: any) => str(v));
+    const rowVals = row.map((v: unknown) => str(v));
     if (requiredHeaders.every(h => rowVals.includes(h))) return i;
   }
   return -1;
 }
 
-function buildColumnMap(headerRow: any[]): Record<string, number> {
+function buildColumnMap(headerRow: unknown[]): Record<string, number> {
   const colMap: Record<string, number> = {};
-  headerRow.forEach((val: any, idx: number) => {
-    if (!isEmpty(val)) colMap[str(val)] = idx;
+  headerRow.forEach((val: unknown, idx: number) => {
+    if (isEmpty(val)) {
+      return;
+    }
+    const raw = str(val);
+    colMap[raw] = idx;
+    const normalized = normalizeToken(raw);
+    if (normalized) {
+      colMap[normalized] = idx;
+    }
   });
   return colMap;
 }
 
 function* findTablesInSheet(
   sheetName: string,
-  data: any[][],
-  maxConsecutiveEmpty: number = 10,
+  data: unknown[][],
+  maxConsecutiveEmpty: number = EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows,
   pkMarkers: string[] = DEFAULT_PK_MARKERS,
   referenceExtraction?: ReferenceExtractionConfig,
 ): Generator<TableInfo> {
@@ -1077,17 +1472,17 @@ function* findTablesInSheet(
   let cursor = 0;
 
   while (cursor < totalRows) {
-    const tableStartIndex = findCellRow(data, cursor, '論理テーブル名');
+    const tableStartIndex = findCellRow(data, cursor, EXCEL_LABELS.logicalTableName);
     if (tableStartIndex === -1) break;
 
-    const logicalTableName = getCellValue(data, tableStartIndex, '論理テーブル名');
-    const logicalTableNameRef = getCellValueSourceRef(data, tableStartIndex, '論理テーブル名', sheetName);
-    const physicalTableNameRow = findCellRow(data, tableStartIndex, '物理テーブル名');
+    const logicalTableName = getCellValue(data, tableStartIndex, EXCEL_LABELS.logicalTableName);
+    const logicalTableNameRef = getCellValueSourceRef(data, tableStartIndex, EXCEL_LABELS.logicalTableName, sheetName);
+    const physicalTableNameRow = findCellRow(data, tableStartIndex, EXCEL_LABELS.physicalTableName);
     const physicalTableName = physicalTableNameRow !== -1
-      ? getCellValue(data, physicalTableNameRow, '物理テーブル名')
+      ? getCellValue(data, physicalTableNameRow, EXCEL_LABELS.physicalTableName)
       : logicalTableName;
     const physicalTableNameRef = physicalTableNameRow !== -1
-      ? getCellValueSourceRef(data, physicalTableNameRow, '物理テーブル名', sheetName)
+      ? getCellValueSourceRef(data, physicalTableNameRow, EXCEL_LABELS.physicalTableName, sheetName)
       : logicalTableNameRef;
 
     const headerRowIndex = findHeaderRow(data, tableStartIndex + 1);
@@ -1100,13 +1495,13 @@ function* findTablesInSheet(
     const colMap = buildColumnMap(headerRow);
 
     // Detect column boundaries
-    const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+    const standardHeaders = STANDARD_HEADER_SET;
     let tableStartCol = 0;
     let tableEndCol = 0;
 
     for (let j = 0; j < headerRow.length; j++) {
       const v = str(headerRow[j]);
-      if (standardHeaders.includes(v)) {
+      if (standardHeaders.has(v)) {
         tableStartCol = j;
         break;
       }
@@ -1114,14 +1509,14 @@ function* findTablesInSheet(
 
     for (let j = tableStartCol; j < headerRow.length; j++) {
       const v = str(headerRow[j]);
-      if (standardHeaders.includes(v)) {
+      if (standardHeaders.has(v)) {
         tableEndCol = j;
-      } else if (v !== '' && !standardHeaders.includes(v)) {
+      } else if (v !== '' && !standardHeaders.has(v)) {
         break;
       }
     }
 
-    const nextTableStart = findCellRow(data, headerRowIndex + 1, '論理テーブル名');
+    const nextTableStart = findCellRow(data, headerRowIndex + 1, EXCEL_LABELS.logicalTableName);
     const boundary = nextTableStart !== -1 ? nextTableStart : totalRows;
 
     const columns = parseColumnsGeneric(
@@ -1163,14 +1558,14 @@ function* findTablesInSheet(
 
 // ─── Sheet data API (for spreadsheet viewer) ─────────────────────────────────
 
-export function getSheetData(filePath: string, sheetName: string): any[][] {
+export function getSheetData(filePath: string, sheetName: string): unknown[][] {
   const fileBuffer = fs.readFileSync(filePath);
   const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
   const worksheet = workbook.Sheets[sheetName];
   if (!worksheet) {
     throw new Error(`Sheet ${sheetName} not found`);
   }
-  return XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  return XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
 }
 
 export function parseSheetRegion(
@@ -1182,7 +1577,8 @@ export function parseSheetRegion(
   endCol: number,
   options: ParseOptions = {}
 ): TableInfo[] {
-  const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
+  const maxConsecutiveEmpty =
+    options.maxConsecutiveEmptyRows ?? EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows;
   const pkMarkers = normalizePkMarkers(options.pkMarkers);
   const referenceExtraction = options.referenceExtraction;
   const data = getSheetData(filePath, sheetName);
@@ -1197,13 +1593,19 @@ export function parseSheetRegion(
     const row = data[i] || [];
     for (let j = startCol; j <= endCol; j++) {
       const v = str(row[j]);
-      if (v === '論理テーブル名' && j + 1 <= endCol) {
-        logicalTableName = str(row[j + 1]);
-        logicalTableNameRef = buildCellSourceRef(sheetName, i, j + 1);
+      if (v === EXCEL_LABELS.logicalTableName) {
+        const resolved = resolveLabelValue(data, i, j);
+        if (resolved) {
+          logicalTableName = resolved.value;
+          logicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
+        }
       }
-      if (v === '物理テーブル名' && j + 1 <= endCol) {
-        physicalTableName = str(row[j + 1]);
-        physicalTableNameRef = buildCellSourceRef(sheetName, i, j + 1);
+      if (v === EXCEL_LABELS.physicalTableName) {
+        const resolved = resolveLabelValue(data, i, j);
+        if (resolved) {
+          physicalTableName = resolved.value;
+          physicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
+        }
       }
     }
   }
@@ -1211,31 +1613,26 @@ export function parseSheetRegion(
   // 2) If not found, search UPWARD from startRow (the name is usually above the column area)
   //    Also widen column search range since table name labels may be in adjacent columns
   if (!logicalTableName && !physicalTableName) {
-    const searchFromRow = Math.max(0, startRow - 30);
-    const colSearchMin = Math.max(0, startCol - 2);
-    const colSearchMax = endCol + 4; // widen rightward to catch values next to labels
+    const searchFromRow = Math.max(0, startRow - EXCEL_PARSER_DEFAULTS.adjacentTableNameSearchRows);
+    const colSearchMin = Math.max(0, startCol - EXCEL_PARSER_DEFAULTS.tableNameSearchColLeftPadding);
+    const colSearchMax = endCol + EXCEL_PARSER_DEFAULTS.tableNameSearchColRightPadding; // widen rightward to catch values next to labels
 
     for (let i = startRow - 1; i >= searchFromRow; i--) {
       const row = data[i] || [];
       for (let j = colSearchMin; j <= Math.min(colSearchMax, row.length - 1); j++) {
         const v = str(row[j]);
-        if (v === '論理テーブル名') {
-          // Look right for value
-          for (let k = j + 1; k < row.length; k++) {
-            if (!isEmpty(row[k])) {
-              logicalTableName = str(row[k]);
-              logicalTableNameRef = buildCellSourceRef(sheetName, i, k);
-              break;
-            }
+        if (v === EXCEL_LABELS.logicalTableName) {
+          const resolved = resolveLabelValue(data, i, j);
+          if (resolved) {
+            logicalTableName = resolved.value;
+            logicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
           }
         }
-        if (v === '物理テーブル名') {
-          for (let k = j + 1; k < row.length; k++) {
-            if (!isEmpty(row[k])) {
-              physicalTableName = str(row[k]);
-              physicalTableNameRef = buildCellSourceRef(sheetName, i, k);
-              break;
-            }
+        if (v === EXCEL_LABELS.physicalTableName) {
+          const resolved = resolveLabelValue(data, i, j);
+          if (resolved) {
+            physicalTableName = resolved.value;
+            physicalTableNameRef = buildCellSourceRef(sheetName, resolved.row, resolved.col);
           }
         }
       }
@@ -1247,13 +1644,17 @@ export function parseSheetRegion(
   // 3) For Format B vertical tables, also check the table list header pattern:
   //    [No., 論理テーブル名, 物理テーブル名, 説明] followed by [N, name, physical, ...]
   if (!logicalTableName && !physicalTableName) {
-    const searchFromRow = Math.max(0, startRow - 30);
+    const searchFromRow = Math.max(0, startRow - EXCEL_PARSER_DEFAULTS.adjacentTableNameSearchRows);
     for (let i = startRow - 1; i >= searchFromRow; i--) {
       const row = data[i] || [];
       const c0 = str(row[0]);
       const c1 = str(row[1]);
       const c2 = str(row[2]);
-      if ((c0 === 'No.' || c0 === 'No') && c1 === '論理テーブル名' && c2 === '物理テーブル名') {
+      if (
+        (c0 === EXCEL_LABELS.noDot || c0 === EXCEL_LABELS.no) &&
+        c1 === EXCEL_LABELS.logicalTableName &&
+        c2 === EXCEL_LABELS.physicalTableName
+      ) {
         const infoRow = data[i + 1];
         if (infoRow) {
           logicalTableName = str(infoRow[1]);
@@ -1274,7 +1675,11 @@ export function parseSheetRegion(
     for (let j = startCol; j <= endCol; j++) {
       vals.push(str(row[j]));
     }
-    if (vals.includes('論理名') && vals.includes('物理名') && vals.includes('データ型')) {
+    if (
+      vals.includes(EXCEL_LABELS.logicalName) &&
+      vals.includes(EXCEL_LABELS.physicalName) &&
+      vals.includes(EXCEL_LABELS.dataType)
+    ) {
       headerRowIdx = i;
       break;
     }
@@ -1303,13 +1708,13 @@ export function parseSheetRegion(
   if (columns.length === 0) return [];
 
   // Detect column boundaries
-  const standardHeaders = ['No', 'No.', '論理名', '物理名', 'データ型', 'Size', 'サイズ', 'Not Null', 'PK', '備考', '列とコードの説明 / 備考'];
+  const standardHeaders = STANDARD_HEADER_SET;
   let tableStartCol = startCol;
   let tableEndCol = startCol;
 
   for (let j = startCol; j <= endCol; j++) {
     const v = str(headerRow[j]);
-    if (standardHeaders.includes(v)) {
+    if (standardHeaders.has(v)) {
       tableStartCol = j;
       break;
     }
@@ -1317,9 +1722,9 @@ export function parseSheetRegion(
 
   for (let j = tableStartCol; j <= endCol; j++) {
     const v = str(headerRow[j]);
-    if (standardHeaders.includes(v)) {
+    if (standardHeaders.has(v)) {
       tableEndCol = j;
-    } else if (v !== '' && !standardHeaders.includes(v)) {
+    } else if (v !== '' && !standardHeaders.has(v)) {
       break;
     }
   }
@@ -1331,7 +1736,8 @@ export function parseSheetRegion(
   );
 
   return [{
-    logicalTableName: logicalTableName || physicalTableName || sheetName || 'Unknown',
+    logicalTableName:
+      logicalTableName || physicalTableName || sheetName || EXCEL_PARSER_FALLBACKS.unknownLogicalTableName,
     physicalTableName: physicalTableName || fallbackPhysicalTableName,
     columns,
     columnRange: {
@@ -1362,7 +1768,7 @@ export interface ParseOptions {
 }
 
 function getCellValueSourceRef(
-  data: any[][],
+  data: unknown[][],
   rowIndex: number,
   label: string,
   sheetName: string,
@@ -1371,26 +1777,33 @@ function getCellValueSourceRef(
   if (!row) return undefined;
   for (let j = 0; j < row.length; j++) {
     if (str(row[j]) === label) {
-      for (let k = j + 1; k < row.length; k++) {
-        if (!isEmpty(row[k])) {
-          return buildCellSourceRef(sheetName, rowIndex, k);
-        }
-      }
-      const nextRow = data[rowIndex + 1];
-      if (nextRow && !isEmpty(nextRow[j])) {
-        return buildCellSourceRef(sheetName, rowIndex + 1, j);
+      const resolved = resolveLabelValue(data, rowIndex, j);
+      if (resolved) {
+        return buildCellSourceRef(sheetName, resolved.row, resolved.col);
       }
     }
   }
   return undefined;
 }
 
-function parseTablesFromSheetData(sheetName: string, data: any[][], options: ParseOptions = {}): TableInfo[] {
-  const maxConsecutiveEmpty = options.maxConsecutiveEmptyRows ?? 10;
+interface ParseTablesFromSheetDataResult {
+  tables: TableInfo[];
+  trace: SheetParseTrace;
+}
+
+function parseTablesFromSheetDataDetailed(
+  sheetName: string,
+  data: unknown[][],
+  options: ParseOptions = {},
+): ParseTablesFromSheetDataResult {
+  const maxConsecutiveEmpty =
+    options.maxConsecutiveEmptyRows ?? EXCEL_PARSER_DEFAULTS.maxConsecutiveEmptyRows;
   const pkMarkers = normalizePkMarkers(options.pkMarkers);
   const referenceExtraction = options.referenceExtraction;
   const tables: TableInfo[] = [];
   const seen = new Set<string>();
+  const detectedFormat = detectExcelFormat(data);
+  const strategySteps: string[] = [];
 
   function addTable(t: TableInfo) {
     if (t.columns.length === 0) return;
@@ -1400,8 +1813,16 @@ function parseTablesFromSheetData(sheetName: string, data: any[][], options: Par
     tables.push(t);
   }
 
-  if (isFormatA(data)) {
-    // Format A: single table per sheet (most common — 136 sheets)
+  const collect = (generator: Generator<TableInfo>) => {
+    let next = generator.next();
+    while (!next.done) {
+      addTable(next.value);
+      next = generator.next();
+    }
+  };
+
+  const collectFormatA = () => {
+    strategySteps.push('format_a_block');
     const table = parseFormatABlock(
       sheetName,
       data,
@@ -1412,34 +1833,65 @@ function parseTablesFromSheetData(sheetName: string, data: any[][], options: Par
       pkMarkers,
       referenceExtraction,
     );
-    if (table) addTable(table);
-  } else if (isFormatB(data)) {
-    // Format B: multi-table sheet (e.g. テーブル定義-社会)
-    const vertGen = findFormatBVerticalTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction);
-    let vertNext = vertGen.next();
-    while (!vertNext.done) { addTable(vertNext.value); vertNext = vertGen.next(); }
+    if (table) {
+      addTable(table);
+    }
+  };
 
-    const horizGen = findFormatBHorizontalTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction);
-    let horizNext = horizGen.next();
-    while (!horizNext.done) { addTable(horizNext.value); horizNext = horizGen.next(); }
+  const collectFormatB = () => {
+    strategySteps.push('format_b_vertical');
+    collect(findFormatBVerticalTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction));
+    strategySteps.push('format_b_horizontal');
+    collect(findFormatBHorizontalTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction));
+    strategySteps.push('format_b_side_by_side');
+    collect(findSideBySideTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction));
+  };
 
-    // Check for side-by-side tables
-    const sideBySideGen = findSideBySideTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction);
-    let sbNext = sideBySideGen.next();
-    while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
+  const collectFallback = () => {
+    strategySteps.push('legacy_sheet_scan');
+    collect(findTablesInSheet(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction));
+    strategySteps.push('legacy_side_by_side');
+    collect(findSideBySideTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction));
+  };
+
+  if (detectedFormat.format === 'A') {
+    collectFormatA();
+    if (tables.length === 0) {
+      collectFormatB();
+      collectFallback();
+    }
+  } else if (detectedFormat.format === 'B') {
+    collectFormatB();
+    if (tables.length === 0) {
+      collectFormatA();
+      collectFallback();
+    }
   } else {
-    // Fallback: flexible scanner for unknown layouts
-    const fallbackGen = findTablesInSheet(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction);
-    let fbNext = fallbackGen.next();
-    while (!fbNext.done) { addTable(fbNext.value); fbNext = fallbackGen.next(); }
-
-    // Also check for side-by-side tables in unknown formats
-    const sideBySideGen = findSideBySideTables(sheetName, data, maxConsecutiveEmpty, pkMarkers, referenceExtraction);
-    let sbNext = sideBySideGen.next();
-    while (!sbNext.done) { addTable(sbNext.value); sbNext = sideBySideGen.next(); }
+    collectFallback();
+    if (tables.length === 0) {
+      collectFormatA();
+      collectFormatB();
+    }
   }
 
-  return tables;
+  return {
+    tables,
+    trace: {
+      sheetName,
+      detectedFormat: detectedFormat.format,
+      confidence: detectedFormat.confidence,
+      scoreA: detectedFormat.scoreA,
+      scoreB: detectedFormat.scoreB,
+      reasons: [...detectedFormat.reasons],
+      strategySteps,
+      tableCount: tables.length,
+      usedLegacyFallback: false,
+    },
+  };
+}
+
+function parseTablesFromSheetData(sheetName: string, data: unknown[][], options: ParseOptions = {}): TableInfo[] {
+  return parseTablesFromSheetDataDetailed(sheetName, data, options).tables;
 }
 
 function parseTableDefinitionsLegacyFromWorkbook(
@@ -1452,7 +1904,7 @@ function parseTableDefinitionsLegacyFromWorkbook(
     throw new Error(`Sheet ${sheetName} not found`);
   }
 
-  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
   return parseTablesFromSheetData(sheetName, data, options);
 }
 
@@ -1462,13 +1914,14 @@ function parseTableDefinitionsLegacy(filePath: string, sheetName: string, option
   return parseTableDefinitionsLegacyFromWorkbook(workbook, sheetName, options);
 }
 
-function shouldFallbackToLegacy(data: any[][], fastTables: TableInfo[]): boolean {
+function shouldFallbackToLegacy(data: unknown[][], fastTables: TableInfo[]): boolean {
   if (fastTables.length > 0) {
     return false;
   }
 
   // Fast parser should have found something for explicit structured sheets with a valid header row.
-  if (!isFormatA(data) && !isFormatB(data)) {
+  const detected = detectExcelFormat(data);
+  if (detected.format === 'UNKNOWN') {
     return false;
   }
   return findHeaderRow(data, 0) !== -1;
@@ -1487,6 +1940,12 @@ function parseWorkbookBundleFromWorkbook(
   const sheetSummaries: WorkbookBundle['sheetSummaries'] = [];
   const searchIndex: SearchIndexItem[] = [];
   const fallbackSheets: string[] = [];
+  const sheetParseTraces: SheetParseTrace[] = [];
+  const detectedFormatCounts: Record<'A' | 'B' | 'UNKNOWN', number> = {
+    A: 0,
+    B: 0,
+    UNKNOWN: 0,
+  };
 
   let sheetJsonMs = 0;
   let extractMs = 0;
@@ -1509,23 +1968,45 @@ function parseWorkbookBundleFromWorkbook(
         sheetName,
         displayName: sheetName,
       });
+      detectedFormatCounts.UNKNOWN += 1;
+      sheetParseTraces.push({
+        sheetName,
+        detectedFormat: 'UNKNOWN',
+        confidence: 0,
+        scoreA: 0,
+        scoreB: 0,
+        reasons: ['worksheet_missing'],
+        strategySteps: ['skip_missing_worksheet'],
+        tableCount: 0,
+        usedLegacyFallback: false,
+      });
       continue;
     }
 
     const convertStart = performance.now();
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
     sheetJsonMs += performance.now() - convertStart;
 
     const parseStart = performance.now();
-    let tables = parseTablesFromSheetData(sheetName, data, options);
+    const parsed = parseTablesFromSheetDataDetailed(sheetName, data, options);
+    let tables = parsed.tables;
+    const trace: SheetParseTrace = {
+      ...parsed.trace,
+      strategySteps: [...parsed.trace.strategySteps],
+      reasons: [...parsed.trace.reasons],
+      usedLegacyFallback: false,
+    };
     let usedFallback = false;
 
     if (shouldFallbackToLegacy(data, tables)) {
       try {
         tables = parseLegacyForSheet(sheetName);
         usedFallback = true;
+        trace.strategySteps.push('legacy_workbook_fallback');
+        trace.tableCount = tables.length;
       } catch {
         // Keep fast path result when fallback fails.
+        trace.strategySteps.push('legacy_workbook_fallback_failed');
       }
     }
 
@@ -1533,8 +2014,11 @@ function parseWorkbookBundleFromWorkbook(
 
     if (usedFallback) {
       fallbackSheets.push(sheetName);
+      trace.usedLegacyFallback = true;
     }
 
+    detectedFormatCounts[trace.detectedFormat] += 1;
+    sheetParseTraces.push(trace);
     tablesBySheet[sheetName] = tables;
     const hasTableDefinitions = tables.length > 0;
     sheetSummaries.push({
@@ -1583,6 +2067,8 @@ function parseWorkbookBundleFromWorkbook(
       extractMs,
       fallbackSheetCount,
       fallbackSheets,
+      detectedFormatCounts,
+      sheetParseTraces,
       cacheHit: false,
     },
   };

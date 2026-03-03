@@ -6,6 +6,30 @@ import { execFile } from "child_process";
 import * as XLSX from "xlsx";
 import type { NameFixMode } from "@shared/schema";
 
+const EXCEL_WRITEBACK_DEFAULTS = {
+  timestampMonthOffset: 1,
+  timestampPadLength: 2,
+  timestampSeparator: "_",
+  hashAlgorithm: "sha256",
+  hashEncoding: "hex",
+  pythonExecutable: "python",
+  pythonScriptRelativePath: ["script", "xlsx-overwrite-cells.py"],
+  pythonWorkbookArg: "--workbook",
+  pythonChangesArg: "--changes",
+  pythonTempPrefix: "name-fix-overwrite-",
+  pythonPayloadFilename: "changes.json",
+  pythonMaxBufferBytes: 10 * 1024 * 1024,
+  pythonWriteEncoding: "utf-8",
+  defaultExtension: ".xlsx",
+  overwriteUnsupportedMessage: "Overwrite mode with style-preserving writeback only supports .xlsx files.",
+  backupFilenameSeparator: ".bak.",
+  fixedFilenameSuffix: "_fixed_",
+  workbookReadType: "buffer",
+  workbookWriteType: "buffer",
+  xlsxBookType: "xlsx",
+  xlsBookType: "xls",
+} as const;
+
 export interface NameFixCellChange {
   sheetName: string;
   row: number;
@@ -41,19 +65,49 @@ export interface ExcelWritebackResult {
   issues: ExcelWritebackIssue[];
 }
 
+interface RawExcelWritebackIssue {
+  sheetName?: unknown;
+  sourceAddress?: unknown;
+  reason?: unknown;
+  tableIndex?: unknown;
+  columnIndex?: unknown;
+  target?: unknown;
+}
+
+function toWritebackIssue(item: unknown): ExcelWritebackIssue {
+  const raw = (item ?? {}) as RawExcelWritebackIssue;
+  return {
+    sheetName: String(raw.sheetName ?? ""),
+    sourceAddress: String(raw.sourceAddress ?? ""),
+    reason: String(raw.reason ?? ""),
+    tableIndex: Number(raw.tableIndex ?? -1),
+    columnIndex:
+      raw.columnIndex == null || raw.columnIndex === ""
+        ? undefined
+        : Number(raw.columnIndex),
+    target: raw.target === "table" ? "table" : "column",
+  };
+}
+
 function formatTimestamp(date: Date): string {
   const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
-  return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
+  const mm = String(date.getMonth() + EXCEL_WRITEBACK_DEFAULTS.timestampMonthOffset).padStart(
+    EXCEL_WRITEBACK_DEFAULTS.timestampPadLength,
+    "0",
+  );
+  const dd = String(date.getDate()).padStart(EXCEL_WRITEBACK_DEFAULTS.timestampPadLength, "0");
+  const hh = String(date.getHours()).padStart(EXCEL_WRITEBACK_DEFAULTS.timestampPadLength, "0");
+  const mi = String(date.getMinutes()).padStart(EXCEL_WRITEBACK_DEFAULTS.timestampPadLength, "0");
+  const ss = String(date.getSeconds()).padStart(EXCEL_WRITEBACK_DEFAULTS.timestampPadLength, "0");
+  return `${yyyy}${mm}${dd}${EXCEL_WRITEBACK_DEFAULTS.timestampSeparator}${hh}${mi}${ss}`;
 }
 
 async function computeFileHash(filePath: string): Promise<string> {
   const buffer = await fs.readFile(filePath);
-  return crypto.createHash("sha256").update(buffer).digest("hex");
+  return crypto
+    .createHash(EXCEL_WRITEBACK_DEFAULTS.hashAlgorithm)
+    .update(buffer)
+    .digest(EXCEL_WRITEBACK_DEFAULTS.hashEncoding);
 }
 
 function runPythonCellOverwrite(
@@ -62,7 +116,7 @@ function runPythonCellOverwrite(
 ): Promise<{ appliedCount: number; issues: ExcelWritebackIssue[] }> {
   return new Promise((resolve, reject) => {
     const bootstrap = async () => {
-      const scriptPath = path.resolve(process.cwd(), "script", "xlsx-overwrite-cells.py");
+      const scriptPath = path.resolve(process.cwd(), ...EXCEL_WRITEBACK_DEFAULTS.pythonScriptRelativePath);
       const payload = {
         changes: changes.map((change) => ({
           sheetName: change.sheetName,
@@ -75,14 +129,20 @@ function runPythonCellOverwrite(
         })),
       };
 
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "name-fix-overwrite-"));
-      const payloadPath = path.join(tempDir, "changes.json");
-      await fs.writeFile(payloadPath, JSON.stringify(payload), "utf-8");
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), EXCEL_WRITEBACK_DEFAULTS.pythonTempPrefix));
+      const payloadPath = path.join(tempDir, EXCEL_WRITEBACK_DEFAULTS.pythonPayloadFilename);
+      await fs.writeFile(payloadPath, JSON.stringify(payload), EXCEL_WRITEBACK_DEFAULTS.pythonWriteEncoding);
 
       execFile(
-        "python",
-        [scriptPath, "--workbook", workbookPath, "--changes", payloadPath],
-        { windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+        EXCEL_WRITEBACK_DEFAULTS.pythonExecutable,
+        [
+          scriptPath,
+          EXCEL_WRITEBACK_DEFAULTS.pythonWorkbookArg,
+          workbookPath,
+          EXCEL_WRITEBACK_DEFAULTS.pythonChangesArg,
+          payloadPath,
+        ],
+        { windowsHide: true, maxBuffer: EXCEL_WRITEBACK_DEFAULTS.pythonMaxBufferBytes },
         async (error, stdout, stderr) => {
           try {
             await fs.rm(tempDir, { recursive: true, force: true });
@@ -101,17 +161,7 @@ function runPythonCellOverwrite(
             resolve({
               appliedCount: Number(parsed.appliedCount ?? 0),
               issues: Array.isArray(parsed.issues)
-                ? parsed.issues.map((item: any) => ({
-                    sheetName: String(item.sheetName ?? ""),
-                    sourceAddress: String(item.sourceAddress ?? ""),
-                    reason: String(item.reason ?? ""),
-                    tableIndex: Number(item.tableIndex ?? -1),
-                    columnIndex:
-                      item.columnIndex == null || item.columnIndex === ""
-                        ? undefined
-                        : Number(item.columnIndex),
-                    target: item.target === "table" ? "table" : "column",
-                  }))
+                ? parsed.issues.map((item: unknown) => toWritebackIssue(item))
                 : [],
             });
           } catch (parseError) {
@@ -133,7 +183,7 @@ function runPythonCellOverwrite(
 
 async function ensureWorkbookReadable(workbookPath: string): Promise<void> {
   const buffer = await fs.readFile(workbookPath);
-  XLSX.read(buffer, { type: "buffer" });
+  XLSX.read(buffer, { type: EXCEL_WRITEBACK_DEFAULTS.workbookReadType });
 }
 
 function resolveOutputPath(
@@ -142,7 +192,7 @@ function resolveOutputPath(
   targetDirectory?: string,
 ): { outputPath: string; backupPath?: string; extension: string } {
   const sourceDir = path.dirname(sourcePath);
-  const extension = path.extname(sourcePath).toLowerCase() || ".xlsx";
+  const extension = path.extname(sourcePath).toLowerCase() || EXCEL_WRITEBACK_DEFAULTS.defaultExtension;
   const outputDir = targetDirectory?.trim() || sourceDir;
   const baseName = path.basename(sourcePath, extension);
   const timestamp = formatTimestamp(new Date());
@@ -150,13 +200,19 @@ function resolveOutputPath(
   if (mode === "overwrite") {
     return {
       outputPath: sourcePath,
-      backupPath: path.join(sourceDir, `${baseName}.bak.${timestamp}${extension}`),
+      backupPath: path.join(
+        sourceDir,
+        `${baseName}${EXCEL_WRITEBACK_DEFAULTS.backupFilenameSeparator}${timestamp}${extension}`,
+      ),
       extension,
     };
   }
 
   return {
-    outputPath: path.join(outputDir, `${baseName}_fixed_${timestamp}${extension}`),
+    outputPath: path.join(
+      outputDir,
+      `${baseName}${EXCEL_WRITEBACK_DEFAULTS.fixedFilenameSuffix}${timestamp}${extension}`,
+    ),
     extension,
   };
 }
@@ -176,8 +232,8 @@ export async function applyExcelNameChanges(
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
   }
 
-  if (options.mode === "overwrite" && extension !== ".xlsx") {
-    throw new Error("Overwrite mode with style-preserving writeback only supports .xlsx files.");
+  if (options.mode === "overwrite" && extension !== EXCEL_WRITEBACK_DEFAULTS.defaultExtension) {
+    throw new Error(EXCEL_WRITEBACK_DEFAULTS.overwriteUnsupportedMessage);
   }
 
   let backupHash: string | undefined;
@@ -186,7 +242,7 @@ export async function applyExcelNameChanges(
     backupHash = await computeFileHash(backupPath);
   }
 
-  if (extension === ".xlsx") {
+  if (extension === EXCEL_WRITEBACK_DEFAULTS.defaultExtension) {
     const patchTargetPath = options.mode === "overwrite" ? sourcePath : outputPath;
 
     if (options.mode !== "overwrite") {
@@ -215,7 +271,7 @@ export async function applyExcelNameChanges(
   }
 
   const sourceBuffer = await fs.readFile(sourcePath);
-  const workbook = XLSX.read(sourceBuffer, { type: "buffer" });
+  const workbook = XLSX.read(sourceBuffer, { type: EXCEL_WRITEBACK_DEFAULTS.workbookReadType });
   const issues: ExcelWritebackIssue[] = [];
   let appliedCount = 0;
 
@@ -256,9 +312,12 @@ export async function applyExcelNameChanges(
     appliedCount += 1;
   }
 
-  const bookType = extension === ".xls" ? "xls" : "xlsx";
+  const bookType =
+    extension === `.${EXCEL_WRITEBACK_DEFAULTS.xlsBookType}`
+      ? EXCEL_WRITEBACK_DEFAULTS.xlsBookType
+      : EXCEL_WRITEBACK_DEFAULTS.xlsxBookType;
   const outputBuffer = XLSX.write(workbook, {
-    type: "buffer",
+    type: EXCEL_WRITEBACK_DEFAULTS.workbookWriteType,
     bookType,
   }) as Buffer;
 
