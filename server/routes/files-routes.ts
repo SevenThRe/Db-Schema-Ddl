@@ -22,6 +22,35 @@ interface DecodedFilenameRequest {
   decodedFileName?: string;
 }
 
+function normalizeOriginalModifiedAt(raw: unknown): string | undefined {
+  if (raw == null) {
+    return undefined;
+  }
+
+  const normalizedRaw = String(raw).trim();
+  if (!normalizedRaw) {
+    return undefined;
+  }
+
+  const numeric = Number(normalizedRaw);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const isDigitsOnly = /^\d+$/.test(normalizedRaw);
+    const isLikelyUnixSeconds = isDigitsOnly && normalizedRaw.length <= 10;
+    const ms = isLikelyUnixSeconds ? numeric * 1000 : numeric;
+    const date = new Date(ms);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+
+  const date = new Date(normalizedRaw);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString();
+  }
+
+  return undefined;
+}
+
 interface HashTaskResult {
   fileHash: string;
   fileSize: number;
@@ -92,6 +121,7 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
         Buffer.from(req.file.originalname, ROUTE_UPLOAD_FILE_NAMING.originalNameEncoding).toString(
           ROUTE_UPLOAD_FILE_NAMING.decodedNameEncoding,
         );
+      const originalModifiedAt = normalizeOriginalModifiedAt((req.body as Record<string, unknown>)?.sourceModifiedAt);
       const filePath = req.file.path;
       try {
         assertValidExcelFile(filePath, {
@@ -124,6 +154,7 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
       const tempFile = await storage.createUploadedFile({
         filePath,
         originalName: decodedName,
+        originalModifiedAt,
         fileHash: ROUTE_STRING_MARKERS.uploadProcessingHash,
         fileSize: 0,
       });

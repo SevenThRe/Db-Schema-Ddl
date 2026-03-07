@@ -11,6 +11,7 @@ export const uploadedFiles = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     filePath: text("file_path").notNull(),
     originalName: text("original_name").notNull(),
+    originalModifiedAt: text("original_modified_at"),
     fileHash: text("file_hash").notNull(),
     fileSize: integer("file_size").notNull(),
     uploadedAt: text("uploaded_at").default(sql`CURRENT_TIMESTAMP`),
@@ -208,6 +209,208 @@ export const generateDdlByReferenceRequestSchema = z.object({
 export const exportZipByReferenceRequestSchema = generateDdlByReferenceRequestSchema.extend({
   tolerantMode: z.boolean().default(true),
   includeErrorReport: z.boolean().default(true),
+});
+
+export const schemaDiffScopeSchema = z.enum(["current_sheet", "all_sheets"]);
+export const schemaDiffSelectionModeSchema = z.enum(["auto", "manual"]);
+export const schemaDiffEntityTypeSchema = z.enum(["table", "column"]);
+export const schemaDiffDecisionSchema = z.enum(["pending", "accept", "reject"]);
+
+export const schemaDiffThresholdsSchema = z.object({
+  baselineAutoSelectMin: z.number().min(0).max(1).default(0.65),
+  tableMatchStrong: z.number().min(0).max(1).default(0.8),
+  tableRenameCandidate: z.number().min(0).max(1).default(0.65),
+  columnMatchStrong: z.number().min(0).max(1).default(0.8),
+  columnRenameCandidate: z.number().min(0).max(1).default(0.65),
+  ambiguityGap: z.number().min(0).max(1).default(0.08),
+});
+
+export const schemaDiffScoreBreakdownSchema = z.object({
+  fileName: z.number().min(0).max(1),
+  uploadedAt: z.number().min(0).max(1),
+  content: z.number().min(0).max(1),
+});
+
+export const schemaDiffVersionLinkSchema = z.object({
+  newFileId: z.number().int().positive(),
+  oldFileId: z.number().int().positive(),
+  mode: schemaDiffSelectionModeSchema,
+  confidence: z.number().min(0).max(1),
+  lowConfidence: z.boolean().default(false),
+  scoreBreakdown: schemaDiffScoreBreakdownSchema.optional(),
+});
+
+export const schemaDiffColumnChangeSchema = z.object({
+  action: z.enum(["added", "removed", "modified", "rename_suggest", "renamed"]),
+  confidence: z.number().min(0).max(1).optional(),
+  requiresConfirmation: z.boolean().default(false),
+  entityKey: z.string().optional(),
+  oldColumn: columnInfoSchema.optional(),
+  newColumn: columnInfoSchema.optional(),
+  changedFields: z.array(z.string()).default([]),
+});
+
+export const schemaDiffTableChangeSchema = z.object({
+  action: z.enum(["added", "removed", "changed", "rename_suggest", "renamed"]),
+  confidence: z.number().min(0).max(1).optional(),
+  requiresConfirmation: z.boolean().default(false),
+  entityKey: z.string().optional(),
+  oldTable: tableInfoSchema.optional(),
+  newTable: tableInfoSchema.optional(),
+  changedFields: z.array(z.string()).default([]),
+  columnChanges: z.array(schemaDiffColumnChangeSchema).default([]),
+});
+
+export const schemaDiffSheetResultSchema = z.object({
+  sheetName: z.string(),
+  tableChanges: z.array(schemaDiffTableChangeSchema),
+});
+
+export const schemaDiffRenameSuggestionSchema = z.object({
+  entityType: schemaDiffEntityTypeSchema,
+  entityKey: z.string(),
+  confidence: z.number().min(0).max(1),
+  sheetName: z.string(),
+  tableNameBefore: z.string().optional(),
+  tableNameAfter: z.string().optional(),
+  columnNameBefore: z.string().optional(),
+  columnNameAfter: z.string().optional(),
+  decision: schemaDiffDecisionSchema.default("pending"),
+});
+
+export const schemaDiffMcpHintsSchema = z.object({
+  changedTables: z.array(
+    z.object({
+      sheetName: z.string(),
+      action: z.string(),
+      tableName: z.string().optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      requiresConfirmation: z.boolean().default(false),
+    }),
+  ),
+  changedColumns: z.array(
+    z.object({
+      sheetName: z.string(),
+      tableName: z.string().optional(),
+      action: z.string(),
+      columnName: z.string().optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      requiresConfirmation: z.boolean().default(false),
+    }),
+  ),
+  impactKeywords: z.array(z.string()),
+  nextActions: z.array(z.string()),
+});
+
+export const schemaDiffSummarySchema = z.object({
+  addedTables: z.number().int().min(0),
+  removedTables: z.number().int().min(0),
+  changedTables: z.number().int().min(0),
+  renameSuggestions: z.number().int().min(0),
+  pendingConfirmations: z.number().int().min(0),
+  addedColumns: z.number().int().min(0),
+  removedColumns: z.number().int().min(0),
+  changedColumns: z.number().int().min(0),
+});
+
+export const schemaDiffPreviewRequestSchema = z
+  .object({
+    newFileId: z.number().int().positive(),
+    mode: schemaDiffSelectionModeSchema.default("auto"),
+    oldFileId: z.number().int().positive().optional(),
+    scope: schemaDiffScopeSchema.default("current_sheet"),
+    sheetName: z.string().min(1).optional(),
+    forceRecompute: z.boolean().default(false),
+    thresholds: schemaDiffThresholdsSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.mode === "manual" && !value.oldFileId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["oldFileId"],
+        message: "oldFileId is required when mode=manual",
+      });
+    }
+    if (value.scope === "current_sheet" && !value.sheetName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sheetName"],
+        message: "sheetName is required when scope=current_sheet",
+      });
+    }
+  });
+
+export const schemaDiffPreviewResponseSchema = z.object({
+  diffId: z.string(),
+  cacheHit: z.boolean(),
+  algorithmVersion: z.string(),
+  scope: schemaDiffScopeSchema,
+  sheetName: z.string().optional(),
+  link: schemaDiffVersionLinkSchema,
+  summary: schemaDiffSummarySchema,
+  sheets: z.array(schemaDiffSheetResultSchema),
+  renameSuggestions: z.array(schemaDiffRenameSuggestionSchema),
+  mcpHints: schemaDiffMcpHintsSchema,
+});
+
+export const schemaDiffRenameDecisionItemSchema = z.object({
+  entityType: schemaDiffEntityTypeSchema,
+  entityKey: z.string().min(1),
+  decision: z.enum(["accept", "reject"]),
+});
+
+export const schemaDiffConfirmRequestSchema = z.object({
+  diffId: z.string().min(8),
+  decisions: z.array(schemaDiffRenameDecisionItemSchema).min(1),
+});
+
+export const schemaDiffConfirmResponseSchema = z.object({
+  diffId: z.string(),
+  summary: schemaDiffSummarySchema,
+  sheets: z.array(schemaDiffSheetResultSchema),
+  renameSuggestions: z.array(schemaDiffRenameSuggestionSchema),
+});
+
+export const schemaDiffAlterOutputModeSchema = z.enum(["single_table", "multi_table"]);
+export const schemaDiffAlterPackagingSchema = z.enum(["single_file", "zip"]);
+
+export const schemaDiffAlterPreviewRequestSchema = z.object({
+  diffId: z.string().min(8),
+  dialect: z.enum(["mysql", "oracle"]),
+  outputMode: schemaDiffAlterOutputModeSchema.default("multi_table"),
+  packaging: schemaDiffAlterPackagingSchema.default("single_file"),
+  splitBySheet: z.boolean().default(false),
+  includeUnconfirmed: z.boolean().default(false),
+});
+
+export const schemaDiffAlterArtifactSchema = z.object({
+  artifactName: z.string(),
+  sheetName: z.string().optional(),
+  tableName: z.string().optional(),
+  sql: z.string(),
+});
+
+export const schemaDiffAlterPreviewResponseSchema = z.object({
+  diffId: z.string(),
+  dialect: z.enum(["mysql", "oracle"]),
+  packaging: schemaDiffAlterPackagingSchema,
+  outputMode: schemaDiffAlterOutputModeSchema,
+  splitBySheet: z.boolean(),
+  artifacts: z.array(schemaDiffAlterArtifactSchema),
+});
+
+export const schemaDiffHistoryItemSchema = z.object({
+  fileId: z.number().int().positive(),
+  originalName: z.string(),
+  uploadedAt: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  scoreBreakdown: schemaDiffScoreBreakdownSchema.optional(),
+});
+
+export const schemaDiffHistoryResponseSchema = z.object({
+  newFileId: z.number().int().positive(),
+  autoRecommendedOldFileId: z.number().int().positive().optional(),
+  candidates: z.array(schemaDiffHistoryItemSchema),
 });
 
 export type ColumnInfo = z.infer<typeof columnInfoSchema>;
@@ -497,6 +700,85 @@ export const nameFixBackups = sqliteTable("name_fix_backups", {
   createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const schemaSnapshots = sqliteTable(
+  "schema_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    fileId: integer("file_id").notNull(),
+    fileHash: text("file_hash").notNull(),
+    originalName: text("original_name").notNull(),
+    uploadedAt: text("uploaded_at"),
+    snapshotHash: text("snapshot_hash").notNull(),
+    algorithmVersion: text("algorithm_version").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    snapshotHashUniqueIndex: uniqueIndex("schema_snapshots_hash_algo_unique").on(
+      table.snapshotHash,
+      table.algorithmVersion,
+    ),
+  }),
+);
+
+export const versionLinks = sqliteTable(
+  "version_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    newFileId: integer("new_file_id").notNull(),
+    oldFileId: integer("old_file_id").notNull(),
+    selectionMode: text("selection_mode").notNull(),
+    confidence: integer("confidence").notNull().default(0),
+    scoreBreakdownJson: text("score_breakdown_json"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    versionPairUniqueIndex: uniqueIndex("version_links_pair_unique").on(table.newFileId, table.oldFileId),
+  }),
+);
+
+export const schemaDiffs = sqliteTable(
+  "schema_diffs",
+  {
+    id: text("id").primaryKey(),
+    newSnapshotHash: text("new_snapshot_hash").notNull(),
+    oldSnapshotHash: text("old_snapshot_hash").notNull(),
+    scope: text("scope").notNull(),
+    sheetName: text("sheet_name"),
+    algorithmVersion: text("algorithm_version").notNull(),
+    optionsHash: text("options_hash").notNull(),
+    cacheKey: text("cache_key").notNull(),
+    diffJson: text("diff_json").notNull(),
+    alterPreviewJson: text("alter_preview_json"),
+    hitCount: integer("hit_count").notNull().default(0),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+    lastUsedAt: text("last_used_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    schemaDiffCacheUniqueIndex: uniqueIndex("schema_diffs_cache_key_unique").on(table.cacheKey),
+  }),
+);
+
+export const diffRenameDecisions = sqliteTable(
+  "diff_rename_decisions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    diffId: text("diff_id").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityKey: text("entity_key").notNull(),
+    decision: text("decision").notNull().default("pending"),
+    confidence: integer("confidence").notNull().default(0),
+    userNote: text("user_note"),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    diffDecisionUniqueIndex: uniqueIndex("diff_rename_decisions_diff_entity_unique").on(
+      table.diffId,
+      table.entityKey,
+    ),
+  }),
+);
+
 export const processingTaskSchema = z.object({
   id: z.number(),
   fileId: z.number().optional(),
@@ -507,6 +789,55 @@ export const processingTaskSchema = z.object({
   result: z.unknown().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
+});
+
+export const schemaSnapshotSchema = z.object({
+  id: z.number().int(),
+  fileId: z.number().int(),
+  fileHash: z.string(),
+  originalName: z.string(),
+  uploadedAt: z.string().optional(),
+  snapshotHash: z.string(),
+  algorithmVersion: z.string(),
+  snapshotJson: z.string(),
+  createdAt: z.string().optional(),
+});
+
+export const versionLinkSchema = z.object({
+  id: z.number().int(),
+  newFileId: z.number().int(),
+  oldFileId: z.number().int(),
+  selectionMode: schemaDiffSelectionModeSchema,
+  confidence: z.number().min(0).max(1),
+  scoreBreakdownJson: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export const schemaDiffSchema = z.object({
+  id: z.string(),
+  newSnapshotHash: z.string(),
+  oldSnapshotHash: z.string(),
+  scope: schemaDiffScopeSchema,
+  sheetName: z.string().optional(),
+  algorithmVersion: z.string(),
+  optionsHash: z.string(),
+  cacheKey: z.string(),
+  diffJson: z.string(),
+  alterPreviewJson: z.string().optional(),
+  hitCount: z.number().int().min(0),
+  createdAt: z.string().optional(),
+  lastUsedAt: z.string().optional(),
+});
+
+export const diffRenameDecisionSchema = z.object({
+  id: z.number().int(),
+  diffId: z.string(),
+  entityType: schemaDiffEntityTypeSchema,
+  entityKey: z.string(),
+  decision: schemaDiffDecisionSchema,
+  confidence: z.number().min(0).max(1),
+  userNote: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 
 export type ProcessingTask = z.infer<typeof processingTaskSchema>;
@@ -530,3 +861,21 @@ export type NameFixTableMapping = z.infer<typeof nameFixTableMappingSchema>;
 export type NameFixJob = z.infer<typeof nameFixJobSchema>;
 export type NameFixJobItem = z.infer<typeof nameFixJobItemSchema>;
 export type NameFixBackup = z.infer<typeof nameFixBackupSchema>;
+export type SchemaDiffScope = z.infer<typeof schemaDiffScopeSchema>;
+export type SchemaDiffSelectionMode = z.infer<typeof schemaDiffSelectionModeSchema>;
+export type SchemaDiffThresholds = z.infer<typeof schemaDiffThresholdsSchema>;
+export type SchemaDiffSummary = z.infer<typeof schemaDiffSummarySchema>;
+export type SchemaDiffRenameSuggestion = z.infer<typeof schemaDiffRenameSuggestionSchema>;
+export type SchemaDiffColumnChange = z.infer<typeof schemaDiffColumnChangeSchema>;
+export type SchemaDiffTableChange = z.infer<typeof schemaDiffTableChangeSchema>;
+export type SchemaDiffPreviewRequest = z.infer<typeof schemaDiffPreviewRequestSchema>;
+export type SchemaDiffPreviewResponse = z.infer<typeof schemaDiffPreviewResponseSchema>;
+export type SchemaDiffConfirmRequest = z.infer<typeof schemaDiffConfirmRequestSchema>;
+export type SchemaDiffConfirmResponse = z.infer<typeof schemaDiffConfirmResponseSchema>;
+export type SchemaDiffAlterPreviewRequest = z.infer<typeof schemaDiffAlterPreviewRequestSchema>;
+export type SchemaDiffAlterPreviewResponse = z.infer<typeof schemaDiffAlterPreviewResponseSchema>;
+export type SchemaDiffHistoryResponse = z.infer<typeof schemaDiffHistoryResponseSchema>;
+export type SchemaSnapshot = z.infer<typeof schemaSnapshotSchema>;
+export type VersionLink = z.infer<typeof versionLinkSchema>;
+export type SchemaDiff = z.infer<typeof schemaDiffSchema>;
+export type DiffRenameDecision = z.infer<typeof diffRenameDecisionSchema>;

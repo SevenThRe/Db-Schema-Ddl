@@ -6,16 +6,24 @@ import {
   type NameFixJob,
   type NameFixJobItem,
   type NameFixBackup,
+  type SchemaSnapshot,
+  type VersionLink,
+  type SchemaDiff,
+  type DiffRenameDecision,
   uploadedFiles as uploadedFilesTable,
   ddlSettings as ddlSettingsTable,
   processingTasks as processingTasksTable,
   nameFixJobs as nameFixJobsTable,
   nameFixJobItems as nameFixJobItemsTable,
   nameFixBackups as nameFixBackupsTable,
+  schemaSnapshots as schemaSnapshotsTable,
+  versionLinks as versionLinksTable,
+  schemaDiffs as schemaDiffsTable,
+  diffRenameDecisions as diffRenameDecisionsTable,
 } from "@shared/schema";
 import { APP_DEFAULTS, createDefaultDdlSettings } from "@shared/config";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 
 const DEFAULT_PK_MARKERS = [...APP_DEFAULTS.excel.pkMarkers];
@@ -50,6 +58,10 @@ type ProcessingTaskRow = typeof processingTasksTable.$inferSelect;
 type NameFixJobRow = typeof nameFixJobsTable.$inferSelect;
 type NameFixJobItemRow = typeof nameFixJobItemsTable.$inferSelect;
 type NameFixBackupRow = typeof nameFixBackupsTable.$inferSelect;
+type SchemaSnapshotRow = typeof schemaSnapshotsTable.$inferSelect;
+type VersionLinkRow = typeof versionLinksTable.$inferSelect;
+type SchemaDiffRow = typeof schemaDiffsTable.$inferSelect;
+type DiffRenameDecisionRow = typeof diffRenameDecisionsTable.$inferSelect;
 
 function normalizePkMarkers(markers?: string[]): string[] {
   const source = Array.isArray(markers) ? markers : DEFAULT_PK_MARKERS;
@@ -136,6 +148,40 @@ function toNameFixTarget(value: string | null | undefined): "table" | "column" {
   return value === "column" ? "column" : "table";
 }
 
+function confidenceToStored(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  const clamped = Math.max(0, Math.min(1, value));
+  return Math.round(clamped * 10000);
+}
+
+function confidenceFromStored(value: number | null | undefined): number {
+  if (!Number.isFinite(value ?? NaN)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, (value as number) / 10000));
+}
+
+function toDiffScope(value: string | null | undefined): "current_sheet" | "all_sheets" {
+  return value === "all_sheets" ? "all_sheets" : "current_sheet";
+}
+
+function toDiffSelectionMode(value: string | null | undefined): "auto" | "manual" {
+  return value === "manual" ? "manual" : "auto";
+}
+
+function toDiffDecision(value: string | null | undefined): "pending" | "accept" | "reject" {
+  if (value === "accept" || value === "reject") {
+    return value;
+  }
+  return "pending";
+}
+
+function toDiffEntityType(value: string | null | undefined): "table" | "column" {
+  return value === "column" ? "column" : "table";
+}
+
 export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
@@ -168,6 +214,26 @@ export interface IStorage {
     id: number,
     updates: Partial<Omit<NameFixBackup, "id" | "createdAt">>,
   ): Promise<NameFixBackup | undefined>;
+
+  // Diff snapshots and cache
+  listUploadedFilesByOriginalName(originalName: string): Promise<UploadedFile[]>;
+  getSchemaSnapshotByFileId(fileId: number, algorithmVersion: string): Promise<SchemaSnapshot | undefined>;
+  getSchemaSnapshotByHash(
+    snapshotHash: string,
+    algorithmVersion: string,
+  ): Promise<SchemaSnapshot | undefined>;
+  createSchemaSnapshot(snapshot: Omit<SchemaSnapshot, "id" | "createdAt">): Promise<SchemaSnapshot>;
+  upsertVersionLink(link: Omit<VersionLink, "id" | "createdAt">): Promise<VersionLink>;
+  listVersionLinksByNewFileId(newFileId: number): Promise<VersionLink[]>;
+  getSchemaDiffById(id: string): Promise<SchemaDiff | undefined>;
+  getSchemaDiffByCacheKey(cacheKey: string): Promise<SchemaDiff | undefined>;
+  createOrUpdateSchemaDiff(diff: Omit<SchemaDiff, "createdAt" | "lastUsedAt">): Promise<SchemaDiff>;
+  touchSchemaDiff(id: string): Promise<void>;
+  replaceDiffRenameDecisions(
+    diffId: string,
+    decisions: Omit<DiffRenameDecision, "id" | "updatedAt">[],
+  ): Promise<DiffRenameDecision[]>;
+  listDiffRenameDecisions(diffId: string): Promise<DiffRenameDecision[]>;
 }
 
 // Memory-based storage for development (no database needed)
@@ -177,10 +243,17 @@ export class MemoryStorage implements IStorage {
   private nameFixJobs: NameFixJob[] = [];
   private nameFixJobItems: NameFixJobItem[] = [];
   private nameFixBackups: NameFixBackup[] = [];
+  private schemaSnapshots: SchemaSnapshot[] = [];
+  private versionLinks: VersionLink[] = [];
+  private schemaDiffs: SchemaDiff[] = [];
+  private diffRenameDecisions: DiffRenameDecision[] = [];
   private nextId = 1;
   private nextTaskId = 1;
   private nextNameFixItemId = 1;
   private nextNameFixBackupId = 1;
+  private nextSchemaSnapshotId = 1;
+  private nextVersionLinkId = 1;
+  private nextDiffRenameDecisionId = 1;
   private settings: DdlSettings = createDefaultDdlSettings();
 
   async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
@@ -188,6 +261,7 @@ export class MemoryStorage implements IStorage {
       id: this.nextId++,
       filePath: insertFile.filePath,
       originalName: insertFile.originalName,
+      originalModifiedAt: insertFile.originalModifiedAt ?? null,
       fileHash: insertFile.fileHash,
       fileSize: insertFile.fileSize || 0,
       uploadedAt: new Date().toISOString(),
@@ -198,6 +272,10 @@ export class MemoryStorage implements IStorage {
 
   async getUploadedFiles(): Promise<UploadedFile[]> {
     return this.files;
+  }
+
+  async listUploadedFilesByOriginalName(originalName: string): Promise<UploadedFile[]> {
+    return this.files.filter((file) => file.originalName === originalName);
   }
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
@@ -331,6 +409,112 @@ export class MemoryStorage implements IStorage {
     Object.assign(target, updates);
     return target;
   }
+
+  async getSchemaSnapshotByFileId(
+    fileId: number,
+    algorithmVersion: string,
+  ): Promise<SchemaSnapshot | undefined> {
+    return this.schemaSnapshots.find(
+      (snapshot) => snapshot.fileId === fileId && snapshot.algorithmVersion === algorithmVersion,
+    );
+  }
+
+  async getSchemaSnapshotByHash(
+    snapshotHash: string,
+    algorithmVersion: string,
+  ): Promise<SchemaSnapshot | undefined> {
+    return this.schemaSnapshots.find(
+      (snapshot) =>
+        snapshot.snapshotHash === snapshotHash && snapshot.algorithmVersion === algorithmVersion,
+    );
+  }
+
+  async createSchemaSnapshot(snapshot: Omit<SchemaSnapshot, "id" | "createdAt">): Promise<SchemaSnapshot> {
+    const record: SchemaSnapshot = {
+      ...snapshot,
+      id: this.nextSchemaSnapshotId++,
+      createdAt: new Date().toISOString(),
+    };
+    this.schemaSnapshots.push(record);
+    return record;
+  }
+
+  async upsertVersionLink(link: Omit<VersionLink, "id" | "createdAt">): Promise<VersionLink> {
+    const existing = this.versionLinks.find(
+      (row) => row.newFileId === link.newFileId && row.oldFileId === link.oldFileId,
+    );
+    const now = new Date().toISOString();
+    if (existing) {
+      existing.selectionMode = link.selectionMode;
+      existing.confidence = link.confidence;
+      existing.scoreBreakdownJson = link.scoreBreakdownJson;
+      existing.createdAt = now;
+      return existing;
+    }
+    const record: VersionLink = {
+      ...link,
+      id: this.nextVersionLinkId++,
+      createdAt: now,
+    };
+    this.versionLinks.push(record);
+    return record;
+  }
+
+  async listVersionLinksByNewFileId(newFileId: number): Promise<VersionLink[]> {
+    return this.versionLinks.filter((link) => link.newFileId === newFileId);
+  }
+
+  async getSchemaDiffById(id: string): Promise<SchemaDiff | undefined> {
+    return this.schemaDiffs.find((diff) => diff.id === id);
+  }
+
+  async getSchemaDiffByCacheKey(cacheKey: string): Promise<SchemaDiff | undefined> {
+    return this.schemaDiffs.find((diff) => diff.cacheKey === cacheKey);
+  }
+
+  async createOrUpdateSchemaDiff(diff: Omit<SchemaDiff, "createdAt" | "lastUsedAt">): Promise<SchemaDiff> {
+    const existing = this.schemaDiffs.find((row) => row.id === diff.id || row.cacheKey === diff.cacheKey);
+    const now = new Date().toISOString();
+    if (existing) {
+      Object.assign(existing, { ...diff, id: existing.id }, { lastUsedAt: now });
+      return existing;
+    }
+    const record: SchemaDiff = {
+      ...diff,
+      createdAt: now,
+      lastUsedAt: now,
+    };
+    this.schemaDiffs.push(record);
+    return record;
+  }
+
+  async touchSchemaDiff(id: string): Promise<void> {
+    const target = this.schemaDiffs.find((item) => item.id === id);
+    if (!target) {
+      return;
+    }
+    target.hitCount += 1;
+    target.lastUsedAt = new Date().toISOString();
+  }
+
+  async replaceDiffRenameDecisions(
+    diffId: string,
+    decisions: Omit<DiffRenameDecision, "id" | "updatedAt">[],
+  ): Promise<DiffRenameDecision[]> {
+    this.diffRenameDecisions = this.diffRenameDecisions.filter((item) => item.diffId !== diffId);
+    const now = new Date().toISOString();
+    const created = decisions.map((item) => ({
+      ...item,
+      id: this.nextDiffRenameDecisionId++,
+      updatedAt: now,
+    }));
+    this.diffRenameDecisions.push(...created);
+    return created;
+  }
+
+  async listDiffRenameDecisions(diffId: string): Promise<DiffRenameDecision[]> {
+    return this.diffRenameDecisions.filter((item) => item.diffId === diffId);
+  }
 }
 
 // Database storage (requires PostgreSQL)
@@ -342,6 +526,10 @@ export class DatabaseStorage implements IStorage {
   private readonly nameFixJobs = nameFixJobsTable;
   private readonly nameFixJobItems = nameFixJobItemsTable;
   private readonly nameFixBackups = nameFixBackupsTable;
+  private readonly schemaSnapshots = schemaSnapshotsTable;
+  private readonly versionLinks = versionLinksTable;
+  private readonly schemaDiffs = schemaDiffsTable;
+  private readonly diffRenameDecisions = diffRenameDecisionsTable;
 
   constructor() {
     if (!db) {
@@ -472,6 +660,63 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  private mapSchemaSnapshotRow(row: SchemaSnapshotRow): SchemaSnapshot {
+    return {
+      id: row.id,
+      fileId: row.fileId,
+      fileHash: row.fileHash,
+      originalName: row.originalName,
+      uploadedAt: row.uploadedAt ?? undefined,
+      snapshotHash: row.snapshotHash,
+      algorithmVersion: row.algorithmVersion,
+      snapshotJson: row.snapshotJson,
+      createdAt: row.createdAt ?? undefined,
+    };
+  }
+
+  private mapVersionLinkRow(row: VersionLinkRow): VersionLink {
+    return {
+      id: row.id,
+      newFileId: row.newFileId,
+      oldFileId: row.oldFileId,
+      selectionMode: toDiffSelectionMode(row.selectionMode),
+      confidence: confidenceFromStored(row.confidence),
+      scoreBreakdownJson: row.scoreBreakdownJson ?? undefined,
+      createdAt: row.createdAt ?? undefined,
+    };
+  }
+
+  private mapSchemaDiffRow(row: SchemaDiffRow): SchemaDiff {
+    return {
+      id: row.id,
+      newSnapshotHash: row.newSnapshotHash,
+      oldSnapshotHash: row.oldSnapshotHash,
+      scope: toDiffScope(row.scope),
+      sheetName: row.sheetName ?? undefined,
+      algorithmVersion: row.algorithmVersion,
+      optionsHash: row.optionsHash,
+      cacheKey: row.cacheKey,
+      diffJson: row.diffJson,
+      alterPreviewJson: row.alterPreviewJson ?? undefined,
+      hitCount: row.hitCount ?? 0,
+      createdAt: row.createdAt ?? undefined,
+      lastUsedAt: row.lastUsedAt ?? undefined,
+    };
+  }
+
+  private mapDiffRenameDecisionRow(row: DiffRenameDecisionRow): DiffRenameDecision {
+    return {
+      id: row.id,
+      diffId: row.diffId,
+      entityType: toDiffEntityType(row.entityType),
+      entityKey: row.entityKey,
+      decision: toDiffDecision(row.decision),
+      confidence: confidenceFromStored(row.confidence),
+      userNote: row.userNote ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
   private mapProcessingTaskRow(row: ProcessingTaskRow): ProcessingTask {
     let parsedResult: unknown;
     if (row.result) {
@@ -501,6 +746,13 @@ export class DatabaseStorage implements IStorage {
 
   async getUploadedFiles(): Promise<UploadedFile[]> {
     return await this.db.select().from(this.uploadedFiles);
+  }
+
+  async listUploadedFilesByOriginalName(originalName: string): Promise<UploadedFile[]> {
+    return await this.db
+      .select()
+      .from(this.uploadedFiles)
+      .where(eq(this.uploadedFiles.originalName, originalName));
   }
 
   async getUploadedFile(id: number): Promise<UploadedFile | undefined> {
@@ -674,6 +926,190 @@ export class DatabaseStorage implements IStorage {
       .where(eq(this.nameFixBackups.id, id))
       .returning();
     return updated ? this.mapNameFixBackupRow(updated) : undefined;
+  }
+
+  async getSchemaSnapshotByFileId(
+    fileId: number,
+    algorithmVersion: string,
+  ): Promise<SchemaSnapshot | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.schemaSnapshots)
+      .where(
+        and(
+          eq(this.schemaSnapshots.fileId, fileId),
+          eq(this.schemaSnapshots.algorithmVersion, algorithmVersion),
+        ),
+      );
+    return row ? this.mapSchemaSnapshotRow(row) : undefined;
+  }
+
+  async getSchemaSnapshotByHash(
+    snapshotHash: string,
+    algorithmVersion: string,
+  ): Promise<SchemaSnapshot | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.schemaSnapshots)
+      .where(
+        and(
+          eq(this.schemaSnapshots.snapshotHash, snapshotHash),
+          eq(this.schemaSnapshots.algorithmVersion, algorithmVersion),
+        ),
+      );
+    return row ? this.mapSchemaSnapshotRow(row) : undefined;
+  }
+
+  async createSchemaSnapshot(snapshot: Omit<SchemaSnapshot, "id" | "createdAt">): Promise<SchemaSnapshot> {
+    const [created] = await this.db
+      .insert(this.schemaSnapshots)
+      .values({
+        ...snapshot,
+      })
+      .returning();
+    return this.mapSchemaSnapshotRow(created);
+  }
+
+  async upsertVersionLink(link: Omit<VersionLink, "id" | "createdAt">): Promise<VersionLink> {
+    const [existing] = await this.db
+      .select()
+      .from(this.versionLinks)
+      .where(
+        and(
+          eq(this.versionLinks.newFileId, link.newFileId),
+          eq(this.versionLinks.oldFileId, link.oldFileId),
+        ),
+      );
+
+    if (!existing) {
+      const [created] = await this.db
+        .insert(this.versionLinks)
+        .values({
+          newFileId: link.newFileId,
+          oldFileId: link.oldFileId,
+          selectionMode: link.selectionMode,
+          confidence: confidenceToStored(link.confidence),
+          scoreBreakdownJson: link.scoreBreakdownJson,
+        })
+        .returning();
+      return this.mapVersionLinkRow(created);
+    }
+
+    const [updated] = await this.db
+      .update(this.versionLinks)
+      .set({
+        selectionMode: link.selectionMode,
+        confidence: confidenceToStored(link.confidence),
+        scoreBreakdownJson: link.scoreBreakdownJson,
+        createdAt: new Date().toISOString(),
+      })
+      .where(eq(this.versionLinks.id, existing.id))
+      .returning();
+    return this.mapVersionLinkRow(updated);
+  }
+
+  async listVersionLinksByNewFileId(newFileId: number): Promise<VersionLink[]> {
+    const rows = await this.db
+      .select()
+      .from(this.versionLinks)
+      .where(eq(this.versionLinks.newFileId, newFileId));
+    return rows.map((row: VersionLinkRow) => this.mapVersionLinkRow(row));
+  }
+
+  async getSchemaDiffById(id: string): Promise<SchemaDiff | undefined> {
+    const [row] = await this.db.select().from(this.schemaDiffs).where(eq(this.schemaDiffs.id, id));
+    return row ? this.mapSchemaDiffRow(row) : undefined;
+  }
+
+  async getSchemaDiffByCacheKey(cacheKey: string): Promise<SchemaDiff | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.schemaDiffs)
+      .where(eq(this.schemaDiffs.cacheKey, cacheKey));
+    return row ? this.mapSchemaDiffRow(row) : undefined;
+  }
+
+  async createOrUpdateSchemaDiff(diff: Omit<SchemaDiff, "createdAt" | "lastUsedAt">): Promise<SchemaDiff> {
+    const [existing] = await this.db
+      .select()
+      .from(this.schemaDiffs)
+      .where(eq(this.schemaDiffs.cacheKey, diff.cacheKey));
+    const now = new Date().toISOString();
+
+    if (!existing) {
+      const [created] = await this.db
+        .insert(this.schemaDiffs)
+        .values({
+          ...diff,
+          hitCount: diff.hitCount,
+          createdAt: now,
+          lastUsedAt: now,
+        })
+        .returning();
+      return this.mapSchemaDiffRow(created);
+    }
+
+    const [updated] = await this.db
+      .update(this.schemaDiffs)
+      .set({
+        newSnapshotHash: diff.newSnapshotHash,
+        oldSnapshotHash: diff.oldSnapshotHash,
+        scope: diff.scope,
+        sheetName: diff.sheetName,
+        algorithmVersion: diff.algorithmVersion,
+        optionsHash: diff.optionsHash,
+        cacheKey: diff.cacheKey,
+        diffJson: diff.diffJson,
+        alterPreviewJson: diff.alterPreviewJson,
+        hitCount: diff.hitCount,
+        lastUsedAt: now,
+      })
+      .where(eq(this.schemaDiffs.id, existing.id))
+      .returning();
+    return this.mapSchemaDiffRow(updated);
+  }
+
+  async touchSchemaDiff(id: string): Promise<void> {
+    const [existing] = await this.db.select().from(this.schemaDiffs).where(eq(this.schemaDiffs.id, id));
+    if (!existing) {
+      return;
+    }
+    await this.db
+      .update(this.schemaDiffs)
+      .set({
+        hitCount: (existing.hitCount ?? 0) + 1,
+        lastUsedAt: new Date().toISOString(),
+      })
+      .where(eq(this.schemaDiffs.id, id));
+  }
+
+  async replaceDiffRenameDecisions(
+    diffId: string,
+    decisions: Omit<DiffRenameDecision, "id" | "updatedAt">[],
+  ): Promise<DiffRenameDecision[]> {
+    await this.db.delete(this.diffRenameDecisions).where(eq(this.diffRenameDecisions.diffId, diffId));
+    if (!decisions.length) {
+      return [];
+    }
+    const payload = decisions.map((item) => ({
+      diffId: item.diffId,
+      entityType: item.entityType,
+      entityKey: item.entityKey,
+      decision: item.decision,
+      confidence: confidenceToStored(item.confidence),
+      userNote: item.userNote,
+      updatedAt: new Date().toISOString(),
+    }));
+    const rows = await this.db.insert(this.diffRenameDecisions).values(payload).returning();
+    return rows.map((row: DiffRenameDecisionRow) => this.mapDiffRenameDecisionRow(row));
+  }
+
+  async listDiffRenameDecisions(diffId: string): Promise<DiffRenameDecision[]> {
+    const rows = await this.db
+      .select()
+      .from(this.diffRenameDecisions)
+      .where(eq(this.diffRenameDecisions.diffId, diffId));
+    return rows.map((row: DiffRenameDecisionRow) => this.mapDiffRenameDecisionRow(row));
   }
 }
 

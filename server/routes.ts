@@ -30,6 +30,7 @@ import {
   ROUTE_UPLOAD_RULES,
 } from "./constants/route-runtime";
 import { registerDdlRoutes } from "./routes/ddl-routes";
+import { registerDiffRoutes } from "./routes/diff-routes";
 import { registerFileRoutes } from "./routes/files-routes";
 import { registerNameFixRoutes } from "./routes/name-fix-routes";
 import { registerSettingsRoutes } from "./routes/settings-routes";
@@ -581,6 +582,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       return true;
     },
+  });
+
+  registerDiffRoutes(app, {
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    parseRateLimit,
   });
 
   registerSettingsRoutes(app, {

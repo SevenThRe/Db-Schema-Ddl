@@ -131,6 +131,75 @@ export const DB_INIT_SQL = {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `,
+  createSchemaSnapshotsTable: `
+    CREATE TABLE IF NOT EXISTS schema_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      file_hash TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      uploaded_at TEXT,
+      snapshot_hash TEXT NOT NULL,
+      algorithm_version TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createSchemaSnapshotsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS schema_snapshots_hash_algo_unique
+    ON schema_snapshots(snapshot_hash, algorithm_version)
+  `,
+  createVersionLinksTable: `
+    CREATE TABLE IF NOT EXISTS version_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      new_file_id INTEGER NOT NULL,
+      old_file_id INTEGER NOT NULL,
+      selection_mode TEXT NOT NULL,
+      confidence INTEGER NOT NULL DEFAULT 0,
+      score_breakdown_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createVersionLinksPairUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS version_links_pair_unique
+    ON version_links(new_file_id, old_file_id)
+  `,
+  createSchemaDiffsTable: `
+    CREATE TABLE IF NOT EXISTS schema_diffs (
+      id TEXT PRIMARY KEY,
+      new_snapshot_hash TEXT NOT NULL,
+      old_snapshot_hash TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      sheet_name TEXT,
+      algorithm_version TEXT NOT NULL,
+      options_hash TEXT NOT NULL,
+      cache_key TEXT NOT NULL,
+      diff_json TEXT NOT NULL,
+      alter_preview_json TEXT,
+      hit_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      last_used_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createSchemaDiffsCacheUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS schema_diffs_cache_key_unique
+    ON schema_diffs(cache_key)
+  `,
+  createDiffRenameDecisionsTable: `
+    CREATE TABLE IF NOT EXISTS diff_rename_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      diff_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_key TEXT NOT NULL,
+      decision TEXT NOT NULL DEFAULT 'pending',
+      confidence INTEGER NOT NULL DEFAULT 0,
+      user_note TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDiffRenameDecisionsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS diff_rename_decisions_diff_entity_unique
+    ON diff_rename_decisions(diff_id, entity_key)
+  `,
 } as const;
 
 export interface DdlSettingsCompatColumn {
@@ -168,4 +237,3 @@ export const DDL_SETTINGS_COMPAT_COLUMNS: DdlSettingsCompatColumn[] = [
   { name: "allow_overwrite_in_electron", sql: "ALTER TABLE ddl_settings ADD COLUMN allow_overwrite_in_electron INTEGER NOT NULL DEFAULT 1" },
   { name: "allow_external_path_write", sql: "ALTER TABLE ddl_settings ADD COLUMN allow_external_path_write INTEGER NOT NULL DEFAULT 0" },
 ];
-

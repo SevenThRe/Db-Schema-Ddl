@@ -17,7 +17,7 @@ import {
   EXCEL_PARSER_DEFAULTS,
   EXCEL_REQUIRED_COLUMN_HEADERS,
   EXCEL_STANDARD_HEADERS,
-} from '../constants/excel-parser';
+} from '../constants/excel-parser.ts';
 
 const DEFAULT_PK_MARKERS = [...APP_DEFAULTS.excel.pkMarkers];
 

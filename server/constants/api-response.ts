@@ -33,6 +33,12 @@ export const API_RESPONSE_MESSAGES = {
   settingsGetFailed: "Failed to get settings",
   settingsUpdateFailed: "Failed to update settings",
   externalPathWriteRestricted: "allowExternalPathWrite can only be enabled in local Electron mode.",
+  diffPreviewFailed: "Failed to preview schema diff",
+  diffConfirmFailed: "Failed to confirm rename suggestions",
+  diffHistoryFailed: "Failed to load diff history",
+  diffAlterPreviewFailed: "Failed to preview alter SQL",
+  diffAlterExportFailed: "Failed to export alter SQL",
+  diffNotFound: "Diff result not found",
 } as const;
 
 export const API_ERROR_CODES = {
@@ -52,4 +58,10 @@ export const API_ERROR_CODES = {
   zipGenerateFailed: "ZIP_GENERATE_FAILED",
   settingsGetFailed: "SETTINGS_GET_FAILED",
   settingsUpdateFailed: "SETTINGS_UPDATE_FAILED",
+  diffPreviewFailed: "DIFF_PREVIEW_FAILED",
+  diffConfirmFailed: "DIFF_CONFIRM_FAILED",
+  diffHistoryFailed: "DIFF_HISTORY_FAILED",
+  diffAlterPreviewFailed: "DIFF_ALTER_PREVIEW_FAILED",
+  diffAlterExportFailed: "DIFF_ALTER_EXPORT_FAILED",
+  diffNotFound: "DIFF_NOT_FOUND",
 } as const;

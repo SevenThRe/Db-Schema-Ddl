@@ -893,7 +893,7 @@ export class ExcelExecutor {
         strategySteps: trace.strategySteps,
       }));
     if (unknownFormatSheets.length > 0) {
-      logger.warn("Excel sheet format detected as UNKNOWN", {
+      logger.info("Excel sheet format detected as UNKNOWN", {
         filePath,
         unknownFormatSheets,
       });

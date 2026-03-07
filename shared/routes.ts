@@ -17,6 +17,13 @@ import {
   nameFixRollbackResponseSchema,
   nameFixJobSchema,
   nameFixJobItemSchema,
+  schemaDiffPreviewRequestSchema,
+  schemaDiffPreviewResponseSchema,
+  schemaDiffConfirmRequestSchema,
+  schemaDiffConfirmResponseSchema,
+  schemaDiffAlterPreviewRequestSchema,
+  schemaDiffAlterPreviewResponseSchema,
+  schemaDiffHistoryResponseSchema,
 } from './schema';
 import { apiErrorSchema } from "./error-codes";
 
@@ -267,6 +274,56 @@ export const api = {
       path: '/api/name-fix/download/:token' as const,
       responses: {
         400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+  },
+  diff: {
+    preview: {
+      method: "POST" as const,
+      path: "/api/diff/preview" as const,
+      input: schemaDiffPreviewRequestSchema,
+      responses: {
+        200: schemaDiffPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    confirm: {
+      method: "POST" as const,
+      path: "/api/diff/confirm-renames" as const,
+      input: schemaDiffConfirmRequestSchema,
+      responses: {
+        200: schemaDiffConfirmResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    alterPreview: {
+      method: "POST" as const,
+      path: "/api/diff/alter-preview" as const,
+      input: schemaDiffAlterPreviewRequestSchema,
+      responses: {
+        200: schemaDiffAlterPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    alterExport: {
+      method: "POST" as const,
+      path: "/api/diff/alter-export" as const,
+      input: schemaDiffAlterPreviewRequestSchema,
+      responses: {
+        200: z.custom<Blob>(),
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    history: {
+      method: "GET" as const,
+      path: "/api/diff/history/:newFileId" as const,
+      responses: {
+        200: schemaDiffHistoryResponseSchema,
         404: apiErrorSchema,
       },
     },

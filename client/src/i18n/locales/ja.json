@@ -214,6 +214,161 @@
       "toastRollbackFailedTitle": "ロールバック失敗"
     }
   },
+  "schemaDiff": {
+    "title": "Schema Diff インテリジェンス",
+    "currentComparison": "現在の比較",
+    "baseline": {
+      "auto": "自動ベースライン",
+      "manual": "手動ベースライン"
+    },
+    "scope": {
+      "currentSheet": "現在シート",
+      "allSheets": "全シート",
+      "currentSheetWithName": "現在シート: {{sheetName}}"
+    },
+    "compare": {
+      "old": "旧版",
+      "new": "新版",
+      "unknownFile": "不明ファイル",
+      "uploadedAt": "アップロード日時",
+      "scoreBreakdown": "score f:{{f}} m:{{m}} c:{{c}}",
+      "emptyHint": "ベースラインを選択して Diff を実行すると、比較ペアが固定されます。"
+    },
+    "controls": {
+      "baselineMode": "ベースラインモード",
+      "autoDetect": "自動判定",
+      "manualSelect": "手動選択",
+      "scope": "範囲",
+      "advancedOptions": "詳細オプション",
+      "manualBaseline": "手動ベースライン",
+      "pickHistoryFile": "履歴ファイルを選択",
+      "forceRecompute": "強制再計算",
+      "forceRecomputeHint": "キャッシュを無視してしきい値調整を行います。",
+      "runDiff": "Diff 実行",
+      "refreshHistory": "履歴候補を更新",
+      "switchToAllSheets": "全シートに切替"
+    },
+    "warnings": {
+      "currentSheetNotSelected": "現在シートが未選択です",
+      "sheetBaselineUnmatched": "現在シートに対応する旧版シートが見つからず、結果が全追加に見える可能性があります"
+    },
+    "badges": {
+      "cacheHit": "キャッシュヒット"
+    },
+    "summary": {
+      "pendingRenameConfirm": "確認待ちリネーム: {{count}}",
+      "commentOnlyTotal": "コメントのみ変更: {{count}}",
+      "formattingOnlyTotal": "書式のみ差分: {{count}}",
+      "semanticCommentTotal": "コメント内容差分: {{count}}"
+    },
+    "notes": {
+      "title": "Diff ノート"
+    },
+    "rename": {
+      "title": "リネーム候補（確認必須）",
+      "empty": "この Diff 結果にはリネーム候補がありません。",
+      "pending": "保留",
+      "accept": "採用",
+      "reject": "却下",
+      "pendingCount": "保留 {{count}}",
+      "acceptCount": "採用 {{count}}",
+      "rejectCount": "却下 {{count}}",
+      "singleClickHint": "ワンクリック切替（ドロップダウン不要）",
+      "bulkLabel": "一括：",
+      "bulkAllLabel": "全体（{{count}}）：",
+      "bulkTableLabel": "テーブルのみ（{{count}}）：",
+      "bulkColumnLabel": "カラムのみ（{{count}}）：",
+      "bulkAccept": "すべて採用",
+      "bulkReject": "すべて却下",
+      "bulkPending": "すべて保留",
+      "applyDecisions": "決定を適用",
+      "confirm": "確認"
+    },
+    "diffView": {
+      "title": "Git 風差分ビュー"
+    },
+    "filters": {
+      "all": "すべて",
+      "columnFieldAll": "カラム項目: すべて",
+      "columnFieldName": "カラム項目: 名前",
+      "columnFieldDataType": "カラム項目: データ型",
+      "columnFieldSize": "カラム項目: Size/長さ",
+      "columnFieldNullable": "カラム項目: NULL可否",
+      "columnFieldPk": "カラム項目: PK",
+      "columnFieldComment": "カラム項目: コメント",
+      "columnFieldAutoIncrement": "カラム項目: 自動採番",
+      "advancedFilters": "詳細フィルター",
+      "tableKeywordPlaceholder": "テーブル名をあいまい検索（例: finains）",
+      "columnKeywordPlaceholder": "カラム名でフィルター（論理名 / 物理名）",
+      "showMetadata": "メタデータ差分を表示",
+      "showMetadataHint": "コメントや説明文の変更を含めます",
+      "hideFormattingOnly": "書式のみ差分を非表示",
+      "hideFormattingOnlyHint": "改行・空白だけの差分を既定で除外します"
+    },
+    "tree": {
+      "changedTables": "変更テーブル（{{count}}）",
+      "columnsBadge": "カラム {{count}}",
+      "metadataBadge": "メタ {{count}}",
+      "selectLeftHint": "左側でテーブル変更を選択してください。",
+      "groups": {
+        "breaking": "Breaking",
+        "nonBreaking": "Non-breaking",
+        "metadata": "Metadata"
+      }
+    },
+    "alter": {
+      "title": "ALTER ビルダー & エクスポート",
+      "dialect": "方言",
+      "outputMode": "出力モード",
+      "singleTable": "単一テーブル",
+      "multiTable": "複数テーブル",
+      "packaging": "パッケージ",
+      "singleFile": "単一ファイル",
+      "splitBySheet": "シート単位で分割",
+      "includeUnconfirmed": "未確定を含める",
+      "build": "ALTER 作成",
+      "export": "エクスポート",
+      "artifactsCount": "{{count}} artifact(s)",
+      "noSqlPreview": "-- SQL プレビューはありません。"
+    },
+    "empty": {
+      "selectFile": "履歴スキーマ比較するファイルを選択してください。",
+      "noChanges": "スキーマ変更はありません。",
+      "noChangesInFilter": "現在のフィルター条件では変更がありません。",
+      "preparingHistory": "履歴ベースライン候補を準備中...",
+      "runDiffHint": "Diff を実行すると、バージョン差分と ALTER 提案を表示します。"
+    },
+    "toast": {
+      "invalidPreviewOptions": "先に有効な Diff 範囲とベースラインを選択してください。",
+      "diffReadyTitle": "Diff の準備ができました",
+      "diffReadyCacheHit": "キャッシュメモリから読み込みました。",
+      "diffReadyFresh": "最新の差分スナップショットを計算しました。",
+      "noDecisionsTitle": "決定が選択されていません",
+      "noDecisionsDescription": "少なくとも1件を Accept または Reject にしてください。",
+      "renameAppliedTitle": "リネーム決定を適用しました",
+      "renameAppliedDescription": "確認結果で Diff を更新しました。",
+      "alterPreviewTitle": "ALTER プレビューを生成しました",
+      "alterPreviewDescription": "{{count}} 件の成果物を生成しました。",
+      "exportCompletedTitle": "エクスポート完了"
+    },
+    "hints": {
+      "whitespaceOnly": "空白文字のみの差分"
+    },
+    "fieldLabels": {
+      "tableName": "テーブル名",
+      "tableLogicalName": "テーブル論理名",
+      "tablePhysicalName": "テーブル物理名",
+      "columnName": "カラム名",
+      "columnLogicalName": "カラム論理名",
+      "columnPhysicalName": "カラム物理名",
+      "columnDataType": "データ型",
+      "columnSize": "Size/長さ",
+      "columnNullable": "NOT NULL",
+      "columnPk": "主キー",
+      "columnComment": "コメント",
+      "columnAutoIncrement": "自動採番"
+    }
+  },
   "view": {
     "autoParse": "自動解析",
     "spreadsheet": "スプレッドシート"

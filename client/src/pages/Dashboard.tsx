@@ -5,11 +5,12 @@ import { TablePreview } from "@/components/TablePreview";
 import { DdlGenerator } from "@/components/DdlGenerator";
 import { SpreadsheetViewer } from "@/components/SpreadsheetViewer";
 import { SearchDialog } from "@/components/SearchDialog";
+import { SchemaDiffPanel } from "@/components/SchemaDiffPanel";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useFiles, useSheets } from "@/hooks/use-ddl";
 import { useToast } from "@/hooks/use-toast";
 import type { TableInfo } from "@shared/schema";
@@ -69,7 +70,7 @@ export default function Dashboard() {
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [viewMode, setViewMode] = useState<"auto" | "spreadsheet">("auto");
+  const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [currentTable, setCurrentTable] = useState<TableInfo | null>(null);
@@ -361,6 +362,10 @@ export default function Dashboard() {
                 <Grid3X3 className="w-3 h-3" />
                 {t("view.spreadsheet")}
               </TabsTrigger>
+              <TabsTrigger value="diff" className="text-[11px] h-5 px-2 gap-1">
+                <Sparkles className="w-3 h-3" />
+                Diff
+              </TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -420,12 +425,14 @@ export default function Dashboard() {
               onCurrentTableChange={handleCurrentTableChange}
             />
           )
-        ) : (
+        ) : viewMode === "spreadsheet" ? (
           <SpreadsheetViewer
             fileId={selectedFileId}
             sheetName={selectedSheet}
             onRegionParsed={handleRegionParsed}
           />
+        ) : (
+          <SchemaDiffPanel fileId={selectedFileId} sheetName={selectedSheet} />
         )}
       </div>
     </div>

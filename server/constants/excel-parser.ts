@@ -1,4 +1,4 @@
-import { APP_DEFAULTS } from "@shared/config";
+import { APP_DEFAULTS } from "../../shared/config.ts";
 
 export const EXCEL_PARSER_DEFAULTS = {
   maxConsecutiveEmptyRows: APP_DEFAULTS.excel.maxConsecutiveEmptyRows,

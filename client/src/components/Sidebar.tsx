@@ -135,6 +135,9 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
     const formData = new FormData();
     formData.append("file", file);
+    if (typeof file.lastModified === "number" && file.lastModified > 0) {
+      formData.append("sourceModifiedAt", String(file.lastModified));
+    }
 
     uploadFile(formData, {
       onSuccess: (data: any) => {
@@ -245,7 +248,11 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
     const openedWindow = window.open(docsUrl, "_blank", "noopener,noreferrer");
     if (!openedWindow) {
-      window.location.href = docsUrl;
+      toast({
+        title: t("sidebar.docs"),
+        description: "Popup blocked. Please allow popups for this site.",
+        variant: "destructive",
+      });
     }
   };
 

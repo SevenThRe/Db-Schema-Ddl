@@ -45,4 +45,25 @@ export const DB_MIGRATIONS: DbMigrationDefinition[] = [
       DB_INIT_SQL.createNameFixBackupsTable,
     ],
   },
+  {
+    version: 5,
+    name: "create_schema_diff_tables",
+    statements: [
+      DB_INIT_SQL.createSchemaSnapshotsTable,
+      DB_INIT_SQL.createSchemaSnapshotsUniqueIndex,
+      DB_INIT_SQL.createVersionLinksTable,
+      DB_INIT_SQL.createVersionLinksPairUniqueIndex,
+      DB_INIT_SQL.createSchemaDiffsTable,
+      DB_INIT_SQL.createSchemaDiffsCacheUniqueIndex,
+      DB_INIT_SQL.createDiffRenameDecisionsTable,
+      DB_INIT_SQL.createDiffRenameDecisionsUniqueIndex,
+    ],
+  },
+  {
+    version: 6,
+    name: "add_uploaded_files_original_modified_at",
+    statements: [
+      "ALTER TABLE uploaded_files ADD COLUMN original_modified_at TEXT",
+    ],
+  },
 ] as const;

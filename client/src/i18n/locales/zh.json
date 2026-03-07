@@ -219,6 +219,161 @@
       "toastRollbackFailedTitle": "回滚失败"
     }
   },
+  "schemaDiff": {
+    "title": "Schema Diff 智能比对",
+    "currentComparison": "当前比对",
+    "baseline": {
+      "auto": "自动基线",
+      "manual": "手动基线"
+    },
+    "scope": {
+      "currentSheet": "当前工作表",
+      "allSheets": "全部工作表",
+      "currentSheetWithName": "当前工作表: {{sheetName}}"
+    },
+    "compare": {
+      "old": "旧版",
+      "new": "新版",
+      "unknownFile": "未知文件",
+      "uploadedAt": "上传时间",
+      "scoreBreakdown": "score f:{{f}} m:{{m}} c:{{c}}",
+      "emptyHint": "请选择基线并运行 Diff，锁定本次比较对象。"
+    },
+    "controls": {
+      "baselineMode": "基线模式",
+      "autoDetect": "自动识别",
+      "manualSelect": "手动选择",
+      "scope": "范围",
+      "advancedOptions": "高级选项",
+      "manualBaseline": "手动基线",
+      "pickHistoryFile": "选择历史文件",
+      "forceRecompute": "强制重算",
+      "forceRecomputeHint": "忽略缓存，便于调试阈值策略。",
+      "runDiff": "运行 Diff",
+      "refreshHistory": "刷新历史候选",
+      "switchToAllSheets": "切换到全部工作表"
+    },
+    "warnings": {
+      "currentSheetNotSelected": "未选择当前工作表",
+      "sheetBaselineUnmatched": "当前工作表未命中历史基线，结果可能看起来全是新增"
+    },
+    "badges": {
+      "cacheHit": "命中缓存"
+    },
+    "summary": {
+      "pendingRenameConfirm": "待确认重命名: {{count}}",
+      "commentOnlyTotal": "仅注释变更: {{count}}",
+      "formattingOnlyTotal": "仅格式变化: {{count}}",
+      "semanticCommentTotal": "注释语义变化: {{count}}"
+    },
+    "notes": {
+      "title": "Diff 备注"
+    },
+    "rename": {
+      "title": "重命名建议（需确认）",
+      "empty": "当前 Diff 结果没有重命名建议。",
+      "pending": "待定",
+      "accept": "接受",
+      "reject": "拒绝",
+      "pendingCount": "待定 {{count}}",
+      "acceptCount": "接受 {{count}}",
+      "rejectCount": "拒绝 {{count}}",
+      "singleClickHint": "单击切换，不用下拉",
+      "bulkLabel": "批量：",
+      "bulkAllLabel": "全体（{{count}}）：",
+      "bulkTableLabel": "仅表（{{count}}）：",
+      "bulkColumnLabel": "仅字段（{{count}}）：",
+      "bulkAccept": "全部接受",
+      "bulkReject": "全部拒绝",
+      "bulkPending": "全部待定",
+      "applyDecisions": "应用决策",
+      "confirm": "需确认"
+    },
+    "diffView": {
+      "title": "Git 风格差异视图"
+    },
+    "filters": {
+      "all": "全部",
+      "columnFieldAll": "字段筛选: 全部",
+      "columnFieldName": "字段筛选: 名称",
+      "columnFieldDataType": "字段筛选: 数据类型",
+      "columnFieldSize": "字段筛选: Size/长度",
+      "columnFieldNullable": "字段筛选: 可空",
+      "columnFieldPk": "字段筛选: 主键",
+      "columnFieldComment": "字段筛选: 注释",
+      "columnFieldAutoIncrement": "字段筛选: 自增",
+      "advancedFilters": "高级过滤",
+      "tableKeywordPlaceholder": "表名模糊过滤（如 finains）",
+      "columnKeywordPlaceholder": "按列名过滤（逻辑名 / 物理名）",
+      "showMetadata": "显示元数据变更",
+      "showMetadataHint": "例如注释调整、说明更新",
+      "hideFormattingOnly": "隐藏纯格式变化",
+      "hideFormattingOnlyHint": "默认忽略换行/空白差异噪音"
+    },
+    "tree": {
+      "changedTables": "已变更表（{{count}}）",
+      "columnsBadge": "字段 {{count}}",
+      "metadataBadge": "元数据 {{count}}",
+      "selectLeftHint": "请先在左侧选择一个表变更。",
+      "groups": {
+        "breaking": "Breaking",
+        "nonBreaking": "Non-breaking",
+        "metadata": "Metadata"
+      }
+    },
+    "alter": {
+      "title": "ALTER 构建与导出",
+      "dialect": "方言",
+      "outputMode": "输出模式",
+      "singleTable": "单表",
+      "multiTable": "多表",
+      "packaging": "打包方式",
+      "singleFile": "单文件",
+      "splitBySheet": "按工作表拆分",
+      "includeUnconfirmed": "包含未确认项",
+      "build": "构建 ALTER",
+      "export": "导出",
+      "artifactsCount": "{{count}} 个产物",
+      "noSqlPreview": "-- 暂无 SQL 预览。"
+    },
+    "empty": {
+      "selectFile": "请先选择一个文件进行历史结构比对。",
+      "noChanges": "未检测到结构变化。",
+      "noChangesInFilter": "当前过滤条件下没有变化。",
+      "preparingHistory": "正在准备历史基线候选...",
+      "runDiffHint": "运行 Diff 后可查看版本级结构变更与 ALTER 建议。"
+    },
+    "toast": {
+      "invalidPreviewOptions": "请先选择有效的比对范围与基线选项。",
+      "diffReadyTitle": "Diff 已就绪",
+      "diffReadyCacheHit": "已从缓存记忆加载。",
+      "diffReadyFresh": "已完成最新一次差异计算。",
+      "noDecisionsTitle": "尚未选择决策",
+      "noDecisionsDescription": "至少选择一条重命名建议为接受或拒绝。",
+      "renameAppliedTitle": "重命名决策已应用",
+      "renameAppliedDescription": "Diff 已根据你的确认更新。",
+      "alterPreviewTitle": "ALTER 预览已生成",
+      "alterPreviewDescription": "共生成 {{count}} 个产物。",
+      "exportCompletedTitle": "导出完成"
+    },
+    "hints": {
+      "whitespaceOnly": "仅空白字符差异"
+    },
+    "fieldLabels": {
+      "tableName": "表名",
+      "tableLogicalName": "表逻辑名",
+      "tablePhysicalName": "表物理名",
+      "columnName": "列名",
+      "columnLogicalName": "列逻辑名",
+      "columnPhysicalName": "列物理名",
+      "columnDataType": "数据类型",
+      "columnSize": "Size/长度",
+      "columnNullable": "是否非空",
+      "columnPk": "是否主键",
+      "columnComment": "注释",
+      "columnAutoIncrement": "是否自增"
+    }
+  },
   "view": {
     "autoParse": "自动解析",
     "spreadsheet": "电子表格"

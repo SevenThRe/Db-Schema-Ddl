@@ -9,6 +9,9 @@ import {
   type NameFixPreviewRequest,
   type NameFixApplyRequest,
   type NameFixRollbackRequest,
+  type SchemaDiffPreviewRequest,
+  type SchemaDiffConfirmRequest,
+  type SchemaDiffAlterPreviewRequest,
 } from "@shared/schema";
 import { parseApiErrorResponse } from "@/lib/api-error";
 
@@ -472,6 +475,108 @@ export function useRollbackNameFix() {
         });
       }
       return api.nameFix.rollback.responses[200].parse(await res.json());
+    },
+  });
+}
+
+// --- Schema Diff ---
+
+export function useSchemaDiffHistory(newFileId: number | null) {
+  return useQuery({
+    queryKey: [api.diff.history.path, newFileId],
+    queryFn: async () => {
+      if (!newFileId) return null;
+      const url = buildUrl(api.diff.history.path, { newFileId });
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to load diff history",
+        });
+      }
+      return api.diff.history.responses[200].parse(await res.json());
+    },
+    enabled: Boolean(newFileId),
+  });
+}
+
+export function useSchemaDiffPreview() {
+  return useMutation({
+    mutationFn: async (request: SchemaDiffPreviewRequest) => {
+      const res = await fetch(api.diff.preview.path, {
+        method: api.diff.preview.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to preview schema diff",
+        });
+      }
+      return api.diff.preview.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useConfirmSchemaDiffRenames() {
+  return useMutation({
+    mutationFn: async (request: SchemaDiffConfirmRequest) => {
+      const res = await fetch(api.diff.confirm.path, {
+        method: api.diff.confirm.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to confirm rename suggestions",
+        });
+      }
+      return api.diff.confirm.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useSchemaDiffAlterPreview() {
+  return useMutation({
+    mutationFn: async (request: SchemaDiffAlterPreviewRequest) => {
+      const res = await fetch(api.diff.alterPreview.path, {
+        method: api.diff.alterPreview.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to preview alter SQL",
+        });
+      }
+      return api.diff.alterPreview.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useSchemaDiffAlterExport() {
+  return useMutation({
+    mutationFn: async (request: SchemaDiffAlterPreviewRequest) => {
+      const res = await fetch(api.diff.alterExport.path, {
+        method: api.diff.alterExport.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorResponse(res, {
+          code: "REQUEST_FAILED",
+          message: "Failed to export alter SQL",
+        });
+      }
+      const blob = await res.blob();
+      return {
+        blob,
+        contentType: res.headers.get("Content-Type"),
+        contentDisposition: res.headers.get("Content-Disposition"),
+      };
     },
   });
 }
