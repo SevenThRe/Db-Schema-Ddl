@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: active
+last_updated: "2026-03-17T23:20:00+09:00"
+progress:
+  total_phases: 5
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+---
+
 # Project State
 
 ## Project Reference
@@ -5,7 +18,7 @@
 See: `.planning/PROJECT.md` (updated 2026-03-17)
 
 **Core value:** Users can optionally turn the desktop app into a schema management workstation by downloading one official extension on demand, without bloating the base product for everyone else.
-**Current focus:** Phase 1 - Extension Host Foundation
+**Current focus:** Phase 2 - GitHub Delivery and Lifecycle
 
 ## Current Status
 
@@ -16,6 +29,9 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 - Phase 1 context captured under `.planning/phases/01-extension-host-foundation/01-CONTEXT.md`
 - Phase 1 research captured under `.planning/phases/01-extension-host-foundation/01-RESEARCH.md`
 - Phase 1 plans and validation strategy created under `.planning/phases/01-extension-host-foundation/`
+- Phase 1 executed and verified; extension host schemas, Electron lifecycle bridge, typed extension APIs, and sidebar UX are now in place
+- Phase 1 summaries and verification are recorded under `.planning/phases/01-extension-host-foundation/`
+- Phase 2 context captured under `.planning/phases/02-github-delivery-and-lifecycle/02-CONTEXT.md`
 
 ## Important Assumptions
 
@@ -26,14 +42,14 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 
 ## Next Command
 
-- `$gsd-execute-phase 1`
+- `$gsd-plan-phase 2`
 
-## Open Questions To Resolve During Phase 1 Execution
+## Open Questions To Resolve During Phase 2 Execution
 
-- What exact extension manifest and host API contract should the app support?
-- How should extension metadata and status be stored in the shared schema/storage layer?
-- What restart/reload mechanism should `立即启用` trigger in the Electron host?
-- What checksum and compatibility checks are mandatory before an extension can be enabled?
+- What exact GitHub catalog payload should the host consume before download?
+- How should checksum and compatibility verification be represented in the extension manifest?
+- What installation state machine should bridge download, verify, unpack, enable, and rollback?
+- How much release metadata should the concise install dialog expose before download begins?
 
 ---
-*Last updated: 2026-03-17 after Phase 1 planning*
+*Last updated: 2026-03-17 after Phase 2 context gathering*
