@@ -13,6 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 - Codebase map created under `.planning/codebase/`
 - Configuration initialized for coarse-grained, parallel, YOLO-style planning with commit tracking enabled
 - Requirements and roadmap drafted for the extension host plus DB management extension delivery
+- Phase 1 context captured under `.planning/phases/01-extension-host-foundation/01-CONTEXT.md`
 
 ## Important Assumptions
 
@@ -23,14 +24,14 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 
 ## Next Command
 
-- `$gsd-discuss-phase 1`
+- `$gsd-plan-phase 1`
 
 ## Open Questions To Resolve During Phase 1
 
 - What exact extension manifest and host API contract should the app support?
-- Will frontend extension UI load through a routed outlet, iframe-like shell, or another local microfrontend pattern?
-- How will server-side extension route registration work in the bundled desktop runtime?
-- What checksum/signature policy is required before enabling downloaded code?
+- How should extension metadata and status be stored in the shared schema/storage layer?
+- What restart/reload mechanism should `立即启用` trigger in the Electron host?
+- What checksum and compatibility checks are mandatory before an extension can be enabled?
 
 ---
-*Last updated: 2026-03-17 after project initialization*
+*Last updated: 2026-03-17 after Phase 1 context gathering*
