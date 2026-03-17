@@ -32,6 +32,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 - Phase 1 executed and verified; extension host schemas, Electron lifecycle bridge, typed extension APIs, and sidebar UX are now in place
 - Phase 1 summaries and verification are recorded under `.planning/phases/01-extension-host-foundation/`
 - Phase 2 context captured under `.planning/phases/02-github-delivery-and-lifecycle/02-CONTEXT.md`
+- Phase 2 validation strategy and execution plans are now created under `.planning/phases/02-github-delivery-and-lifecycle/`
 
 ## Important Assumptions
 
@@ -42,7 +43,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 
 ## Next Command
 
-- `$gsd-plan-phase 2`
+- `$gsd-execute-phase 2`
 
 ## Open Questions To Resolve During Phase 2 Execution
 
@@ -52,4 +53,4 @@ See: `.planning/PROJECT.md` (updated 2026-03-17)
 - How much release metadata should the concise install dialog expose before download begins?
 
 ---
-*Last updated: 2026-03-17 after Phase 2 context gathering*
+*Last updated: 2026-03-17 after Phase 2 planning*
