@@ -2,6 +2,20 @@ import {
   type InsertUploadedFile,
   type UploadedFile,
   type DdlSettings,
+  type ExtensionId,
+  type InstalledExtensionRecord,
+  type ExtensionLifecycleState,
+  type ExtensionLifecycleStage,
+  type ExtensionLifecycleErrorCode,
+  type DbConnectionRecord,
+  type DbConnectionSummary,
+  type DbComparePolicy,
+  type DbConnectionTestStatus,
+  type DbSchemaSnapshot,
+  type DbHistoryCompareSource,
+  type DbSchemaScanEvent,
+  type DbDeployJob,
+  type DbDeployJobStatementResult,
   type ProcessingTask,
   type NameFixJob,
   type NameFixJobItem,
@@ -10,8 +24,18 @@ import {
   type VersionLink,
   type SchemaDiff,
   type DiffRenameDecision,
+  dbHistoryCompareSourceSchema,
+  dbDeployJobSummarySchema,
   uploadedFiles as uploadedFilesTable,
   ddlSettings as ddlSettingsTable,
+  installedExtensions as installedExtensionsTable,
+  extensionLifecycleStates as extensionLifecycleStatesTable,
+  dbConnections as dbConnectionsTable,
+  dbComparePolicies as dbComparePoliciesTable,
+  dbSchemaSnapshots as dbSchemaSnapshotsTable,
+  dbSchemaScanEvents as dbSchemaScanEventsTable,
+  dbDeployJobs as dbDeployJobsTable,
+  dbDeployJobStatementResults as dbDeployJobStatementResultsTable,
   processingTasks as processingTasksTable,
   nameFixJobs as nameFixJobsTable,
   nameFixJobItems as nameFixJobItemsTable,
@@ -54,6 +78,22 @@ type AppDatabase = BetterSQLite3Database<typeof import("@shared/schema")>;
 type UploadedFileRow = typeof uploadedFilesTable.$inferSelect;
 type DdlSettingsRow = typeof ddlSettingsTable.$inferSelect;
 type DdlSettingsInsertRow = typeof ddlSettingsTable.$inferInsert;
+type InstalledExtensionRow = typeof installedExtensionsTable.$inferSelect;
+type InstalledExtensionInsertRow = typeof installedExtensionsTable.$inferInsert;
+type ExtensionLifecycleStateRow = typeof extensionLifecycleStatesTable.$inferSelect;
+type ExtensionLifecycleStateInsertRow = typeof extensionLifecycleStatesTable.$inferInsert;
+type DbConnectionRow = typeof dbConnectionsTable.$inferSelect;
+type DbConnectionInsertRow = typeof dbConnectionsTable.$inferInsert;
+type DbComparePolicyRow = typeof dbComparePoliciesTable.$inferSelect;
+type DbComparePolicyInsertRow = typeof dbComparePoliciesTable.$inferInsert;
+type DbSchemaSnapshotRow = typeof dbSchemaSnapshotsTable.$inferSelect;
+type DbSchemaSnapshotInsertRow = typeof dbSchemaSnapshotsTable.$inferInsert;
+type DbSchemaScanEventRow = typeof dbSchemaScanEventsTable.$inferSelect;
+type DbSchemaScanEventInsertRow = typeof dbSchemaScanEventsTable.$inferInsert;
+type DbDeployJobRow = typeof dbDeployJobsTable.$inferSelect;
+type DbDeployJobInsertRow = typeof dbDeployJobsTable.$inferInsert;
+type DbDeployJobStatementResultRow = typeof dbDeployJobStatementResultsTable.$inferSelect;
+type DbDeployJobStatementResultInsertRow = typeof dbDeployJobStatementResultsTable.$inferInsert;
 type ProcessingTaskRow = typeof processingTasksTable.$inferSelect;
 type NameFixJobRow = typeof nameFixJobsTable.$inferSelect;
 type NameFixJobItemRow = typeof nameFixJobItemsTable.$inferSelect;
@@ -62,6 +102,29 @@ type SchemaSnapshotRow = typeof schemaSnapshotsTable.$inferSelect;
 type VersionLinkRow = typeof versionLinksTable.$inferSelect;
 type SchemaDiffRow = typeof schemaDiffsTable.$inferSelect;
 type DiffRenameDecisionRow = typeof diffRenameDecisionsTable.$inferSelect;
+
+function parseJsonArray(value: string | null | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseHistoryCompareSource(value: string): DbHistoryCompareSource {
+  return dbHistoryCompareSourceSchema.parse(JSON.parse(value));
+}
+
+function parseDeployJobSummary(value: string | null | undefined) {
+  if (!value) {
+    return undefined;
+  }
+  return dbDeployJobSummarySchema.parse(JSON.parse(value));
+}
 
 function normalizePkMarkers(markers?: string[]): string[] {
   const source = Array.isArray(markers) ? markers : DEFAULT_PK_MARKERS;
@@ -182,6 +245,66 @@ function toDiffEntityType(value: string | null | undefined): "table" | "column" 
   return value === "column" ? "column" : "table";
 }
 
+function toExtensionId(value: string | null | undefined): ExtensionId {
+  return value === "db-management" ? "db-management" : "db-management";
+}
+
+function toExtensionCompatibilityStatus(
+  value: string | null | undefined,
+): "unknown" | "compatible" | "incompatible" {
+  if (value === "compatible" || value === "incompatible") {
+    return value;
+  }
+  return "unknown";
+}
+
+function toExtensionLifecycleStage(value: string | null | undefined): ExtensionLifecycleStage {
+  switch (value) {
+    case "checking":
+    case "available":
+    case "downloading":
+    case "downloaded":
+    case "verifying":
+    case "verified":
+    case "installing":
+    case "installed":
+    case "ready_to_enable":
+    case "update_available":
+    case "uninstalling":
+    case "failed":
+      return value;
+    default:
+      return "idle";
+  }
+}
+
+function toExtensionLifecycleErrorCode(
+  value: string | null | undefined,
+): ExtensionLifecycleErrorCode | undefined {
+  switch (value) {
+    case "network_error":
+    case "catalog_unavailable":
+    case "asset_not_found":
+    case "verification_failed":
+    case "incompatible":
+    case "install_failed":
+    case "uninstall_failed":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function toDbConnectionTestStatus(value: string | null | undefined): DbConnectionTestStatus {
+  switch (value) {
+    case "ok":
+    case "failed":
+      return value;
+    default:
+      return "unknown";
+  }
+}
+
 export interface IStorage {
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFiles(): Promise<UploadedFile[]>;
@@ -191,6 +314,60 @@ export interface IStorage {
   deleteUploadedFile(id: number): Promise<void>;
   getSettings(): Promise<DdlSettings>;
   updateSettings(settings: DdlSettings): Promise<DdlSettings>;
+  listInstalledExtensions(): Promise<InstalledExtensionRecord[]>;
+  getInstalledExtension(extensionId: ExtensionId): Promise<InstalledExtensionRecord | undefined>;
+  upsertInstalledExtension(
+    extension: Omit<InstalledExtensionRecord, "id" | "installedAt" | "updatedAt">,
+  ): Promise<InstalledExtensionRecord>;
+  setInstalledExtensionEnabled(
+    extensionId: ExtensionId,
+    enabled: boolean,
+  ): Promise<InstalledExtensionRecord | undefined>;
+  listExtensionLifecycleStates(): Promise<ExtensionLifecycleState[]>;
+  getExtensionLifecycleState(extensionId: ExtensionId): Promise<ExtensionLifecycleState | undefined>;
+  upsertExtensionLifecycleState(
+    lifecycleState: Omit<ExtensionLifecycleState, "id" | "updatedAt">,
+  ): Promise<ExtensionLifecycleState>;
+  deleteExtensionLifecycleState(extensionId: ExtensionId): Promise<void>;
+  listDbConnections(): Promise<DbConnectionSummary[]>;
+  getDbConnection(id: number): Promise<DbConnectionRecord | undefined>;
+  getDbComparePolicy(): Promise<DbComparePolicy>;
+  updateDbComparePolicy(policy: DbComparePolicy): Promise<DbComparePolicy>;
+  createDbConnection(
+    connection: Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DbConnectionRecord>;
+  updateDbConnection(
+    id: number,
+    updates: Partial<Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbConnectionRecord | undefined>;
+  deleteDbConnection(id: number): Promise<void>;
+  listDbSchemaSnapshots(connectionId: number, databaseName?: string): Promise<DbSchemaSnapshot[]>;
+  getLatestDbSchemaSnapshot(connectionId: number, databaseName: string): Promise<DbSchemaSnapshot | undefined>;
+  getDbSchemaSnapshotByHash(
+    connectionId: number,
+    databaseName: string,
+    snapshotHash: string,
+  ): Promise<DbSchemaSnapshot | undefined>;
+  createDbSchemaSnapshot(
+    snapshot: Omit<DbSchemaSnapshot, "id" | "capturedAt" | "updatedAt">,
+  ): Promise<DbSchemaSnapshot>;
+  listDbSchemaScanEvents(connectionId: number, databaseName?: string): Promise<DbSchemaScanEvent[]>;
+  getDbSchemaScanEvent(id: number): Promise<DbSchemaScanEvent | undefined>;
+  createDbSchemaScanEvent(
+    event: Omit<DbSchemaScanEvent, "id" | "createdAt">,
+  ): Promise<DbSchemaScanEvent>;
+  listDbDeployJobs(connectionId: number, databaseName?: string): Promise<DbDeployJob[]>;
+  getDbDeployJob(id: string): Promise<DbDeployJob | undefined>;
+  createDbDeployJob(job: Omit<DbDeployJob, "createdAt" | "updatedAt">): Promise<DbDeployJob>;
+  updateDbDeployJob(
+    id: string,
+    updates: Partial<Omit<DbDeployJob, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbDeployJob | undefined>;
+  replaceDbDeployJobStatementResults(
+    jobId: string,
+    results: Omit<DbDeployJobStatementResult, "id" | "createdAt">[],
+  ): Promise<DbDeployJobStatementResult[]>;
+  listDbDeployJobStatementResults(jobId: string): Promise<DbDeployJobStatementResult[]>;
 
   // Task management
   createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask>;
@@ -240,6 +417,14 @@ export interface IStorage {
 export class MemoryStorage implements IStorage {
   private files: UploadedFile[] = [];
   private tasks: ProcessingTask[] = [];
+  private installedExtensions: InstalledExtensionRecord[] = [];
+  private extensionLifecycleStates: ExtensionLifecycleState[] = [];
+  private dbConnections: DbConnectionRecord[] = [];
+  private dbComparePolicy: DbComparePolicy = {};
+  private dbSchemaSnapshots: DbSchemaSnapshot[] = [];
+  private dbSchemaScanEvents: DbSchemaScanEvent[] = [];
+  private dbDeployJobs: DbDeployJob[] = [];
+  private dbDeployJobStatementResults: DbDeployJobStatementResult[] = [];
   private nameFixJobs: NameFixJob[] = [];
   private nameFixJobItems: NameFixJobItem[] = [];
   private nameFixBackups: NameFixBackup[] = [];
@@ -249,8 +434,12 @@ export class MemoryStorage implements IStorage {
   private diffRenameDecisions: DiffRenameDecision[] = [];
   private nextId = 1;
   private nextTaskId = 1;
+  private nextDbConnectionId = 1;
   private nextNameFixItemId = 1;
   private nextNameFixBackupId = 1;
+  private nextDbSchemaSnapshotId = 1;
+  private nextDbSchemaScanEventId = 1;
+  private nextDbDeployJobStatementResultId = 1;
   private nextSchemaSnapshotId = 1;
   private nextVersionLinkId = 1;
   private nextDiffRenameDecisionId = 1;
@@ -310,6 +499,269 @@ export class MemoryStorage implements IStorage {
       pkMarkers: normalizePkMarkers(settings.pkMarkers),
     };
     return this.settings;
+  }
+
+  async listInstalledExtensions(): Promise<InstalledExtensionRecord[]> {
+    return [...this.installedExtensions];
+  }
+
+  async getInstalledExtension(extensionId: ExtensionId): Promise<InstalledExtensionRecord | undefined> {
+    return this.installedExtensions.find((extension) => extension.extensionId === extensionId);
+  }
+
+  async upsertInstalledExtension(
+    extension: Omit<InstalledExtensionRecord, "id" | "installedAt" | "updatedAt">,
+  ): Promise<InstalledExtensionRecord> {
+    const now = new Date().toISOString();
+    const existing = this.installedExtensions.find((item) => item.extensionId === extension.extensionId);
+    if (existing) {
+      Object.assign(existing, extension, { updatedAt: now });
+      return existing;
+    }
+
+    const created: InstalledExtensionRecord = {
+      ...extension,
+      id: this.nextId++,
+      installedAt: now,
+      updatedAt: now,
+    };
+    this.installedExtensions.push(created);
+    return created;
+  }
+
+  async setInstalledExtensionEnabled(
+    extensionId: ExtensionId,
+    enabled: boolean,
+  ): Promise<InstalledExtensionRecord | undefined> {
+    const extension = this.installedExtensions.find((item) => item.extensionId === extensionId);
+    if (!extension) {
+      return undefined;
+    }
+    extension.enabled = enabled;
+    extension.updatedAt = new Date().toISOString();
+    return extension;
+  }
+
+  async listExtensionLifecycleStates(): Promise<ExtensionLifecycleState[]> {
+    return [...this.extensionLifecycleStates];
+  }
+
+  async getExtensionLifecycleState(extensionId: ExtensionId): Promise<ExtensionLifecycleState | undefined> {
+    return this.extensionLifecycleStates.find((item) => item.extensionId === extensionId);
+  }
+
+  async upsertExtensionLifecycleState(
+    lifecycleState: Omit<ExtensionLifecycleState, "id" | "updatedAt">,
+  ): Promise<ExtensionLifecycleState> {
+    const now = new Date().toISOString();
+    const existing = this.extensionLifecycleStates.find((item) => item.extensionId === lifecycleState.extensionId);
+    if (existing) {
+      Object.assign(existing, lifecycleState, { updatedAt: now });
+      return existing;
+    }
+
+    const created: ExtensionLifecycleState = {
+      ...lifecycleState,
+      id: this.nextId++,
+      updatedAt: now,
+    };
+    this.extensionLifecycleStates.push(created);
+    return created;
+  }
+
+  async deleteExtensionLifecycleState(extensionId: ExtensionId): Promise<void> {
+    this.extensionLifecycleStates = this.extensionLifecycleStates.filter((item) => item.extensionId !== extensionId);
+  }
+
+  async listDbConnections(): Promise<DbConnectionSummary[]> {
+    return this.dbConnections.map(({ encryptedPassword, ...connection }) => ({
+      ...connection,
+      passwordStored: Boolean(encryptedPassword),
+    }));
+  }
+
+  async getDbConnection(id: number): Promise<DbConnectionRecord | undefined> {
+    return this.dbConnections.find((connection) => connection.id === id);
+  }
+
+  async getDbComparePolicy(): Promise<DbComparePolicy> {
+    return { ...this.dbComparePolicy };
+  }
+
+  async updateDbComparePolicy(policy: DbComparePolicy): Promise<DbComparePolicy> {
+    this.dbComparePolicy = { ...policy };
+    return { ...this.dbComparePolicy };
+  }
+
+  async createDbConnection(
+    connection: Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DbConnectionRecord> {
+    const now = new Date().toISOString();
+    const record: DbConnectionRecord = {
+      ...connection,
+      id: this.nextDbConnectionId++,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.dbConnections.push(record);
+    return record;
+  }
+
+  async updateDbConnection(
+    id: number,
+    updates: Partial<Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbConnectionRecord | undefined> {
+    const target = this.dbConnections.find((connection) => connection.id === id);
+    if (!target) {
+      return undefined;
+    }
+    Object.assign(target, updates, { updatedAt: new Date().toISOString() });
+    return target;
+  }
+
+  async deleteDbConnection(id: number): Promise<void> {
+    this.dbConnections = this.dbConnections.filter((connection) => connection.id !== id);
+    this.dbSchemaSnapshots = this.dbSchemaSnapshots.filter((snapshot) => snapshot.connectionId !== id);
+    this.dbSchemaScanEvents = this.dbSchemaScanEvents.filter((event) => event.connectionId !== id);
+    this.dbDeployJobs = this.dbDeployJobs.filter((job) => job.connectionId !== id);
+    const remainingJobIds = new Set(this.dbDeployJobs.map((job) => job.id));
+    this.dbDeployJobStatementResults = this.dbDeployJobStatementResults.filter((result) =>
+      remainingJobIds.has(result.jobId),
+    );
+  }
+
+  async listDbSchemaSnapshots(connectionId: number, databaseName?: string): Promise<DbSchemaSnapshot[]> {
+    return this.dbSchemaSnapshots.filter((snapshot) => {
+      if (snapshot.connectionId !== connectionId) {
+        return false;
+      }
+      if (databaseName && snapshot.databaseName !== databaseName) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async getLatestDbSchemaSnapshot(
+    connectionId: number,
+    databaseName: string,
+  ): Promise<DbSchemaSnapshot | undefined> {
+    return this.dbSchemaSnapshots
+      .filter((snapshot) => snapshot.connectionId === connectionId && snapshot.databaseName === databaseName)
+      .sort((left, right) => String(right.capturedAt ?? "").localeCompare(String(left.capturedAt ?? "")))[0];
+  }
+
+  async getDbSchemaSnapshotByHash(
+    connectionId: number,
+    databaseName: string,
+    snapshotHash: string,
+  ): Promise<DbSchemaSnapshot | undefined> {
+    return this.dbSchemaSnapshots.find(
+      (snapshot) =>
+        snapshot.connectionId === connectionId &&
+        snapshot.databaseName === databaseName &&
+        snapshot.snapshotHash === snapshotHash,
+    );
+  }
+
+  async createDbSchemaSnapshot(
+    snapshot: Omit<DbSchemaSnapshot, "id" | "capturedAt" | "updatedAt">,
+  ): Promise<DbSchemaSnapshot> {
+    const now = new Date().toISOString();
+    const record: DbSchemaSnapshot = {
+      ...snapshot,
+      id: this.nextDbSchemaSnapshotId++,
+      capturedAt: now,
+      updatedAt: now,
+    };
+    this.dbSchemaSnapshots.push(record);
+    return record;
+  }
+
+  async listDbSchemaScanEvents(connectionId: number, databaseName?: string): Promise<DbSchemaScanEvent[]> {
+    return this.dbSchemaScanEvents.filter((event) => {
+      if (event.connectionId !== connectionId) {
+        return false;
+      }
+      if (databaseName && event.databaseName !== databaseName) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async getDbSchemaScanEvent(id: number): Promise<DbSchemaScanEvent | undefined> {
+    return this.dbSchemaScanEvents.find((event) => event.id === id);
+  }
+
+  async createDbSchemaScanEvent(
+    event: Omit<DbSchemaScanEvent, "id" | "createdAt">,
+  ): Promise<DbSchemaScanEvent> {
+    const record: DbSchemaScanEvent = {
+      ...event,
+      id: this.nextDbSchemaScanEventId++,
+      createdAt: new Date().toISOString(),
+    };
+    this.dbSchemaScanEvents.push(record);
+    return record;
+  }
+
+  async listDbDeployJobs(connectionId: number, databaseName?: string): Promise<DbDeployJob[]> {
+    return this.dbDeployJobs.filter((job) => {
+      if (job.connectionId !== connectionId) {
+        return false;
+      }
+      if (databaseName && job.databaseName !== databaseName) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async getDbDeployJob(id: string): Promise<DbDeployJob | undefined> {
+    return this.dbDeployJobs.find((job) => job.id === id);
+  }
+
+  async createDbDeployJob(job: Omit<DbDeployJob, "createdAt" | "updatedAt">): Promise<DbDeployJob> {
+    const now = new Date().toISOString();
+    const record: DbDeployJob = {
+      ...job,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.dbDeployJobs.push(record);
+    return record;
+  }
+
+  async updateDbDeployJob(
+    id: string,
+    updates: Partial<Omit<DbDeployJob, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbDeployJob | undefined> {
+    const target = this.dbDeployJobs.find((job) => job.id === id);
+    if (!target) {
+      return undefined;
+    }
+    Object.assign(target, updates, { updatedAt: new Date().toISOString() });
+    return target;
+  }
+
+  async replaceDbDeployJobStatementResults(
+    jobId: string,
+    results: Omit<DbDeployJobStatementResult, "id" | "createdAt">[],
+  ): Promise<DbDeployJobStatementResult[]> {
+    this.dbDeployJobStatementResults = this.dbDeployJobStatementResults.filter((result) => result.jobId !== jobId);
+    const createdAt = new Date().toISOString();
+    const created = results.map((result) => ({
+      ...result,
+      id: this.nextDbDeployJobStatementResultId++,
+      createdAt,
+    }));
+    this.dbDeployJobStatementResults.push(...created);
+    return created;
+  }
+
+  async listDbDeployJobStatementResults(jobId: string): Promise<DbDeployJobStatementResult[]> {
+    return this.dbDeployJobStatementResults.filter((result) => result.jobId === jobId);
   }
 
   async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {
@@ -522,6 +974,14 @@ export class DatabaseStorage implements IStorage {
   private readonly db: AppDatabase;
   private readonly uploadedFiles = uploadedFilesTable;
   private readonly ddlSettings = ddlSettingsTable;
+  private readonly installedExtensions = installedExtensionsTable;
+  private readonly extensionLifecycleStates = extensionLifecycleStatesTable;
+  private readonly dbConnections = dbConnectionsTable;
+  private readonly dbComparePolicies = dbComparePoliciesTable;
+  private readonly dbSchemaSnapshots = dbSchemaSnapshotsTable;
+  private readonly dbSchemaScanEvents = dbSchemaScanEventsTable;
+  private readonly dbDeployJobs = dbDeployJobsTable;
+  private readonly dbDeployJobStatementResults = dbDeployJobStatementResultsTable;
   private readonly processingTasks = processingTasksTable;
   private readonly nameFixJobs = nameFixJobsTable;
   private readonly nameFixJobItems = nameFixJobItemsTable;
@@ -596,6 +1056,301 @@ export class DatabaseStorage implements IStorage {
     return {
       ...settings,
       pkMarkers: serializePkMarkers(settings.pkMarkers),
+    };
+  }
+
+  private mapInstalledExtensionRow(row: InstalledExtensionRow): InstalledExtensionRecord {
+    return {
+      id: row.id,
+      extensionId: toExtensionId(row.extensionId),
+      version: row.version,
+      enabled: row.enabled,
+      installPath: row.installPath,
+      manifestJson: row.manifestJson ?? undefined,
+      minAppVersion: row.minAppVersion ?? undefined,
+      hostApiVersion: row.hostApiVersion,
+      compatibilityStatus: toExtensionCompatibilityStatus(row.compatibilityStatus),
+      compatibilityMessage: row.compatibilityMessage ?? undefined,
+      installedAt: row.installedAt ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
+  private mapExtensionLifecycleStateRow(row: ExtensionLifecycleStateRow): ExtensionLifecycleState {
+    return {
+      id: row.id,
+      extensionId: toExtensionId(row.extensionId),
+      stage: toExtensionLifecycleStage(row.stage),
+      progressPercent: row.progressPercent ?? 0,
+      downloadedBytes: row.downloadedBytes ?? 0,
+      totalBytes: row.totalBytes ?? undefined,
+      availableVersion: row.availableVersion ?? undefined,
+      releaseTag: row.releaseTag ?? undefined,
+      assetName: row.assetName ?? undefined,
+      assetUrl: row.assetUrl ?? undefined,
+      downloadPath: row.downloadPath ?? undefined,
+      stagedPath: row.stagedPath ?? undefined,
+      activeVersion: row.activeVersion ?? undefined,
+      previousVersion: row.previousVersion ?? undefined,
+      catalogJson: row.catalogJson ?? undefined,
+      lastErrorCode: toExtensionLifecycleErrorCode(row.lastErrorCode),
+      lastErrorMessage: row.lastErrorMessage ?? undefined,
+      lastCheckedAt: row.lastCheckedAt ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
+  private toInstalledExtensionInsertRow(
+    extension: Omit<InstalledExtensionRecord, "id" | "installedAt" | "updatedAt">,
+  ): InstalledExtensionInsertRow {
+    return {
+      extensionId: extension.extensionId,
+      version: extension.version,
+      enabled: extension.enabled,
+      installPath: extension.installPath,
+      manifestJson: extension.manifestJson,
+      minAppVersion: extension.minAppVersion,
+      hostApiVersion: extension.hostApiVersion,
+      compatibilityStatus: extension.compatibilityStatus,
+      compatibilityMessage: extension.compatibilityMessage,
+    };
+  }
+
+  private toExtensionLifecycleStateInsertRow(
+    lifecycleState: Omit<ExtensionLifecycleState, "id" | "updatedAt">,
+  ): ExtensionLifecycleStateInsertRow {
+    return {
+      extensionId: lifecycleState.extensionId,
+      stage: lifecycleState.stage,
+      progressPercent: lifecycleState.progressPercent,
+      downloadedBytes: lifecycleState.downloadedBytes,
+      totalBytes: lifecycleState.totalBytes,
+      availableVersion: lifecycleState.availableVersion,
+      releaseTag: lifecycleState.releaseTag,
+      assetName: lifecycleState.assetName,
+      assetUrl: lifecycleState.assetUrl,
+      downloadPath: lifecycleState.downloadPath,
+      stagedPath: lifecycleState.stagedPath,
+      activeVersion: lifecycleState.activeVersion,
+      previousVersion: lifecycleState.previousVersion,
+      catalogJson: lifecycleState.catalogJson,
+      lastErrorCode: lifecycleState.lastErrorCode,
+      lastErrorMessage: lifecycleState.lastErrorMessage,
+      lastCheckedAt: lifecycleState.lastCheckedAt,
+    };
+  }
+
+  private mapDbConnectionRow(row: DbConnectionRow): DbConnectionRecord {
+    return {
+      id: row.id,
+      name: row.name,
+      dialect: row.dialect === "mysql" ? "mysql" : "mysql",
+      host: row.host,
+      port: row.port ?? 3306,
+      username: row.username,
+      encryptedPassword: row.encryptedPassword ?? undefined,
+      passwordStorage: row.passwordStorage === "electron-safe-storage" ? "electron-safe-storage" : "electron-safe-storage",
+      rememberPassword: Boolean(row.rememberPassword),
+      sslMode:
+        row.sslMode === "disable" || row.sslMode === "required"
+          ? row.sslMode
+          : "preferred",
+      lastSelectedDatabase: row.lastSelectedDatabase ?? undefined,
+      lastTestStatus: toDbConnectionTestStatus(row.lastTestStatus),
+      lastTestMessage: row.lastTestMessage ?? undefined,
+      lastTestedAt: row.lastTestedAt ?? undefined,
+      createdAt: row.createdAt ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
+  private toDbConnectionInsertRow(
+    connection: Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">,
+  ): DbConnectionInsertRow {
+    return {
+      name: connection.name,
+      dialect: connection.dialect,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      encryptedPassword: connection.encryptedPassword,
+      passwordStorage: connection.passwordStorage,
+      rememberPassword: connection.rememberPassword,
+      sslMode: connection.sslMode,
+      lastSelectedDatabase: connection.lastSelectedDatabase,
+      lastTestStatus: connection.lastTestStatus,
+      lastTestMessage: connection.lastTestMessage,
+      lastTestedAt: connection.lastTestedAt,
+    };
+  }
+
+  private mapDbComparePolicyRow(row: DbComparePolicyRow): DbComparePolicy {
+    return {
+      tableRenameAutoAcceptThreshold: row.tableRenameAutoAcceptThreshold == null
+        ? undefined
+        : confidenceFromStored(row.tableRenameAutoAcceptThreshold),
+      columnRenameAutoAcceptThreshold: row.columnRenameAutoAcceptThreshold == null
+        ? undefined
+        : confidenceFromStored(row.columnRenameAutoAcceptThreshold),
+    };
+  }
+
+  private toDbComparePolicyInput(policy: DbComparePolicy): DbComparePolicyInsertRow {
+    return {
+      tableRenameAutoAcceptThreshold:
+        policy.tableRenameAutoAcceptThreshold == null
+          ? null
+          : confidenceToStored(policy.tableRenameAutoAcceptThreshold),
+      columnRenameAutoAcceptThreshold:
+        policy.columnRenameAutoAcceptThreshold == null
+          ? null
+          : confidenceToStored(policy.columnRenameAutoAcceptThreshold),
+    };
+  }
+
+  private mapDbSchemaSnapshotRow(row: DbSchemaSnapshotRow): DbSchemaSnapshot {
+    return {
+      id: row.id,
+      connectionId: row.connectionId,
+      dialect: row.dialect === "mysql" ? "mysql" : "mysql",
+      databaseName: row.databaseName,
+      snapshotHash: row.snapshotHash,
+      tableCount: row.tableCount ?? 0,
+      schemaJson: row.schemaJson,
+      capturedAt: row.capturedAt ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
+  private toDbSchemaSnapshotInsertRow(
+    snapshot: Omit<DbSchemaSnapshot, "id" | "capturedAt" | "updatedAt">,
+  ): DbSchemaSnapshotInsertRow {
+    return {
+      connectionId: snapshot.connectionId,
+      dialect: snapshot.dialect,
+      databaseName: snapshot.databaseName,
+      snapshotHash: snapshot.snapshotHash,
+      tableCount: snapshot.tableCount,
+      schemaJson: snapshot.schemaJson,
+    };
+  }
+
+  private mapDbSchemaScanEventRow(row: DbSchemaScanEventRow): DbSchemaScanEvent {
+    return {
+      id: row.id,
+      connectionId: row.connectionId,
+      dialect: row.dialect === "mysql" ? "mysql" : "mysql",
+      databaseName: row.databaseName,
+      snapshotHash: row.snapshotHash,
+      eventType: row.eventType === "unchanged_scan" ? "unchanged_scan" : "new_snapshot",
+      previousSnapshotHash: row.previousSnapshotHash ?? undefined,
+      changeSummaryJson: row.changeSummaryJson ?? undefined,
+      createdAt: row.createdAt ?? undefined,
+    };
+  }
+
+  private toDbSchemaScanEventInsertRow(
+    event: Omit<DbSchemaScanEvent, "id" | "createdAt">,
+  ): DbSchemaScanEventInsertRow {
+    return {
+      connectionId: event.connectionId,
+      dialect: event.dialect,
+      databaseName: event.databaseName,
+      snapshotHash: event.snapshotHash,
+      eventType: event.eventType,
+      previousSnapshotHash: event.previousSnapshotHash,
+      changeSummaryJson: event.changeSummaryJson,
+    };
+  }
+
+  private mapDbDeployJobRow(row: DbDeployJobRow): DbDeployJob {
+    return {
+      id: row.id,
+      connectionId: row.connectionId,
+      dialect: row.dialect === "oracle" ? "oracle" : "mysql",
+      databaseName: row.databaseName,
+      compareHash: row.compareHash,
+      compareSource: parseHistoryCompareSource(row.compareSourceJson),
+      baselineSource: parseHistoryCompareSource(row.baselineSourceJson),
+      targetSnapshotHash: row.targetSnapshotHash,
+      selectedTables: parseJsonArray(row.selectedTablesJson),
+      summary: parseDeployJobSummary(row.summaryJson),
+      status:
+        row.status === "running" ||
+        row.status === "succeeded" ||
+        row.status === "failed" ||
+        row.status === "partial" ||
+        row.status === "blocked"
+          ? row.status
+          : "pending",
+      errorMessage: row.errorMessage ?? undefined,
+      createdAt: row.createdAt ?? undefined,
+      updatedAt: row.updatedAt ?? undefined,
+    };
+  }
+
+  private toDbDeployJobInsertRow(
+    job: Omit<DbDeployJob, "createdAt" | "updatedAt">,
+  ): DbDeployJobInsertRow {
+    return {
+      id: job.id,
+      connectionId: job.connectionId,
+      dialect: job.dialect,
+      databaseName: job.databaseName,
+      compareHash: job.compareHash,
+      compareSourceJson: JSON.stringify(job.compareSource),
+      baselineSourceJson: JSON.stringify(job.baselineSource),
+      targetSnapshotHash: job.targetSnapshotHash,
+      selectedTablesJson: JSON.stringify(job.selectedTables),
+      summaryJson: job.summary ? JSON.stringify(job.summary) : null,
+      status: job.status,
+      errorMessage: job.errorMessage ?? null,
+    };
+  }
+
+  private mapDbDeployJobStatementResultRow(
+    row: DbDeployJobStatementResultRow,
+  ): DbDeployJobStatementResult {
+    return {
+      id: row.id,
+      jobId: row.jobId,
+      statementId: row.statementId,
+      tableName: row.tableName ?? undefined,
+      statementKind: row.statementKind as DbDeployJobStatementResult["statementKind"],
+      relatedEntityKeys: parseJsonArray(row.relatedEntityKeysJson),
+      blockerCodes: parseJsonArray(row.blockerCodesJson) as DbDeployJobStatementResult["blockerCodes"],
+      blocked: row.blocked,
+      status:
+        row.status === "succeeded" ||
+        row.status === "failed" ||
+        row.status === "blocked" ||
+        row.status === "skipped"
+          ? row.status
+          : "pending",
+      sql: row.sql,
+      errorCode: row.errorCode ?? undefined,
+      errorMessage: row.errorMessage ?? undefined,
+      executedAt: row.executedAt ?? undefined,
+      createdAt: row.createdAt ?? undefined,
+    };
+  }
+
+  private toDbDeployJobStatementResultInsertRow(
+    result: Omit<DbDeployJobStatementResult, "id" | "createdAt">,
+  ): DbDeployJobStatementResultInsertRow {
+    return {
+      jobId: result.jobId,
+      statementId: result.statementId,
+      tableName: result.tableName ?? null,
+      statementKind: result.statementKind,
+      relatedEntityKeysJson: JSON.stringify(result.relatedEntityKeys),
+      blockerCodesJson: JSON.stringify(result.blockerCodes),
+      blocked: result.blocked,
+      status: result.status,
+      sql: result.sql,
+      errorCode: result.errorCode ?? null,
+      errorMessage: result.errorMessage ?? null,
+      executedAt: result.executedAt ?? null,
     };
   }
 
@@ -814,6 +1569,323 @@ export class DatabaseStorage implements IStorage {
       .where(eq(this.ddlSettings.id, existing.id))
       .returning();
     return this.mapDbSettings(updated);
+  }
+
+  async listInstalledExtensions(): Promise<InstalledExtensionRecord[]> {
+    const rows = await this.db.select().from(this.installedExtensions);
+    return rows.map((row: InstalledExtensionRow) => this.mapInstalledExtensionRow(row));
+  }
+
+  async getInstalledExtension(extensionId: ExtensionId): Promise<InstalledExtensionRecord | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.installedExtensions)
+      .where(eq(this.installedExtensions.extensionId, extensionId));
+    return row ? this.mapInstalledExtensionRow(row) : undefined;
+  }
+
+  async upsertInstalledExtension(
+    extension: Omit<InstalledExtensionRecord, "id" | "installedAt" | "updatedAt">,
+  ): Promise<InstalledExtensionRecord> {
+    const existing = await this.getInstalledExtension(extension.extensionId);
+    const payload = this.toInstalledExtensionInsertRow(extension);
+    if (!existing) {
+      const [created] = await this.db.insert(this.installedExtensions).values(payload).returning();
+      return this.mapInstalledExtensionRow(created);
+    }
+
+    const [updated] = await this.db
+      .update(this.installedExtensions)
+      .set({
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(this.installedExtensions.extensionId, extension.extensionId))
+      .returning();
+    return this.mapInstalledExtensionRow(updated);
+  }
+
+  async setInstalledExtensionEnabled(
+    extensionId: ExtensionId,
+    enabled: boolean,
+  ): Promise<InstalledExtensionRecord | undefined> {
+    const [updated] = await this.db
+      .update(this.installedExtensions)
+      .set({
+        enabled,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(this.installedExtensions.extensionId, extensionId))
+      .returning();
+    return updated ? this.mapInstalledExtensionRow(updated) : undefined;
+  }
+
+  async listExtensionLifecycleStates(): Promise<ExtensionLifecycleState[]> {
+    const rows = await this.db.select().from(this.extensionLifecycleStates);
+    return rows.map((row: ExtensionLifecycleStateRow) => this.mapExtensionLifecycleStateRow(row));
+  }
+
+  async getExtensionLifecycleState(extensionId: ExtensionId): Promise<ExtensionLifecycleState | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.extensionLifecycleStates)
+      .where(eq(this.extensionLifecycleStates.extensionId, extensionId));
+    return row ? this.mapExtensionLifecycleStateRow(row) : undefined;
+  }
+
+  async upsertExtensionLifecycleState(
+    lifecycleState: Omit<ExtensionLifecycleState, "id" | "updatedAt">,
+  ): Promise<ExtensionLifecycleState> {
+    const existing = await this.getExtensionLifecycleState(lifecycleState.extensionId);
+    const payload = this.toExtensionLifecycleStateInsertRow(lifecycleState);
+    if (!existing) {
+      const [created] = await this.db.insert(this.extensionLifecycleStates).values(payload).returning();
+      return this.mapExtensionLifecycleStateRow(created);
+    }
+
+    const [updated] = await this.db
+      .update(this.extensionLifecycleStates)
+      .set({
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(this.extensionLifecycleStates.extensionId, lifecycleState.extensionId))
+      .returning();
+    return this.mapExtensionLifecycleStateRow(updated);
+  }
+
+  async deleteExtensionLifecycleState(extensionId: ExtensionId): Promise<void> {
+    await this.db
+      .delete(this.extensionLifecycleStates)
+      .where(eq(this.extensionLifecycleStates.extensionId, extensionId));
+  }
+
+  async listDbConnections(): Promise<DbConnectionSummary[]> {
+    const rows = await this.db.select().from(this.dbConnections);
+    return rows.map((row: DbConnectionRow) => {
+      const { encryptedPassword, ...connection } = this.mapDbConnectionRow(row);
+      return {
+        ...connection,
+        passwordStored: Boolean(encryptedPassword),
+      };
+    });
+  }
+
+  async getDbConnection(id: number): Promise<DbConnectionRecord | undefined> {
+    const [row] = await this.db.select().from(this.dbConnections).where(eq(this.dbConnections.id, id));
+    return row ? this.mapDbConnectionRow(row) : undefined;
+  }
+
+  async getDbComparePolicy(): Promise<DbComparePolicy> {
+    const [row] = await this.db.select().from(this.dbComparePolicies).limit(1);
+    return row ? this.mapDbComparePolicyRow(row) : {};
+  }
+
+  async updateDbComparePolicy(policy: DbComparePolicy): Promise<DbComparePolicy> {
+    const [existing] = await this.db.select().from(this.dbComparePolicies).limit(1);
+    const payload = this.toDbComparePolicyInput(policy);
+    if (!existing) {
+      const [created] = await this.db.insert(this.dbComparePolicies).values(payload).returning();
+      return this.mapDbComparePolicyRow(created);
+    }
+
+    const [updated] = await this.db
+      .update(this.dbComparePolicies)
+      .set({
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(this.dbComparePolicies.id, existing.id))
+      .returning();
+    return this.mapDbComparePolicyRow(updated);
+  }
+
+  async createDbConnection(
+    connection: Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DbConnectionRecord> {
+    const [created] = await this.db
+      .insert(this.dbConnections)
+      .values(this.toDbConnectionInsertRow(connection))
+      .returning();
+    return this.mapDbConnectionRow(created);
+  }
+
+  async updateDbConnection(
+    id: number,
+    updates: Partial<Omit<DbConnectionRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbConnectionRecord | undefined> {
+    const [updated] = await this.db
+      .update(this.dbConnections)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(this.dbConnections.id, id))
+      .returning();
+    return updated ? this.mapDbConnectionRow(updated) : undefined;
+  }
+
+  async deleteDbConnection(id: number): Promise<void> {
+    await this.db.delete(this.dbConnections).where(eq(this.dbConnections.id, id));
+    await this.db.delete(this.dbSchemaSnapshots).where(eq(this.dbSchemaSnapshots.connectionId, id));
+    await this.db.delete(this.dbSchemaScanEvents).where(eq(this.dbSchemaScanEvents.connectionId, id));
+    const jobs = await this.db.select().from(this.dbDeployJobs).where(eq(this.dbDeployJobs.connectionId, id));
+    for (const job of jobs) {
+      await this.db
+        .delete(this.dbDeployJobStatementResults)
+        .where(eq(this.dbDeployJobStatementResults.jobId, job.id));
+    }
+    await this.db.delete(this.dbDeployJobs).where(eq(this.dbDeployJobs.connectionId, id));
+  }
+
+  async listDbSchemaSnapshots(connectionId: number, databaseName?: string): Promise<DbSchemaSnapshot[]> {
+    const predicate = databaseName
+      ? and(eq(this.dbSchemaSnapshots.connectionId, connectionId), eq(this.dbSchemaSnapshots.databaseName, databaseName))
+      : eq(this.dbSchemaSnapshots.connectionId, connectionId);
+    const rows = await this.db.select().from(this.dbSchemaSnapshots).where(predicate);
+    return rows.map((row: DbSchemaSnapshotRow) => this.mapDbSchemaSnapshotRow(row));
+  }
+
+  async getLatestDbSchemaSnapshot(
+    connectionId: number,
+    databaseName: string,
+  ): Promise<DbSchemaSnapshot | undefined> {
+    const rows = await this.db
+      .select()
+      .from(this.dbSchemaSnapshots)
+      .where(
+        and(
+          eq(this.dbSchemaSnapshots.connectionId, connectionId),
+          eq(this.dbSchemaSnapshots.databaseName, databaseName),
+        ),
+      );
+    const [latest] = rows
+      .sort((left, right) => String(right.capturedAt ?? "").localeCompare(String(left.capturedAt ?? "")));
+    return latest ? this.mapDbSchemaSnapshotRow(latest) : undefined;
+  }
+
+  async getDbSchemaSnapshotByHash(
+    connectionId: number,
+    databaseName: string,
+    snapshotHash: string,
+  ): Promise<DbSchemaSnapshot | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(this.dbSchemaSnapshots)
+      .where(
+        and(
+          eq(this.dbSchemaSnapshots.connectionId, connectionId),
+          eq(this.dbSchemaSnapshots.databaseName, databaseName),
+          eq(this.dbSchemaSnapshots.snapshotHash, snapshotHash),
+        ),
+      );
+    return row ? this.mapDbSchemaSnapshotRow(row) : undefined;
+  }
+
+  async createDbSchemaSnapshot(
+    snapshot: Omit<DbSchemaSnapshot, "id" | "capturedAt" | "updatedAt">,
+  ): Promise<DbSchemaSnapshot> {
+    const [created] = await this.db
+      .insert(this.dbSchemaSnapshots)
+      .values(this.toDbSchemaSnapshotInsertRow(snapshot))
+      .returning();
+    return this.mapDbSchemaSnapshotRow(created);
+  }
+
+  async listDbSchemaScanEvents(connectionId: number, databaseName?: string): Promise<DbSchemaScanEvent[]> {
+    const predicate = databaseName
+      ? and(eq(this.dbSchemaScanEvents.connectionId, connectionId), eq(this.dbSchemaScanEvents.databaseName, databaseName))
+      : eq(this.dbSchemaScanEvents.connectionId, connectionId);
+    const rows = await this.db.select().from(this.dbSchemaScanEvents).where(predicate);
+    return rows.map((row: DbSchemaScanEventRow) => this.mapDbSchemaScanEventRow(row));
+  }
+
+  async getDbSchemaScanEvent(id: number): Promise<DbSchemaScanEvent | undefined> {
+    const [row] = await this.db.select().from(this.dbSchemaScanEvents).where(eq(this.dbSchemaScanEvents.id, id));
+    return row ? this.mapDbSchemaScanEventRow(row) : undefined;
+  }
+
+  async createDbSchemaScanEvent(
+    event: Omit<DbSchemaScanEvent, "id" | "createdAt">,
+  ): Promise<DbSchemaScanEvent> {
+    const [created] = await this.db
+      .insert(this.dbSchemaScanEvents)
+      .values(this.toDbSchemaScanEventInsertRow(event))
+      .returning();
+    return this.mapDbSchemaScanEventRow(created);
+  }
+
+  async listDbDeployJobs(connectionId: number, databaseName?: string): Promise<DbDeployJob[]> {
+    const predicate = databaseName
+      ? and(eq(this.dbDeployJobs.connectionId, connectionId), eq(this.dbDeployJobs.databaseName, databaseName))
+      : eq(this.dbDeployJobs.connectionId, connectionId);
+    const rows = await this.db.select().from(this.dbDeployJobs).where(predicate);
+    return rows.map((row: DbDeployJobRow) => this.mapDbDeployJobRow(row));
+  }
+
+  async getDbDeployJob(id: string): Promise<DbDeployJob | undefined> {
+    const [row] = await this.db.select().from(this.dbDeployJobs).where(eq(this.dbDeployJobs.id, id));
+    return row ? this.mapDbDeployJobRow(row) : undefined;
+  }
+
+  async createDbDeployJob(job: Omit<DbDeployJob, "createdAt" | "updatedAt">): Promise<DbDeployJob> {
+    const [created] = await this.db
+      .insert(this.dbDeployJobs)
+      .values(this.toDbDeployJobInsertRow(job))
+      .returning();
+    return this.mapDbDeployJobRow(created);
+  }
+
+  async updateDbDeployJob(
+    id: string,
+    updates: Partial<Omit<DbDeployJob, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<DbDeployJob | undefined> {
+    const updateData: Partial<DbDeployJobInsertRow> & { updatedAt: string } = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (updates.connectionId !== undefined) updateData.connectionId = updates.connectionId;
+    if (updates.dialect !== undefined) updateData.dialect = updates.dialect;
+    if (updates.databaseName !== undefined) updateData.databaseName = updates.databaseName;
+    if (updates.compareHash !== undefined) updateData.compareHash = updates.compareHash;
+    if (updates.compareSource !== undefined) updateData.compareSourceJson = JSON.stringify(updates.compareSource);
+    if (updates.baselineSource !== undefined) updateData.baselineSourceJson = JSON.stringify(updates.baselineSource);
+    if (updates.targetSnapshotHash !== undefined) updateData.targetSnapshotHash = updates.targetSnapshotHash;
+    if (updates.selectedTables !== undefined) updateData.selectedTablesJson = JSON.stringify(updates.selectedTables);
+    if (updates.summary !== undefined) updateData.summaryJson = JSON.stringify(updates.summary);
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.errorMessage !== undefined) updateData.errorMessage = updates.errorMessage ?? null;
+
+    const [updated] = await this.db
+      .update(this.dbDeployJobs)
+      .set(updateData)
+      .where(eq(this.dbDeployJobs.id, id))
+      .returning();
+    return updated ? this.mapDbDeployJobRow(updated) : undefined;
+  }
+
+  async replaceDbDeployJobStatementResults(
+    jobId: string,
+    results: Omit<DbDeployJobStatementResult, "id" | "createdAt">[],
+  ): Promise<DbDeployJobStatementResult[]> {
+    await this.db
+      .delete(this.dbDeployJobStatementResults)
+      .where(eq(this.dbDeployJobStatementResults.jobId, jobId));
+    if (!results.length) {
+      return [];
+    }
+    const rows = await this.db
+      .insert(this.dbDeployJobStatementResults)
+      .values(results.map((result) => this.toDbDeployJobStatementResultInsertRow(result)))
+      .returning();
+    return rows.map((row: DbDeployJobStatementResultRow) => this.mapDbDeployJobStatementResultRow(row));
+  }
+
+  async listDbDeployJobStatementResults(jobId: string): Promise<DbDeployJobStatementResult[]> {
+    const rows = await this.db
+      .select()
+      .from(this.dbDeployJobStatementResults)
+      .where(eq(this.dbDeployJobStatementResults.jobId, jobId));
+    return rows.map((row: DbDeployJobStatementResultRow) => this.mapDbDeployJobStatementResultRow(row));
   }
 
   async createTask(task: Omit<ProcessingTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingTask> {

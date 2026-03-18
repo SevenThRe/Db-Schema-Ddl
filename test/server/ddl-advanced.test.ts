@@ -201,7 +201,8 @@ test("collectDdlGenerationWarnings reports dialect unsupported, fallback names, 
     ],
   });
 
-  assert.equal(mysqlWarnings.length, 2);
+  assert.equal(mysqlWarnings.length, 3);
   assert.equal(mysqlWarnings[0].reason, "not_primary_key");
   assert.equal(mysqlWarnings[1].reason, "non_numeric_type");
+  assert.equal(mysqlWarnings[2].reason, "pk_order_incompatible");
 });

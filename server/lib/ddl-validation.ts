@@ -204,145 +204,204 @@ function validateIdentifiers(table: TableInfo, issues: DdlValidationIssue[]): vo
   });
 }
 
-function validateDataType(table: TableInfo, issues: DdlValidationIssue[]): void {
-  table.columns.forEach((column) => {
-    const columnName = normalizeToken(column.physicalName) || "(empty)";
-    const rawDataType = normalizeToken(column.dataType);
-    const rawSize = normalizeToken(column.size);
+interface ColumnValidationContext {
+  tableName: string;
+  columnName: string;
+  rawDataType: string;
+  rawSize: string;
+}
 
-    if (isEmpty(rawDataType)) {
-      appendIssue(issues, {
-        issueCode: "MISSING_DATA_TYPE",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "dataType",
-        message: "Column data type is required.",
-        suggestion: "Specify a supported SQL data type.",
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-        },
-      });
-      return;
-    }
+function createColumnValidationContext(
+  table: TableInfo,
+  column: TableInfo["columns"][number],
+): ColumnValidationContext {
+  return {
+    tableName: table.physicalTableName || "(empty)",
+    columnName: normalizeToken(column.physicalName) || "(empty)",
+    rawDataType: normalizeToken(column.dataType),
+    rawSize: normalizeToken(column.size),
+  };
+}
 
-    const parsed = parseDataTypeSpec(rawDataType);
-    if (!parsed) {
-      appendIssue(issues, {
-        issueCode: "UNSUPPORTED_DATA_TYPE",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "dataType",
-        value: rawDataType,
-        message: `Unsupported data type "${rawDataType}".`,
-        suggestion: "Use one of the supported data types in the DDL generator.",
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          dataType: rawDataType,
-        },
-      });
-      return;
-    }
+function buildColumnIssueParams(
+  context: ColumnValidationContext,
+  extra: Record<string, string | number> = {},
+): Record<string, string | number> {
+  return {
+    tableName: context.tableName,
+    columnName: context.columnName,
+    ...extra,
+  };
+}
 
-    if (!SUPPORTED_DATA_TYPES.has(parsed.baseType)) {
-      appendIssue(issues, {
-        issueCode: "UNSUPPORTED_DATA_TYPE",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "dataType",
-        value: rawDataType,
-        message: `Unsupported data type "${rawDataType}".`,
-        suggestion: "Use one of the supported data types in the DDL generator.",
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          dataType: rawDataType,
-        },
-      });
-      return;
-    }
-
-    if (rawSize !== "" && parsed.inlineSize !== "" && rawSize !== parsed.inlineSize) {
-      appendIssue(issues, {
-        issueCode: "CONFLICTING_SIZE_DEFINITIONS",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "size",
-        value: `${rawDataType} + size=${rawSize}`,
-        message: `Conflicting size definitions found in dataType "${rawDataType}" and size "${rawSize}".`,
-        suggestion: "Keep size in one place, or make both values equal.",
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          dataType: rawDataType,
-          size: rawSize,
-        },
-      });
-      return;
-    }
-
-    const effectiveSize = rawSize || parsed.inlineSize;
-    if (effectiveSize === "") {
-      return;
-    }
-
-    if (!NUMERIC_SIZE_PATTERN.test(effectiveSize)) {
-      appendIssue(issues, {
-        issueCode: "INVALID_SIZE_FORMAT",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "size",
-        value: effectiveSize,
-        message: `Invalid size format "${effectiveSize}".`,
-        suggestion: 'Use integer ("10") or numeric pair ("10,2").',
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          size: effectiveSize,
-        },
-      });
-      return;
-    }
-
-    const sizeRule = SIZE_RULES[parsed.baseType];
-    if (sizeRule === "none") {
-      appendIssue(issues, {
-        issueCode: "TYPE_MUST_NOT_INCLUDE_SIZE",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "size",
-        value: effectiveSize,
-        message: `Type "${rawDataType}" must not include size.`,
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          dataType: rawDataType,
-          size: effectiveSize,
-        },
-      });
-      return;
-    }
-
-    if (sizeRule === "integer" && !INTEGER_SIZE_PATTERN.test(effectiveSize)) {
-      appendIssue(issues, {
-        issueCode: "TYPE_ONLY_ACCEPTS_INTEGER_SIZE",
-        tableName: table.physicalTableName || "(empty)",
-        columnName,
-        field: "size",
-        value: effectiveSize,
-        message: `Type "${rawDataType}" only accepts integer size.`,
-        params: {
-          tableName: table.physicalTableName || "(empty)",
-          columnName,
-          dataType: rawDataType,
-          size: effectiveSize,
-        },
-      });
-    }
+function appendColumnIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+  issue: Omit<DdlValidationIssue, "tableName" | "columnName" | "params"> & {
+    params?: Record<string, string | number>;
+  },
+): void {
+  appendIssue(issues, {
+    ...issue,
+    tableName: context.tableName,
+    columnName: context.columnName,
+    params: issue.params,
   });
 }
 
+function appendMissingDataTypeIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "MISSING_DATA_TYPE",
+    field: "dataType",
+    message: "Column data type is required.",
+    suggestion: "Specify a supported SQL data type.",
+    params: buildColumnIssueParams(context),
+  });
+}
+
+function appendUnsupportedDataTypeIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "UNSUPPORTED_DATA_TYPE",
+    field: "dataType",
+    value: context.rawDataType,
+    message: `Unsupported data type "${context.rawDataType}".`,
+    suggestion: "Use one of the supported data types in the DDL generator.",
+    params: buildColumnIssueParams(context, {
+      dataType: context.rawDataType,
+    }),
+  });
+}
+
+function appendConflictingSizeDefinitionsIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "CONFLICTING_SIZE_DEFINITIONS",
+    field: "size",
+    value: `${context.rawDataType} + size=${context.rawSize}`,
+    message: `Conflicting size definitions found in dataType "${context.rawDataType}" and size "${context.rawSize}".`,
+    suggestion: "Keep size in one place, or make both values equal.",
+    params: buildColumnIssueParams(context, {
+      dataType: context.rawDataType,
+      size: context.rawSize,
+    }),
+  });
+}
+
+function appendInvalidSizeFormatIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+  effectiveSize: string,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "INVALID_SIZE_FORMAT",
+    field: "size",
+    value: effectiveSize,
+    message: `Invalid size format "${effectiveSize}".`,
+    suggestion: 'Use integer ("10") or numeric pair ("10,2").',
+    params: buildColumnIssueParams(context, {
+      size: effectiveSize,
+    }),
+  });
+}
+
+function appendTypeMustNotIncludeSizeIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+  effectiveSize: string,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "TYPE_MUST_NOT_INCLUDE_SIZE",
+    field: "size",
+    value: effectiveSize,
+    message: `Type "${context.rawDataType}" must not include size.`,
+    params: buildColumnIssueParams(context, {
+      dataType: context.rawDataType,
+      size: effectiveSize,
+    }),
+  });
+}
+
+function appendTypeOnlyAcceptsIntegerSizeIssue(
+  issues: DdlValidationIssue[],
+  context: ColumnValidationContext,
+  effectiveSize: string,
+): void {
+  appendColumnIssue(issues, context, {
+    issueCode: "TYPE_ONLY_ACCEPTS_INTEGER_SIZE",
+    field: "size",
+    value: effectiveSize,
+    message: `Type "${context.rawDataType}" only accepts integer size.`,
+    params: buildColumnIssueParams(context, {
+      dataType: context.rawDataType,
+      size: effectiveSize,
+    }),
+  });
+}
+
+function validateSizeRules(
+  parsed: ParsedDataTypeSpec,
+  context: ColumnValidationContext,
+  issues: DdlValidationIssue[],
+): void {
+  if (context.rawSize !== "" && parsed.inlineSize !== "" && context.rawSize !== parsed.inlineSize) {
+    appendConflictingSizeDefinitionsIssue(issues, context);
+    return;
+  }
+
+  const effectiveSize = context.rawSize || parsed.inlineSize;
+  if (effectiveSize === "") {
+    return;
+  }
+
+  if (!NUMERIC_SIZE_PATTERN.test(effectiveSize)) {
+    appendInvalidSizeFormatIssue(issues, context, effectiveSize);
+    return;
+  }
+
+  const sizeRule = SIZE_RULES[parsed.baseType];
+  if (sizeRule === "none") {
+    appendTypeMustNotIncludeSizeIssue(issues, context, effectiveSize);
+    return;
+  }
+
+  if (sizeRule === "integer" && !INTEGER_SIZE_PATTERN.test(effectiveSize)) {
+    appendTypeOnlyAcceptsIntegerSizeIssue(issues, context, effectiveSize);
+  }
+}
+
+function validateColumnDataType(
+  table: TableInfo,
+  column: TableInfo["columns"][number],
+  issues: DdlValidationIssue[],
+): void {
+  const context = createColumnValidationContext(table, column);
+  if (isEmpty(context.rawDataType)) {
+    appendMissingDataTypeIssue(issues, context);
+    return;
+  }
+
+  const parsed = parseDataTypeSpec(context.rawDataType);
+  if (!parsed || !SUPPORTED_DATA_TYPES.has(parsed.baseType)) {
+    appendUnsupportedDataTypeIssue(issues, context);
+    return;
+  }
+
+  validateSizeRules(parsed, context, issues);
+}
+
+function validateDataType(table: TableInfo, issues: DdlValidationIssue[]): void {
+  table.columns.forEach((column) => {
+    validateColumnDataType(table, column, issues);
+  });
+}
 function buildValidationMessage(issues: DdlValidationIssue[]): string {
   if (issues.length === 0) {
     return "DDL validation failed.";

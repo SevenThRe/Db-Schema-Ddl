@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { SheetSelector } from "@/components/SheetSelector";
 import { TablePreview } from "@/components/TablePreview";
@@ -6,22 +6,39 @@ import { DdlGenerator } from "@/components/DdlGenerator";
 import { SpreadsheetViewer } from "@/components/SpreadsheetViewer";
 import { SearchDialog } from "@/components/SearchDialog";
 import { SchemaDiffPanel } from "@/components/SchemaDiffPanel";
+import { DbManagementWorkspace } from "@/components/db-management/DbManagementWorkspace";
+import { ExtensionInstallDialog } from "@/components/extensions/ExtensionInstallDialog";
+import { ExtensionStatusDialog } from "@/components/extensions/ExtensionStatusDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useFiles, useSheets } from "@/hooks/use-ddl";
+import {
+  useDisableExtension,
+  useExtension,
+  useEnableExtension,
+  useRefreshExtensionCatalog,
+  useStartExtensionInstall,
+} from "@/hooks/use-extensions";
 import { useToast } from "@/hooks/use-toast";
-import type { TableInfo } from "@shared/schema";
+import { DB_MANAGEMENT_EXTENSION_ID, type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
+const LAST_SELECTED_FILE_STORAGE_KEY = "dashboard:lastSelectedFile";
 const PREVIEW_ACTION_BUTTON_CLASS =
   "h-6 px-2.5 gap-1.5 text-[11px] shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none backdrop-blur-[2px] hover:bg-accent/55";
 
 type StoredSheetSelections = Record<string, string>;
+interface StoredFileSelection {
+  fileId?: number;
+  fileHash?: string;
+  originalName?: string;
+}
 
 function readStoredSheetSelections(): StoredSheetSelections {
   if (typeof window === "undefined") {
@@ -51,6 +68,46 @@ function readStoredSheetSelections(): StoredSheetSelections {
   }
 }
 
+function readStoredFileSelection(): StoredFileSelection | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LAST_SELECTED_FILE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const normalized: StoredFileSelection = {};
+    if (typeof (parsed as { fileId?: unknown }).fileId === "number") {
+      normalized.fileId = (parsed as { fileId: number }).fileId;
+    }
+    if (typeof (parsed as { fileHash?: unknown }).fileHash === "string") {
+      normalized.fileHash = (parsed as { fileHash: string }).fileHash;
+    }
+    if (typeof (parsed as { originalName?: unknown }).originalName === "string") {
+      normalized.originalName = (parsed as { originalName: string }).originalName;
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSheetStorageKey(file: { id: number; fileHash?: string | null }): string {
+  const fileHash = String(file.fileHash ?? "").trim();
+  if (fileHash) {
+    return `hash:${fileHash}`;
+  }
+  return `id:${file.id}`;
+}
+
 function getSheetName(sheet: unknown): string | null {
   if (typeof sheet === "string" && sheet.trim()) {
     return sheet;
@@ -67,8 +124,14 @@ function getSheetName(sheet: unknown): string | null {
 }
 
 export default function Dashboard() {
-  const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
+  const [initialFileSelection] = useState<StoredFileSelection | null>(() => readStoredFileSelection());
+  const initialFileSelectionRef = useRef<StoredFileSelection | null>(initialFileSelection);
+  const [selectedFileId, setSelectedFileId] = useState<number | null>(() => {
+    const fileId = initialFileSelectionRef.current?.fileId;
+    return typeof fileId === "number" ? fileId : null;
+  });
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const [activeModule, setActiveModule] = useState<"workspace" | "db-management">("workspace");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
@@ -82,12 +145,21 @@ export default function Dashboard() {
   } | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const [sheetSelectorOpen, setSheetSelectorOpen] = useState(false);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [isInstallFlowPending, setIsInstallFlowPending] = useState(false);
+  const [isActivationPending, setIsActivationPending] = useState(false);
   const [lastSelectedSheetByFile, setLastSelectedSheetByFile] = useState<StoredSheetSelections>(() =>
     readStoredSheetSelections(),
   );
 
   const { data: files } = useFiles();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
+  const { data: dbManagementExtension } = useExtension(DB_MANAGEMENT_EXTENSION_ID);
+  const { mutateAsync: enableExtension, isPending: isEnableMutationPending } = useEnableExtension();
+  const { mutateAsync: disableExtension, isPending: isDisableMutationPending } = useDisableExtension();
+  const { mutateAsync: refreshExtensionCatalog, isPending: isRefreshCatalogPending } = useRefreshExtensionCatalog();
+  const { mutateAsync: startExtensionInstall, isPending: isStartInstallPending } = useStartExtensionInstall();
   const { t } = useTranslation();
   const { toast } = useToast();
   const [appVersion, setAppVersion] = useState<string>("");
@@ -98,10 +170,17 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!selectedFileId && files && files.length > 0) {
-      const sample = files.find(f => f.originalName.includes("ISI"));
-      setSelectedFileId(sample ? sample.id : files[0].id);
+    if (selectedFileId != null || !files || files.length === 0) {
+      return;
     }
+
+    const stored = initialFileSelectionRef.current;
+    const restoredFile =
+      (stored?.fileId != null ? files.find((file) => file.id === stored.fileId) : undefined) ??
+      (stored?.fileHash ? files.find((file) => file.fileHash === stored.fileHash) : undefined) ??
+      (stored?.originalName ? files.find((file) => file.originalName === stored.originalName) : undefined);
+    const sample = files.find((file) => file.originalName.includes("ISI"));
+    setSelectedFileId((restoredFile ?? sample ?? files[0]).id);
   }, [files, selectedFileId]);
 
   useEffect(() => {
@@ -115,6 +194,37 @@ export default function Dashboard() {
   }, [files, selectedFileId]);
 
   useEffect(() => {
+    if (selectedFileId == null || !files) {
+      return;
+    }
+
+    const selectedFile = files.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return;
+    }
+
+    const nextStoredSelection: StoredFileSelection = {
+      fileId: selectedFile.id,
+      fileHash: selectedFile.fileHash,
+      originalName: selectedFile.originalName,
+    };
+    initialFileSelectionRef.current = nextStoredSelection;
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        LAST_SELECTED_FILE_STORAGE_KEY,
+        JSON.stringify(nextStoredSelection),
+      );
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [files, selectedFileId]);
+
+  useEffect(() => {
     setSelectedSheet(null);
     setRegionTables(null);
     setCurrentTable(null);
@@ -124,11 +234,23 @@ export default function Dashboard() {
   }, [selectedFileId]);
 
   useEffect(() => {
-    if (!selectedFileId || selectedSheet || !sheets || sheets.length === 0) {
+    if (!selectedFileId || selectedSheet || !sheets || sheets.length === 0 || !files) {
       return;
     }
 
-    const rememberedSheetName = lastSelectedSheetByFile[String(selectedFileId)];
+    const selectedFile = files.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return;
+    }
+
+    const sheetStorageKeys = [
+      buildSheetStorageKey(selectedFile),
+      `id:${selectedFileId}`,
+      String(selectedFileId),
+    ];
+    const rememberedSheetName = sheetStorageKeys
+      .map((key) => lastSelectedSheetByFile[key])
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
     const rememberedSheet = rememberedSheetName
       ? sheets.find((sheet: unknown) => getSheetName(sheet) === rememberedSheetName)
       : null;
@@ -147,18 +269,31 @@ export default function Dashboard() {
     if (preferredSheetName) {
       setSelectedSheet(preferredSheetName);
     }
-  }, [selectedFileId, selectedSheet, sheets, lastSelectedSheetByFile]);
+  }, [files, selectedFileId, selectedSheet, sheets, lastSelectedSheetByFile]);
 
   useEffect(() => {
-    if (!selectedFileId || !selectedSheet) {
+    if (!selectedFileId || !selectedSheet || !files) {
       return;
     }
 
-    const fileKey = String(selectedFileId);
+    const selectedFile = files.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return;
+    }
+
+    const primaryKey = buildSheetStorageKey(selectedFile);
+    const legacyKeys = [`id:${selectedFileId}`, String(selectedFileId)];
     setLastSelectedSheetByFile((previous) =>
-      previous[fileKey] === selectedSheet ? previous : { ...previous, [fileKey]: selectedSheet },
+      [primaryKey, ...legacyKeys].every((key) => previous[key] === selectedSheet)
+        ? previous
+        : {
+            ...previous,
+            [primaryKey]: selectedSheet,
+            [legacyKeys[0]]: selectedSheet,
+            [legacyKeys[1]]: selectedSheet,
+          },
     );
-  }, [selectedFileId, selectedSheet]);
+  }, [files, selectedFileId, selectedSheet]);
 
   useEffect(() => {
     if (!files || files.length === 0) {
@@ -168,9 +303,14 @@ export default function Dashboard() {
       return;
     }
 
-    const validFileIdSet = new Set(files.map((file) => String(file.id)));
+    const validFileKeySet = new Set<string>();
+    files.forEach((file) => {
+      validFileKeySet.add(buildSheetStorageKey(file));
+      validFileKeySet.add(`id:${file.id}`);
+      validFileKeySet.add(String(file.id));
+    });
     setLastSelectedSheetByFile((previous) => {
-      const nextEntries = Object.entries(previous).filter(([fileKey]) => validFileIdSet.has(fileKey));
+      const nextEntries = Object.entries(previous).filter(([fileKey]) => validFileKeySet.has(fileKey));
       if (nextEntries.length === Object.keys(previous).length) {
         return previous;
       }
@@ -235,6 +375,15 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeModule !== "db-management") {
+      return;
+    }
+    if (dbManagementExtension?.status !== "enabled") {
+      setActiveModule("workspace");
+    }
+  }, [activeModule, dbManagementExtension]);
+
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
   }, []);
@@ -298,8 +447,10 @@ export default function Dashboard() {
   }, []);
 
   // In spreadsheet mode with region selected, use regionTables for DDL generation
+  const selectedFile = files?.find((file) => file.id === selectedFileId) ?? null;
+  const selectedFileMemoryKey = selectedFile ? buildSheetStorageKey(selectedFile) : null;
   const activeTables = viewMode === "spreadsheet" && regionTables ? regionTables : null;
-  const selectedFileName = files?.find((file) => file.id === selectedFileId)?.originalName ?? null;
+  const selectedFileName = selectedFile?.originalName ?? null;
   const isResolvingDefaultSheet =
     Boolean(selectedFileId) &&
     !selectedSheet &&
@@ -347,6 +498,107 @@ export default function Dashboard() {
       setIsCheckingUpdates(false);
     }
   }, [isCheckingUpdates, t, toast]);
+
+  const openOfficialExtensionFlow = useCallback(async () => {
+    setIsInstallFlowPending(true);
+    try {
+      await startExtensionInstall(DB_MANAGEMENT_EXTENSION_ID);
+      toast({
+        title: "官方扩展",
+        description: "官方扩展下载已开始，安装进度会显示在当前面板中。",
+      });
+    } catch (error) {
+      toast({
+        title: "官方扩展",
+        description: error instanceof Error ? error.message : "无法开始下载官方扩展。",
+        variant: "destructive",
+      });
+    } finally {
+      setIsInstallFlowPending(false);
+    }
+  }, [startExtensionInstall, toast]);
+
+  const refreshOfficialExtensionCatalog = useCallback(async () => {
+    try {
+      await refreshExtensionCatalog(DB_MANAGEMENT_EXTENSION_ID);
+    } catch (error) {
+      toast({
+        title: "DB 管理",
+        description: error instanceof Error ? error.message : "检查扩展更新失败。",
+        variant: "destructive",
+      });
+    }
+  }, [refreshExtensionCatalog, toast]);
+
+  const triggerExtensionActivation = useCallback(async () => {
+    if (!window.electronAPI?.extensions?.activate) {
+      toast({
+        title: "DB 管理",
+        description: "当前环境暂不支持自动启用扩展，请稍后重启应用。",
+      });
+      return;
+    }
+
+    setIsActivationPending(true);
+    try {
+      await window.electronAPI.extensions.activate(DB_MANAGEMENT_EXTENSION_ID);
+    } catch (error) {
+      setIsActivationPending(false);
+      throw error;
+    }
+  }, [toast]);
+
+  const handleDbManagementEntryClick = useCallback(() => {
+    void refreshOfficialExtensionCatalog();
+
+    const extension = dbManagementExtension;
+    if (!extension || extension.status === "not_installed") {
+      setInstallDialogOpen(true);
+      return;
+    }
+
+    if (
+      extension.status === "disabled" ||
+      extension.status === "incompatible" ||
+      extension.updateAvailable ||
+      extension.lifecycle?.stage === "failed"
+    ) {
+      setStatusDialogOpen(true);
+      return;
+    }
+
+    setActiveModule("db-management");
+  }, [dbManagementExtension, refreshOfficialExtensionCatalog]);
+
+  const handleEnableAndActivateExtension = useCallback(async () => {
+    try {
+      await enableExtension(DB_MANAGEMENT_EXTENSION_ID);
+      await triggerExtensionActivation();
+    } catch (error) {
+      toast({
+        title: "DB 管理",
+        description: error instanceof Error ? error.message : "启用扩展失败。",
+        variant: "destructive",
+      });
+    }
+  }, [enableExtension, toast, triggerExtensionActivation]);
+
+  const handleDisableExtension = useCallback(async () => {
+    try {
+      await disableExtension(DB_MANAGEMENT_EXTENSION_ID);
+      setActiveModule("workspace");
+      toast({
+        title: "DB 管理",
+        description: "扩展已禁用。",
+      });
+    } catch (error) {
+      toast({
+        title: "DB 管理",
+        description: error instanceof Error ? error.message : "禁用扩展失败。",
+        variant: "destructive",
+      });
+    }
+  }, [disableExtension, toast]);
 
   const renderPreviewPane = (showSheetTrigger: boolean) => (
     <div className="flex flex-col h-full min-w-0">
@@ -415,6 +667,7 @@ export default function Dashboard() {
             <TablePreview
               fileId={selectedFileId}
               sheetName={selectedSheet}
+              selectionMemoryKey={selectedFileMemoryKey}
               onTablesLoaded={handleTablesLoaded}
               jumpToPhysicalTableName={
                 tableJumpRequest && selectedSheet === tableJumpRequest.sheetName
@@ -436,6 +689,15 @@ export default function Dashboard() {
         )}
       </div>
     </div>
+  );
+
+  const renderDbManagementWorkspace = () => (
+    <DbManagementWorkspace
+      onBack={() => setActiveModule("workspace")}
+      selectedFileId={selectedFileId}
+      selectedFileName={selectedFileName}
+      selectedSheet={selectedSheet}
+    />
   );
 
   return (
@@ -475,13 +737,18 @@ export default function Dashboard() {
         <Sidebar
           selectedFileId={selectedFileId}
           onSelectFile={setSelectedFileId}
+          dbManagementState={dbManagementExtension ?? null}
+          dbManagementSelected={activeModule === "db-management"}
+          onSelectDbManagement={handleDbManagementEntryClick}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           className="border-r border-border/70 overflow-hidden"
         />
 
         <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
-          {isCompactLayout ? (
+          {activeModule === "db-management" && dbManagementExtension?.status === "enabled" ? (
+            renderDbManagementWorkspace()
+          ) : isCompactLayout ? (
             <>
               <ResizablePanelGroup direction="horizontal" className="flex-1">
                 <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={65} minSize={45}>
@@ -556,6 +823,43 @@ export default function Dashboard() {
         fileId={selectedFileId}
         onSelectSheet={handleSelectSheet}
         onSelectTable={handleSelectTable}
+      />
+
+      <ExtensionInstallDialog
+        open={installDialogOpen}
+        onOpenChange={setInstallDialogOpen}
+        extension={dbManagementExtension ?? null}
+        isPending={isInstallFlowPending || isStartInstallPending || isActivationPending || isRefreshCatalogPending}
+        onInstall={openOfficialExtensionFlow}
+        onActivate={triggerExtensionActivation}
+        onRefreshCatalog={refreshOfficialExtensionCatalog}
+      />
+
+      <ExtensionStatusDialog
+        open={statusDialogOpen}
+        onOpenChange={setStatusDialogOpen}
+        extension={dbManagementExtension ?? null}
+        isPending={
+          isEnableMutationPending ||
+          isInstallFlowPending ||
+          isActivationPending ||
+          isRefreshCatalogPending ||
+          isStartInstallPending
+        }
+        primaryActionLabel={
+          dbManagementExtension?.updateAvailable || dbManagementExtension?.status === "incompatible"
+            ? "更新扩展"
+            : dbManagementExtension?.lifecycle?.stage === "failed"
+              ? "重新安装"
+              : "启用并重启"
+        }
+        onPrimaryAction={
+          dbManagementExtension?.updateAvailable ||
+          dbManagementExtension?.status === "incompatible" ||
+          dbManagementExtension?.lifecycle?.stage === "failed"
+            ? openOfficialExtensionFlow
+            : handleEnableAndActivateExtension
+        }
       />
     </div>
   );

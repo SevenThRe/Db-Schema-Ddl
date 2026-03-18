@@ -89,6 +89,33 @@ test("parseWorkbookBundle marks autoIncrement from comment/remarks text", async 
   });
 });
 
+test("parseWorkbookBundle treats bigint(ai) style data types as auto increment markers", async () => {
+  await withTempFile("auto-increment-datatype.xlsx", async (filePath) => {
+    const rows: Array<Array<string | number>> = [
+      [LABEL_TABLE_INFO],
+      [LABEL_LOGICAL_TABLE, "Processing Conditions"],
+      [LABEL_PHYSICAL_TABLE, "processing_conditions"],
+      [],
+      ["No", LABEL_LOGICAL, LABEL_PHYSICAL, LABEL_DATA_TYPE, "PK"],
+      [1, "Condition Id", "conditionid", "bigint(ai)", "〇"],
+      [2, "Condition Name", "condition_name", "varchar", ""],
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+    XLSX.writeFile(workbook, filePath);
+
+    const bundle = parseWorkbookBundle(filePath);
+    const table = bundle.tablesBySheet.Sheet1?.[0];
+    assert.ok(table, "expected one parsed table");
+    assert.equal(table.columns[0].dataType, "bigint");
+    assert.equal(table.columns[0].size, undefined);
+    assert.equal(table.columns[0].autoIncrement, true);
+    assert.equal(table.columns[0].isPk, true);
+  });
+});
+
 test("parseWorkbookBundle resolves table names when logical/physical labels are adjacent on same row", async () => {
   await withTempFile("adjacent-table-name-labels.xlsx", async (filePath) => {
     const rows: Array<Array<string | number>> = [

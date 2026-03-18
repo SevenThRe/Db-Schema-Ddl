@@ -1,0 +1,17 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[mcp_servers.ddl-generator]
+command = "cmd"
+args = ["/c", "npx", "-y", "tsx", "mcp/index.ts"]
+cwd = ".."
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+enabled_tools = [
+  "inspect_excel_file",
+  "parse_excel_to_ddl",
+  "query_comment_references",
+]
+
+[[skills.config]]
+path = "skills/db-schema-ddl-mcp"
+enabled = true

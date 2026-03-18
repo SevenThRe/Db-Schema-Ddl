@@ -12,6 +12,7 @@ unlisted: true
 - [快速开始](./quick-start.md)
 - [第一次导入 Excel](./first-import.md)
 - [从预览到 DDL 生成](./preview-to-ddl.md)
+- [Schema Diff 差分工作流](./schema-diff-workflow.md)
 - [Name Fix 命名修复组件](./name-fix-component.md)
 - [设置面板](./settings-panel.md)
 - [MCP 自动化接口](./mcp-integration.md)

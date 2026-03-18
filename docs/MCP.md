@@ -22,6 +22,10 @@ Use `cmd /c npx -y ...` on Windows for stable stdio startup.
 - `-y` avoids interactive npm prompts.
 - MCP protocol messages must stay on `stdout` only (this project logs to `stderr`).
 
+This repository also ships with project-scoped Codex settings in `.codex/config.toml`
+and a project skill at `.codex/skills/db-schema-ddl-mcp/SKILL.md`. Once the project is
+trusted and reopened in Codex, those project-local settings can load automatically.
+
 ### 1) Codex configuration
 
 Edit:
@@ -82,9 +86,9 @@ Expected behavior: process stays running and waits for MCP stdio requests.
 
 ## Available tools
 
-### 1) `list_excel_sheets`
+### 1) `inspect_excel_file`
 
-Return sheet names from an Excel file.
+Validate an Excel workbook, return sheet names, and include key file metadata in one call.
 
 **Input**
 
@@ -204,30 +208,6 @@ Exact `codeId` match example:
 }
 ```
 
-### 4) `validate_excel_file`
-
-Validate file existence/extension/size and return sheet summary.
-
-**Input**
-
-```json
-{
-  "filePath": "attached_assets/sample.xlsx"
-}
-```
-
-### 5) `get_file_metadata`
-
-Return metadata such as size and timestamps.
-
-**Input**
-
-```json
-{
-  "filePath": "attached_assets/sample.xlsx"
-}
-```
-
 ## Validation & safety
 
 - Input arguments are validated with `zod`.
@@ -274,3 +254,4 @@ Notes:
 
 - Raw comment text is preserved on each column as `commentRaw`.
 - Structured extraction is additive; free-text remarks remain available even when no pattern matches.
+- `inspect_excel_file` is the recommended first call before choosing a sheet or parsing DDL.

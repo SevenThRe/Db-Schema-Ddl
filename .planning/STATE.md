@@ -1,56 +1,53 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.1
+milestone_name: bidirectional-schema-workflow
 status: active
-last_updated: "2026-03-17T23:20:00+09:00"
+last_updated: "2026-03-18T15:55:00+09:00"
 progress:
-  total_phases: 5
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-03-17)
+See: `.planning/PROJECT.md` (updated 2026-03-18)
 
-**Core value:** Users can optionally turn the desktop app into a schema management workstation by downloading one official extension on demand, without bloating the base product for everyone else.
-**Current focus:** Phase 2 - GitHub Delivery and Lifecycle
+**Core value:** Users can compare DB environments directly and move between supported DDL and parser-compatible Excel schema documents without rebuilding workbook structure by hand.
+**Current focus:** Phase 3 planning and execution for `DDL Import and XLSX Export`
 
 ## Current Status
 
-- Project initialized as a brownfield extension effort inside the existing DBSchemaExcel2DDL repository
-- Codebase map created under `.planning/codebase/`
-- Configuration initialized for coarse-grained, parallel, YOLO-style planning with commit tracking enabled
-- Requirements and roadmap drafted for the extension host plus DB management extension delivery
-- Phase 1 context captured under `.planning/phases/01-extension-host-foundation/01-CONTEXT.md`
-- Phase 1 research captured under `.planning/phases/01-extension-host-foundation/01-RESEARCH.md`
-- Phase 1 plans and validation strategy created under `.planning/phases/01-extension-host-foundation/`
-- Phase 1 executed and verified; extension host schemas, Electron lifecycle bridge, typed extension APIs, and sidebar UX are now in place
-- Phase 1 summaries and verification are recorded under `.planning/phases/01-extension-host-foundation/`
-- Phase 2 context captured under `.planning/phases/02-github-delivery-and-lifecycle/02-CONTEXT.md`
-- Phase 2 validation strategy and execution plans are now created under `.planning/phases/02-github-delivery-and-lifecycle/`
+- `v1.0` is complete and audited at `.planning/v1.0-v1.0-MILESTONE-AUDIT.md`
+- `v1.1` has been opened as the active milestone
+- Requirements are now centered on `DB vs DB` compare, template-led authoring, and `MySQL DDL -> XLSX`
+- The accepted milestone proposal is recorded at `.planning/v1.1-MILESTONE-PROPOSAL.md`
+- Phase 1 context is captured at `.planning/phases/01-cross-database-compare-v1_1/01-CONTEXT.md`
+- Phase 1 research is captured at `.planning/phases/01-cross-database-compare-v1_1/01-RESEARCH.md`
+- Phase 1 validation strategy is captured at `.planning/phases/01-cross-database-compare-v1_1/01-VALIDATION.md`
+- Phase 1 execution plans were completed under `.planning/phases/01-cross-database-compare-v1_1/`
+- Phase 1 verification passed at `.planning/phases/01-cross-database-compare-v1_1/01-VERIFICATION.md`
+- Phase 2 context is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-CONTEXT.md`
+- Phase 2 research is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-RESEARCH.md`
+- Phase 2 validation strategy is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-VALIDATION.md`
+- Phase 2 execution plans and summaries were completed under `.planning/phases/02-template-and-round-trip-authoring-v1_1/`
+- Phase 2 verification passed at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-VERIFICATION.md`
+- The next active track is Phase 3: `DDL Import and XLSX Export`
 
 ## Important Assumptions
 
-- The DB management capability will be delivered as an official first-party extension
-- GitHub remains the sole trusted distribution source in v1
-- The base application must remain fully functional with no extension installed
-- Initial scope focuses on schema management rather than full database-client capabilities
+- `DB vs DB` stays preview-only in this milestone
+- Template-led authoring should ship before `DDL -> XLSX`
+- Reverse authoring starts MySQL-first and keeps Oracle import deferred
+- Existing `v1.0` DB-management flows remain the stable base
 
 ## Next Command
 
-- `$gsd-execute-phase 2`
-
-## Open Questions To Resolve During Phase 2 Execution
-
-- What exact GitHub catalog payload should the host consume before download?
-- How should checksum and compatibility verification be represented in the extension manifest?
-- What installation state machine should bridge download, verify, unpack, enable, and rollback?
-- How much release metadata should the concise install dialog expose before download begins?
+- Discuss Phase 3: `DDL Import and XLSX Export`
 
 ---
-*Last updated: 2026-03-17 after Phase 2 planning*
+*Last updated: 2026-03-18 after completing v1.1 Phase 2*

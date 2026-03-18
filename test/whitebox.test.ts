@@ -1,5 +1,14 @@
 import "./server/ddl-validation.test.ts";
+import "./server/extensions-catalog.test.ts";
+import "./server/db-diff-phase4.test.ts";
+import "./server/mysql-introspection-normalizer.test.ts";
 import "./server/excel-executor.test.ts";
 import "./server/excel-executor-coverage.test.ts";
 import "./server/excel-parser-whitebox.test.ts";
 import "./server/logger.test.ts";
+import "./server/template-phase2.test.ts";
+import "./electron/db-credential-vault.test.ts";
+import "./electron/extensions-delivery.test.ts";
+import "./client/db-management-ui.test.tsx";
+import "./client/extension-management-ui.test.tsx";
+import "./client/template-phase2-ui.test.tsx";

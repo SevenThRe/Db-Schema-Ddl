@@ -86,6 +86,14 @@ export async function initializeDatabase() {
     await applyPendingMigrations();
     // Keep this safeguard for legacy DBs that predate schema_migrations.
     await executeSql(DB_INIT_SQL.createDdlSettingsTable);
+    await executeSql(DB_INIT_SQL.createInstalledExtensionsTable);
+    await executeSql(DB_INIT_SQL.createInstalledExtensionsUniqueIndex);
+    await executeSql(DB_INIT_SQL.createExtensionLifecycleStatesTable);
+    await executeSql(DB_INIT_SQL.createExtensionLifecycleStatesUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbConnectionsTable);
+    await executeSql(DB_INIT_SQL.createDbConnectionsUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbSchemaSnapshotsTable);
+    await executeSql(DB_INIT_SQL.createDbSchemaSnapshotsUniqueIndex);
     await ensureDdlSettingsCompatColumns();
 
     // 检查是否已有默认设置

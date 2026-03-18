@@ -119,3 +119,53 @@ test("generateDDL ignores AUTO_INCREMENT for non-PK or non-integer columns and e
   assert.equal(warnings[0].code, "AUTO_INCREMENT_IGNORED");
   assert.equal(warnings[1].code, "AUTO_INCREMENT_IGNORED");
 });
+
+test("generateDDL ignores AUTO_INCREMENT when PK order is incompatible in MySQL composite keys", () => {
+  const request = {
+    dialect: "mysql" as const,
+    tables: [
+      {
+        logicalTableName: "Rosai Pattern",
+        physicalTableName: "rosai_insurance_rate_pattern",
+        columns: [
+          {
+            no: 1,
+            logicalName: "会社コード",
+            physicalName: "kaisyacd",
+            dataType: "varchar",
+            size: "10",
+            notNull: true,
+            isPk: true,
+          },
+          {
+            no: 2,
+            logicalName: "パターンID",
+            physicalName: "patternid",
+            dataType: "bigint",
+            notNull: true,
+            isPk: true,
+            autoIncrement: true,
+          },
+          {
+            no: 3,
+            logicalName: "業種コード",
+            physicalName: "industry_cd",
+            dataType: "varchar",
+            size: "2",
+            notNull: true,
+            isPk: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  const ddl = generateDDL(request);
+  assert.doesNotMatch(ddl, /`patternid`[\s\S]*AUTO_INCREMENT/i);
+  assert.match(ddl, /PRIMARY KEY\s+\(`kaisyacd`, `patternid`, `industry_cd`\)/i);
+
+  const warnings = collectDdlGenerationWarnings(request);
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].code, "AUTO_INCREMENT_IGNORED");
+  assert.equal(warnings[0].reason, "pk_order_incompatible");
+});

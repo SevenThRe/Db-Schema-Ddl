@@ -20,11 +20,9 @@ MCP 侧重点是“可编排调用”，不是“手工操作体验”。
 
 | 工具名 | 作用 | 典型输出 |
 | --- | --- | --- |
-| `list_excel_sheets` | 获取工作簿 sheet 列表 | sheet 名数组 |
+| `inspect_excel_file` | 一次性校验工作簿、返回 sheet 列表与关键元信息 | valid、sheets、size、时间戳 |
 | `parse_excel_to_ddl` | 解析指定 sheet 并生成 DDL | tables + ddl + normalization |
 | `query_comment_references` | 检索备注中的结构化引用 | 匹配行、过滤信息、分页结果 |
-| `validate_excel_file` | 校验文件是否满足解析条件 | valid、size、sheets |
-| `get_file_metadata` | 获取文件元信息 | path、size、时间戳、扩展名 |
 
 ## 运行方式
 

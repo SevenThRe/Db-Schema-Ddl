@@ -66,4 +66,30 @@ export const DB_MIGRATIONS: DbMigrationDefinition[] = [
       "ALTER TABLE uploaded_files ADD COLUMN original_modified_at TEXT",
     ],
   },
+  {
+    version: 7,
+    name: "create_installed_extensions",
+    statements: [
+      DB_INIT_SQL.createInstalledExtensionsTable,
+      DB_INIT_SQL.createInstalledExtensionsUniqueIndex,
+    ],
+  },
+  {
+    version: 8,
+    name: "create_extension_lifecycle_states",
+    statements: [
+      DB_INIT_SQL.createExtensionLifecycleStatesTable,
+      DB_INIT_SQL.createExtensionLifecycleStatesUniqueIndex,
+    ],
+  },
+  {
+    version: 9,
+    name: "create_db_management_tables",
+    statements: [
+      DB_INIT_SQL.createDbConnectionsTable,
+      DB_INIT_SQL.createDbConnectionsUniqueIndex,
+      DB_INIT_SQL.createDbSchemaSnapshotsTable,
+      DB_INIT_SQL.createDbSchemaSnapshotsUniqueIndex,
+    ],
+  },
 ] as const;

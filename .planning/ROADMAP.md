@@ -1,119 +1,80 @@
-# Roadmap: DB Management Extension Platform
+# Roadmap: Bidirectional Schema Workflow Platform
 
-**Created:** 2026-03-17
+**Created:** 2026-03-18
 **Granularity:** Coarse
-**Coverage:** 20 / 20 v1 requirements mapped
+**Coverage:** 11 / 11 v1.1 requirements mapped
 
 ## Summary
 
-This roadmap treats the work as a brownfield expansion of the existing Electron application. The build order starts with the extension host so that the DB management capability can ship as an optional downloadable module rather than as a one-off hardcoded feature.
+This roadmap treats `v1.1` as the follow-on milestone to the shipped DB management extension. Instead of broadening apply risk, it focuses on two adjacent value paths: direct `DB vs DB` comparison and trusted reverse authoring back into Excel-based schema documents.
 
 ## Phase Overview
 
-| # | Phase | Goal | Requirements | Success Criteria |
-|---|-------|------|--------------|------------------|
-| 1 | Extension Host Foundation | Add a stable host model for optional extensions without disturbing base workflows | HOST-01, HOST-02, HOST-03, HOST-04 | 4 |
-| 2 | GitHub Delivery and Lifecycle | Let users discover, download, verify, install, enable, disable, upgrade, and uninstall the official DB extension | DIST-01, DIST-02, DIST-03, DIST-04 | 4 |
-| 3 | DB Connectivity and Introspection | Add extension-side connection management and canonical live-schema ingestion | DBCO-01, DBCO-02, DBCO-03 | 4 |
-| 4 | File-vs-DB Diff and Deploy Preview | Compare file/baseline schemas to live DBs and generate controlled SQL previews | DIFF-01, DIFF-02, DIFF-03, DEPL-01, DEPL-02 | 5 |
-| 5 | Apply, History, and Visualization | Execute approved non-destructive changes, persist history, and visualize DB differences | DEPL-03, DEPL-04, VIZ-01, VIZ-02 | 5 |
+| # | Phase | Goal | Requirements | Success Criteria | Status |
+|---|-------|------|--------------|------------------|--------|
+| 1 | Cross-Database Compare | Compare two saved DB targets directly and inspect directional preview inside `DB 管理` | DBDB-01, DBDB-02, DBDB-03, DBDB-04 | 4 | Complete (2026-03-18) |
+| 2 | Template and Round-Trip Authoring | Provide built-in `.xlsx` templates and validate that outputs reopen cleanly | TPL-01, TPL-02, TPL-03 | 3 | Complete (2026-03-18) |
+| 3 | DDL Import and XLSX Export | Turn supported MySQL DDL into canonical schema and parser-compatible `.xlsx` output | DDLX-01, DDLX-02, DDLX-03, DDLX-04 | 4 | Proposed |
 
 ## Phase Details
 
-### Phase 1: Extension Host Foundation
+### Phase 1: Cross-Database Compare
 
-Goal: Establish extension metadata, install state, load boundaries, and UI entry points so the base app can recognize but not require the DB management extension.
-
-Requirements:
-- HOST-01
-- HOST-02
-- HOST-03
-- HOST-04
-
-Success criteria:
-1. The base app can track installed extension metadata and compatibility state in local persistence.
-2. Clicking a DB-management entry point shows an install prompt when the extension is absent instead of dead-ending.
-3. Startup only loads enabled and verified extensions and does not break when none are present.
-4. Existing Excel parsing, DDL generation, and historical diff flows behave exactly as before with no extension installed.
-
-### Phase 2: GitHub Delivery and Lifecycle
-
-Goal: Deliver the DB management capability through an official GitHub-hosted extension package with verification and lifecycle controls.
+Goal: Users can compare one live DB environment against another inside `DB 管理` and review a directional preview without applying changes.
 
 Requirements:
-- DIST-01
-- DIST-02
-- DIST-03
-- DIST-04
+- DBDB-01
+- DBDB-02
+- DBDB-03
+- DBDB-04
 
 Success criteria:
-1. The app can fetch an official extension catalog entry that includes version, size, compatibility, and release summary.
-2. Users can download the extension from the GitHub release channel through the desktop UI.
-3. Installation enforces checksum and app-version compatibility before activation.
-4. Users can enable, disable, upgrade, and uninstall the extension without reinstalling the base application.
+1. User can choose two saved connection/schema targets and run a direct compare without exporting an intermediate `.xlsx` or snapshot file manually.
+2. User can inspect added, removed, modified, and rename-candidate differences in the existing DB diff workspace with unambiguous source and target context.
+3. Ambiguous rename or equivalence cases block directional preview until the user resolves them.
+4. User can generate a non-applying preview that explains what would need to change in the target DB to converge toward the source DB.
 
-### Phase 3: DB Connectivity and Introspection
+### Phase 2: Template and Round-Trip Authoring
 
-Goal: Provide the extension with stable DB connection management and canonical schema ingestion.
+Goal: Users can start from supported `.xlsx` templates and trust generated workbooks because the app validates that they reopen correctly.
 
 Requirements:
-- DBCO-01
-- DBCO-02
-- DBCO-03
+- TPL-01
+- TPL-02
+- TPL-03
 
 Success criteria:
-1. Users can create, edit, delete, and test DB connections from the installed extension UI.
-2. Sensitive connection material is stored locally in protected form and is not exposed in routine UI or logs.
-3. The extension can introspect target schemas and normalize tables, columns, PKs, FKs, indexes, and comments into a canonical model.
-4. The extension stores enough snapshot data to support later diff and deployment phases.
+1. User can create a new workbook from first-party templates that already match the product's supported Japanese header and sheet-layout conventions.
+2. User can choose an authoring layout variant that matches either `multi-table per sheet` or `table per sheet` maintenance style.
+3. Generated or templated workbooks can be re-imported automatically and either pass round-trip validation or show actionable mismatch warnings before use.
 
-### Phase 4: File-vs-DB Diff and Deploy Preview
+### Phase 3: DDL Import and XLSX Export
 
-Goal: Extend the existing diff experience to compare structured file definitions and baseline snapshots against live DB schemas, then preview SQL safely.
+Goal: Users can turn supported SQL table definitions into the product's Excel-based document format with explicit fidelity reporting.
 
 Requirements:
-- DIFF-01
-- DIFF-02
-- DIFF-03
-- DEPL-01
-- DEPL-02
+- DDLX-01
+- DDLX-02
+- DDLX-03
+- DDLX-04
 
 Success criteria:
-1. Users can compare the selected file or sheet with a target DB schema and inspect added, removed, modified, and renamed candidates.
-2. Users can compare live DB state with the last deployed baseline snapshot for drift detection.
-3. Ambiguous rename candidates require review before SQL generation proceeds.
-4. The extension can generate CREATE and ALTER SQL previews from file-vs-DB differences.
-5. Users can perform a dry-run deployment that summarizes intended changes and surfaced risks without applying them.
-
-### Phase 5: Apply, History, and Visualization
-
-Goal: Turn preview into controlled execution and give users persistent operational visibility into DB change state.
-
-Requirements:
-- DEPL-03
-- DEPL-04
-- VIZ-01
-- VIZ-02
-
-Success criteria:
-1. Users can apply approved non-destructive schema changes and inspect per-object results.
-2. Every deployment job persists execution history, source version context, and target-schema baseline metadata.
-3. DB-oriented diff results are explorable in a filterable tree view aligned with the current schema diff mental model.
-4. Users can open an ER-style view that highlights changed tables and relationships.
-5. Failures during apply leave enough structured history for debugging and safe retry planning.
+1. User can paste or load supported MySQL table DDL and see the parsed tables in a reviewable canonical form before export.
+2. Unsupported or lossy syntax is surfaced explicitly instead of being silently discarded during conversion.
+3. User can export the reviewed result into an `.xlsx` workbook that opens through the normal parser flow and preserves the expected tables and columns.
+4. Oracle DDL import is kept explicitly out of the first reverse-authoring cut unless later added as a separate requirement expansion.
 
 ## Phase Dependencies
 
-- Phase 2 depends on Phase 1
-- Phase 3 depends on Phase 1 and benefits from Phase 2 packaging decisions
-- Phase 4 depends on Phase 3
-- Phase 5 depends on Phase 4
+- Phase 2 stands independently of Phase 3 and can ship earlier
+- Phase 3 benefits from Phase 2 because trusted templates and round-trip validation reduce export risk
 
 ## Notes
 
-- Canonical schema normalization is a foundational concern and should start inside Phase 1/3 design, not be deferred to the end.
-- Oracle-specific driver and packaging complexity is intentionally not the gating path for initial host delivery; keep platform constraints explicit during implementation.
+- Keep `DB vs DB` strictly compare-and-preview in `v1.1`
+- Keep reverse authoring inside a supported subset contract
+- Preserve the `v1.0` audit trail as historical evidence rather than trying to fold it into the new milestone docs
+- Phase 1 shipped with a dedicated `db-vs-db` workspace, directional preview, graph linkage, and settings-backed rename policy thresholds
 
 ---
-*Last updated: 2026-03-17 after roadmap creation*
-
+*Last updated: 2026-03-18 after completing v1.1 Phase 2*

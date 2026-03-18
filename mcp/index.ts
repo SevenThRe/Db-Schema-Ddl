@@ -116,11 +116,9 @@ const QueryCommentReferencesSchema = z.object({
 });
 
 type ToolName =
-  | "list_excel_sheets"
+  | "inspect_excel_file"
   | "parse_excel_to_ddl"
-  | "query_comment_references"
-  | "validate_excel_file"
-  | "get_file_metadata";
+  | "query_comment_references";
 
 const PHYSICAL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const CAMEL_BOUNDARY_PATTERN = /([a-z0-9])([A-Z])/g;
@@ -164,6 +162,18 @@ interface CommentReferenceQueryResult {
     offset: number;
   };
   rows: CommentReferenceRow[];
+}
+
+interface ExcelInspectionResult {
+  valid: true;
+  resolvedPath: string;
+  extension: string;
+  fileSizeBytes: number;
+  sheetCount: number;
+  sheets: string[];
+  createdAt: string;
+  modifiedAt: string;
+  accessedAt: string;
 }
 
 function toLowerTrimmed(value?: string): string {
@@ -436,14 +446,15 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
-      name: "list_excel_sheets",
-      description: "Return sheet names from an Excel file",
+      name: "inspect_excel_file",
+      description:
+        "Inspect an Excel workbook in one call. Use this first to validate the file, return workbook sheet names, and collect key file metadata before parsing or querying.",
       inputSchema: {
         type: "object" as const,
         properties: {
           filePath: {
             type: "string",
-            description: "Absolute path or project-relative path to the Excel file",
+            description: "Absolute path or project-relative path to the Excel workbook",
           },
         },
         required: ["filePath"],
@@ -600,28 +611,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["filePath"],
       },
     },
-    {
-      name: "validate_excel_file",
-      description: "Validate whether a file can be parsed as Excel in current limits",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          filePath: { type: "string" },
-        },
-        required: ["filePath"],
-      },
-    },
-    {
-      name: "get_file_metadata",
-      description: "Return basic file metadata (size/time/path/extension)",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          filePath: { type: "string" },
-        },
-        required: ["filePath"],
-      },
-    },
   ],
 }));
 
@@ -750,6 +739,23 @@ function inspectExcelFile(inputPath: string): {
   return { resolvedPath, extension, stats };
 }
 
+async function inspectExcelWorkbook(inputPath: string): Promise<ExcelInspectionResult> {
+  const { resolvedPath, extension, stats } = inspectExcelFile(inputPath);
+  const sheets = await runListSheets(resolvedPath);
+
+  return {
+    valid: true,
+    resolvedPath,
+    extension,
+    fileSizeBytes: stats.size,
+    sheetCount: sheets.length,
+    sheets,
+    createdAt: stats.birthtime.toISOString(),
+    modifiedAt: stats.mtime.toISOString(),
+    accessedAt: stats.atime.toISOString(),
+  };
+}
+
 function successResponse(tool: ToolName, startedAt: number, data: unknown, extra: Record<string, unknown> = {}) {
   const response = {
     success: true,
@@ -803,19 +809,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   logger.debug("Tool arguments", { args });
 
   try {
-    if (name === "list_excel_sheets") {
+    if (name === "inspect_excel_file") {
       const { filePath } = FilePathSchema.parse(args ?? {});
-      const { resolvedPath, stats } = inspectExcelFile(filePath);
-      const sheets = await runListSheets(resolvedPath);
+      const result = await inspectExcelWorkbook(filePath);
 
       return successResponse(
-        "list_excel_sheets",
+        "inspect_excel_file",
         startedAt,
-        { sheets },
+        result,
         {
-          filePath: resolvedPath,
-          fileSizeBytes: stats.size,
-          sheetCount: sheets.length,
+          filePath: result.resolvedPath,
+          fileSizeBytes: result.fileSizeBytes,
+          sheetCount: result.sheetCount,
         },
       );
     }
@@ -937,52 +942,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           matchedRowCount: result.matchedRowCount,
           returnedRowCount: result.returnedRowCount,
           truncated: result.truncated,
-        },
-      );
-    }
-
-    if (name === "validate_excel_file") {
-      const { filePath } = FilePathSchema.parse(args ?? {});
-      const { resolvedPath, extension, stats } = inspectExcelFile(filePath);
-      const sheets = await runListSheets(resolvedPath);
-
-      return successResponse(
-        "validate_excel_file",
-        startedAt,
-        {
-          valid: true,
-          resolvedPath,
-          extension,
-          fileSizeBytes: stats.size,
-          sheetCount: sheets.length,
-          sheets,
-        },
-      );
-    }
-
-    if (name === "get_file_metadata") {
-      const { filePath } = FilePathSchema.parse(args ?? {});
-      const resolvedPath = resolveAndValidatePath(filePath);
-
-      if (!fs.existsSync(resolvedPath)) {
-        throw new Error(`File does not exist: ${resolvedPath}`);
-      }
-
-      const stats = fs.statSync(resolvedPath);
-      const extension = path.extname(resolvedPath).toLowerCase();
-
-      return successResponse(
-        "get_file_metadata",
-        startedAt,
-        {
-          resolvedPath,
-          extension,
-          isFile: stats.isFile(),
-          isDirectory: stats.isDirectory(),
-          fileSizeBytes: stats.size,
-          createdAt: stats.birthtime.toISOString(),
-          modifiedAt: stats.mtime.toISOString(),
-          accessedAt: stats.atime.toISOString(),
         },
       );
     }

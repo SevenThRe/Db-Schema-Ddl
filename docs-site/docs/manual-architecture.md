@@ -28,9 +28,10 @@ sidebar_position: 1
 
 ### 生成与修复
 
-覆盖导出范围控制、缺失类型处理、Name Fix 两层修复。
+覆盖导出范围控制、Schema Diff 增量变更、缺失类型处理与 Name Fix 两层修复。
 
 - [从预览到 DDL 生成](./preview-to-ddl.md)
+- [Schema Diff 差分工作流](./schema-diff-workflow.md)
 - [Name Fix 命名修复组件](./name-fix-component.md)
 
 ### 导航、设置与自动化

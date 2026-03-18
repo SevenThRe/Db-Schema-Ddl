@@ -60,6 +60,94 @@ export const DB_INIT_SQL = {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `,
+  createInstalledExtensionsTable: `
+    CREATE TABLE IF NOT EXISTS installed_extensions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      extension_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      install_path TEXT NOT NULL,
+      manifest_json TEXT,
+      min_app_version TEXT,
+      host_api_version INTEGER NOT NULL DEFAULT 1,
+      compatibility_status TEXT NOT NULL DEFAULT 'unknown',
+      compatibility_message TEXT,
+      installed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createInstalledExtensionsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS installed_extensions_extension_id_unique
+    ON installed_extensions(extension_id)
+  `,
+  createExtensionLifecycleStatesTable: `
+    CREATE TABLE IF NOT EXISTS extension_lifecycle_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      extension_id TEXT NOT NULL,
+      stage TEXT NOT NULL DEFAULT 'idle',
+      progress_percent INTEGER NOT NULL DEFAULT 0,
+      downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+      total_bytes INTEGER,
+      available_version TEXT,
+      release_tag TEXT,
+      asset_name TEXT,
+      asset_url TEXT,
+      download_path TEXT,
+      staged_path TEXT,
+      active_version TEXT,
+      previous_version TEXT,
+      catalog_json TEXT,
+      last_error_code TEXT,
+      last_error_message TEXT,
+      last_checked_at TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createExtensionLifecycleStatesUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS extension_lifecycle_states_extension_id_unique
+    ON extension_lifecycle_states(extension_id)
+  `,
+  createDbConnectionsTable: `
+    CREATE TABLE IF NOT EXISTS db_connections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      dialect TEXT NOT NULL DEFAULT 'mysql',
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL DEFAULT 3306,
+      username TEXT NOT NULL,
+      encrypted_password TEXT,
+      password_storage TEXT NOT NULL DEFAULT 'electron-safe-storage',
+      remember_password INTEGER NOT NULL DEFAULT 1,
+      ssl_mode TEXT NOT NULL DEFAULT 'preferred',
+      last_selected_database TEXT,
+      last_test_status TEXT NOT NULL DEFAULT 'unknown',
+      last_test_message TEXT,
+      last_tested_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDbConnectionsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS db_connections_name_unique
+    ON db_connections(name)
+  `,
+  createDbSchemaSnapshotsTable: `
+    CREATE TABLE IF NOT EXISTS db_schema_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connection_id INTEGER NOT NULL,
+      dialect TEXT NOT NULL DEFAULT 'mysql',
+      database_name TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      table_count INTEGER NOT NULL DEFAULT 0,
+      schema_json TEXT NOT NULL,
+      captured_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDbSchemaSnapshotsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS db_schema_snapshots_conn_db_hash_unique
+    ON db_schema_snapshots(connection_id, database_name, snapshot_hash)
+  `,
   createProcessingTasksTable: `
     CREATE TABLE IF NOT EXISTS processing_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

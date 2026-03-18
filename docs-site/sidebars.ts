@@ -13,7 +13,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: '生成与修复',
       collapsed: false,
-      items: ['preview-to-ddl', 'name-fix-component'],
+      items: ['preview-to-ddl', 'schema-diff-workflow', 'name-fix-component'],
     },
     {
       type: 'category',

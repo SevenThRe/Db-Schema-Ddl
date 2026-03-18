@@ -132,6 +132,14 @@ const AUTO_INCREMENT_NEGATIVE_PATTERNS: RegExp[] = [
   /\u81ea\u52d5\s*\u63a1\u756a\s*(?:\u7121\u3057|\u3067\u306f\u306a\u3044|\u3057\u306a\u3044)/,
 ];
 
+const AUTO_INCREMENT_DATA_TYPES = new Set([
+  'tinyint',
+  'smallint',
+  'int',
+  'integer',
+  'bigint',
+]);
+
 function normalizeRegexFlags(flags?: string): string {
   const raw = String(flags ?? '').trim();
   const deduped = Array.from(new Set(raw.split('').filter(Boolean)));
@@ -250,6 +258,33 @@ function normalizeToken(value: unknown): string {
     .trim()
     .toLowerCase();
   return raw;
+}
+
+function extractAutoIncrementFromDataType(rawDataType: string | undefined): {
+  dataType?: string;
+  autoIncrement: boolean;
+} {
+  const normalizedType = str(rawDataType);
+  if (!normalizedType) {
+    return { dataType: undefined, autoIncrement: false };
+  }
+
+  const matched = normalizedType.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)\s*[\(（]\s*(ai|auto[\s_-]*increment|identity)\s*[\)）]\s*$/i,
+  );
+  if (!matched) {
+    return { dataType: normalizedType, autoIncrement: false };
+  }
+
+  const baseType = normalizeToken(matched[1]);
+  if (!AUTO_INCREMENT_DATA_TYPES.has(baseType)) {
+    return { dataType: normalizedType, autoIncrement: false };
+  }
+
+  return {
+    dataType: baseType,
+    autoIncrement: true,
+  };
 }
 
 /**
@@ -1386,13 +1421,17 @@ function parseColumnsGeneric(
         : String(rawCommentCell);
     const comment = commentRaw?.trim() || undefined;
     const codeReferences = extractCodeReferencesFromComment(commentRaw ?? comment, referenceExtraction);
-    const autoIncrement = detectAutoIncrementFromComment(commentRaw ?? comment);
+    const parsedDataType = extractAutoIncrementFromDataType(
+      idxType !== undefined && !isEmpty(row[idxType]) ? str(row[idxType]) : undefined,
+    );
+    const autoIncrement =
+      parsedDataType.autoIncrement || detectAutoIncrementFromComment(commentRaw ?? comment);
 
     const col: ColumnInfo = {
       no: parsedNo,
       logicalName: logicalName || undefined,
       physicalName,
-      dataType,
+      dataType: parsedDataType.dataType,
       size: idxSize !== undefined && !isEmpty(row[idxSize]) ? str(row[idxSize]) : undefined,
       notNull: idxNotNull !== undefined ? parseNotNullFlag(row[idxNotNull]) : false,
       isPk: idxPk !== undefined ? pkMarkerSet.has(normalizeToken(row[idxPk])) : false,

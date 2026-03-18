@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { ExtensionManagementSection } from "@/components/settings/ExtensionManagementSection";
+import { DbComparePolicySection } from "@/components/settings/DbComparePolicySection";
 import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
@@ -236,6 +238,9 @@ export default function Settings() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          <ExtensionManagementSection />
+          <DbComparePolicySection />
+
           {/* DDL Generation Options */}
           <div className="bg-card border border-border rounded-lg p-6 space-y-5">
             <h2 className="text-lg font-semibold mb-4">{t("settings.ddlOptions.title")}</h2>

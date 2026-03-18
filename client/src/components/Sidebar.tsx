@@ -1,8 +1,16 @@
 import { useMemo, useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen } from "lucide-react";
-import { useFiles, useUploadFile, useDeleteFile } from "@/hooks/use-ddl";
+import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2 } from "lucide-react";
+import type { CreateWorkbookFromTemplateRequest, ExtensionHostState } from "@shared/schema";
+import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,16 +28,29 @@ import { translateApiError } from "@/lib/api-error";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
 
 interface SidebarProps {
   selectedFileId: number | null;
   onSelectFile: (id: number | null) => void;
+  dbManagementState: ExtensionHostState | null;
+  dbManagementSelected: boolean;
+  onSelectDbManagement: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   className?: string;
 }
 
-export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleCollapse, className }: SidebarProps) {
+export function Sidebar({
+  selectedFileId,
+  onSelectFile,
+  dbManagementState,
+  dbManagementSelected,
+  onSelectDbManagement,
+  collapsed,
+  onToggleCollapse,
+  className,
+}: SidebarProps) {
   const docsUrl = "https://seventhre.github.io/Db-Schema-Ddl/docs/manual-architecture";
   const { data: files, isLoading } = useFiles();
   const { mutate: uploadFile, isPending: isUploading } = useUploadFile();
@@ -39,7 +60,11 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
   const [hoverFileId, setHoverFileId] = useState<number | null>(null);
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: number; name: string } | null>(null);
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const dragEnterDepthRef = useRef(0);
+  const { data: workbookTemplates = [], isLoading: isTemplatesLoading } = useWorkbookTemplates();
+  const { mutate: createWorkbookFromTemplate, isPending: isCreatingTemplate } = useCreateWorkbookFromTemplate();
 
   const parseUploadedAt = (uploadedAt?: string | Date | null): Date | null => {
     if (!uploadedAt) {
@@ -167,6 +192,32 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     e.target.value = "";
   };
 
+  const triggerUploadPicker = () => {
+    if (isUploading) return;
+    uploadInputRef.current?.click();
+  };
+
+  const handleCreateTemplate = (payload: CreateWorkbookFromTemplateRequest) => {
+    createWorkbookFromTemplate(payload, {
+      onSuccess: (result) => {
+        setTemplateDialogOpen(false);
+        onSelectFile(result.file.id);
+        toast({
+          title: "模板文件已创建",
+          description: `${result.file.originalName} 已通过 round-trip 自检并加入文件列表。`,
+        });
+      },
+      onError: (error) => {
+        const translated = translateApiError(error, t, { includeIssues: false });
+        toast({
+          title: "模板创建失败",
+          description: translated.description,
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
   const handleUploadDragEnter = (e: React.DragEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -256,6 +307,164 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
     }
   };
 
+  const dbManagementStatus = dbManagementState?.status ?? "not_installed";
+  const dbManagementBadgeLabel =
+    dbManagementState?.updateAvailable
+      ? "可更新"
+      : dbManagementState?.lifecycle?.stage === "failed"
+        ? "需重试"
+        : dbManagementStatus === "not_installed"
+      ? "扩展"
+      : dbManagementStatus === "disabled"
+        ? "已禁用"
+        : dbManagementStatus === "incompatible"
+          ? "需要更新"
+          : "官方扩展";
+
+  const dbManagementButtonClass = cn(
+    "w-full rounded-md border transition-colors",
+    dbManagementSelected && dbManagementStatus === "enabled"
+      ? "border-primary/45 bg-primary/10 text-primary"
+      : dbManagementStatus === "not_installed"
+        ? "border-dashed border-border/70 bg-muted/25 text-muted-foreground hover:border-primary/35 hover:text-foreground"
+        : dbManagementStatus === "incompatible"
+          ? "border-amber-500/35 bg-amber-500/10 text-amber-900 hover:bg-amber-500/15 dark:text-amber-200"
+          : dbManagementStatus === "disabled"
+            ? "border-border/70 bg-muted/40 text-foreground hover:bg-muted/70"
+            : "border-border/60 bg-background hover:bg-muted/55 text-foreground",
+  );
+
+  const renderDbManagementEntry = (compact: boolean) => {
+    if (compact) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onSelectDbManagement}
+              className={cn(
+                "relative w-full rounded-md border px-1 py-1.5 flex flex-col items-center gap-1 transition-colors",
+                dbManagementButtonClass,
+              )}
+            >
+              <Database className="w-3.5 h-3.5 shrink-0" />
+              <span className="w-full text-center text-[10px] leading-tight">DB</span>
+              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary/80" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-[240px] text-xs">
+            <div className="space-y-1">
+              <div className="font-medium">DB 管理</div>
+              <div className="text-[10px] opacity-80">{dbManagementBadgeLabel}</div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onSelectDbManagement}
+        className={cn(
+          "flex w-full items-start gap-2.5 px-3 py-2 text-left",
+          dbManagementButtonClass,
+        )}
+      >
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Database className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium">DB 管理</span>
+            <Badge variant="outline" className="px-1.5 py-0 text-[9px] font-medium">
+              {dbManagementBadgeLabel}
+            </Badge>
+          </div>
+          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+            {dbManagementStatus === "enabled"
+              ? dbManagementState?.updateAvailable
+                ? "官方扩展可用，同时检测到新版本可更新。"
+                : "官方扩展已可用，可进入 DB 管理模块。"
+              : dbManagementStatus === "disabled"
+                ? "扩展已安装但当前处于禁用状态。"
+                : dbManagementStatus === "incompatible"
+                  ? "当前扩展版本与主程序不兼容，需要更新。"
+                  : dbManagementState?.lifecycle?.stage === "failed"
+                    ? "上次处理失败，点击后可查看重试提示。"
+                  : "点击后可查看并安装官方扩展。"}
+          </p>
+        </div>
+      </button>
+    );
+  };
+
+  const renderUploadActionMenu = (compact: boolean) => {
+    if (compact) {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" className="h-8 w-8 rounded-md" disabled={isUploading}>
+              {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="start" className="w-48">
+            <DropdownMenuItem onClick={triggerUploadPicker}>
+              <Upload className="w-4 h-4" />
+              上传 Excel
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
+              <FilePlus2 className="w-4 h-4" />
+              从模板创建
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            className={cn(
+              "w-full justify-between border-dashed border-[1.5px] hover:border-primary/50 hover:bg-primary/5 transition-all h-9 text-xs rounded-md",
+              isDragOverUpload && "border-primary bg-primary/10 text-primary",
+            )}
+            disabled={isUploading}
+          >
+            <span className="flex items-center gap-2">
+              {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {isUploading ? t("sidebar.uploading") : t("sidebar.uploadExcel")}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[240px]">
+          <DropdownMenuItem onClick={triggerUploadPicker}>
+            <Upload className="w-4 h-4" />
+            上传 Excel
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
+            <FilePlus2 className="w-4 h-4" />
+            从模板创建
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  const templateDialog = (
+    <TemplateCreateDialog
+      open={templateDialogOpen}
+      templates={workbookTemplates}
+      isLoading={isTemplatesLoading}
+      isCreating={isCreatingTemplate}
+      onOpenChange={setTemplateDialogOpen}
+      onCreate={handleCreateTemplate}
+    />
+  );
+
   // Collapsed mini sidebar
   if (collapsed) {
     return (
@@ -271,29 +480,24 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
           </Tooltip>
 
           <input
+            ref={uploadInputRef}
             type="file"
             accept=".xlsx,.xls"
             onChange={handleFileUpload}
             className="hidden"
-            id="file-upload-collapsed"
             disabled={isUploading}
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <label htmlFor="file-upload-collapsed" className="block">
-                <Button variant="outline" size="icon" className="h-8 w-8 rounded-md" disabled={isUploading} asChild>
-                  <div className="cursor-pointer">
-                    {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  </div>
-                </Button>
-              </label>
+              <div>{renderUploadActionMenu(true)}</div>
             </TooltipTrigger>
-            <TooltipContent side="right">{t("sidebar.uploadExcel")}</TooltipContent>
+            <TooltipContent side="right">上传 Excel / 从模板创建</TooltipContent>
           </Tooltip>
         </div>
 
         <ScrollArea className="flex-1 px-1.5 py-1.5">
           <div className="space-y-1">
+            {renderDbManagementEntry(true)}
             {isLoading ? (
               [1, 2, 3].map((item) => (
                 <div key={item} className="h-11 rounded-md bg-muted/50 animate-pulse" />
@@ -388,6 +592,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
             <LanguageSwitcher />
           </div>
         </div>
+
+        {templateDialog}
       </div>
     );
   }
@@ -418,32 +624,14 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
 
         <div className="relative">
           <input
+            ref={uploadInputRef}
             type="file"
             accept=".xlsx,.xls"
             onChange={handleFileUpload}
             className="hidden"
-            id="file-upload"
             disabled={isUploading}
           />
-          <label
-            htmlFor="file-upload"
-            className="w-full block"
-          >
-            <Button
-              variant="outline"
-              className={cn(
-                "w-full border-dashed border-[1.5px] hover:border-primary/50 hover:bg-primary/5 transition-all h-9 text-xs rounded-md",
-                isDragOverUpload && "border-primary bg-primary/10 text-primary",
-              )}
-              disabled={isUploading}
-              asChild
-            >
-              <div className="cursor-pointer flex items-center gap-2">
-                {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                {isUploading ? t("sidebar.uploading") : t("sidebar.uploadExcel")}
-              </div>
-            </Button>
-          </label>
+          {renderUploadActionMenu(false)}
         </div>
 
         <div className="mt-2 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
@@ -468,7 +656,15 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-3 py-2">
+        <div className="px-3 py-2 space-y-2">
+          <div>
+            <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              模块
+            </h3>
+            <div className="mt-2">
+              {renderDbManagementEntry(false)}
+            </div>
+          </div>
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             {t("sidebar.definitionFiles")}
           </h3>
@@ -618,6 +814,8 @@ export function Sidebar({ selectedFileId, onSelectFile, collapsed, onToggleColla
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {templateDialog}
     </div>
   );
 }

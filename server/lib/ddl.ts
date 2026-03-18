@@ -31,7 +31,11 @@ const DDL_GENERATION_DEFAULTS = {
   datePadLength: 2,
 } as const;
 
-type AutoIncrementIgnoreReason = "not_primary_key" | "non_numeric_type";
+type AutoIncrementIgnoreReason =
+  | "not_primary_key"
+  | "non_numeric_type"
+  | "pk_order_incompatible"
+  | "multiple_auto_increment";
 
 export interface DdlGenerationWarning {
   code: "AUTO_INCREMENT_IGNORED" | "AUTO_INCREMENT_DIALECT_UNSUPPORTED";
@@ -58,6 +62,56 @@ function resolveMySqlAutoIncrementEligibility(column: ColumnInfo): {
   }
 
   return { eligible: true };
+}
+
+interface MySqlAutoIncrementPlan {
+  enabledColumnIndexes: Set<number>;
+  ignoredReasonsByIndex: Map<number, AutoIncrementIgnoreReason>;
+}
+
+function resolveMySqlAutoIncrementPlan(table: TableInfo): MySqlAutoIncrementPlan {
+  const enabledColumnIndexes = new Set<number>();
+  const ignoredReasonsByIndex = new Map<number, AutoIncrementIgnoreReason>();
+
+  const pkColumnIndexes = table.columns.reduce<number[]>((indexes, column, index) => {
+    if (column.isPk) {
+      indexes.push(index);
+    }
+    return indexes;
+  }, []);
+
+  const eligibleAutoIncrementIndexes: number[] = [];
+
+  table.columns.forEach((column, index) => {
+    if (!column.autoIncrement) {
+      return;
+    }
+
+    const eligibility = resolveMySqlAutoIncrementEligibility(column);
+    if (!eligibility.eligible) {
+      if (eligibility.reason) {
+        ignoredReasonsByIndex.set(index, eligibility.reason);
+      }
+      return;
+    }
+
+    // MySQL requires AUTO_INCREMENT to be the left-most column of an index.
+    if (pkColumnIndexes.indexOf(index) !== 0) {
+      ignoredReasonsByIndex.set(index, "pk_order_incompatible");
+      return;
+    }
+
+    eligibleAutoIncrementIndexes.push(index);
+  });
+
+  if (eligibleAutoIncrementIndexes.length > 0) {
+    enabledColumnIndexes.add(eligibleAutoIncrementIndexes[0]);
+    for (const index of eligibleAutoIncrementIndexes.slice(1)) {
+      ignoredReasonsByIndex.set(index, "multiple_auto_increment");
+    }
+  }
+
+  return { enabledColumnIndexes, ignoredReasonsByIndex };
 }
 
 function substituteTemplateVariables(template: string, table: TableInfo, authorName: string | undefined): string {
@@ -102,7 +156,9 @@ export function collectDdlGenerationWarnings(request: GenerateDdlRequest): DdlGe
   const { tables, dialect } = request;
 
   tables.forEach((table) => {
-    table.columns.forEach((column) => {
+    const autoIncrementPlan = dialect === "mysql" ? resolveMySqlAutoIncrementPlan(table) : null;
+
+    table.columns.forEach((column, columnIndex) => {
       if (!column.autoIncrement) {
         return;
       }
@@ -123,12 +179,12 @@ export function collectDdlGenerationWarnings(request: GenerateDdlRequest): DdlGe
         return;
       }
 
-      const eligibility = resolveMySqlAutoIncrementEligibility(column);
-      if (eligibility.eligible) {
+      const reason = autoIncrementPlan?.ignoredReasonsByIndex.get(columnIndex);
+      if (!reason) {
         return;
       }
 
-      if (eligibility.reason === "not_primary_key") {
+      if (reason === "not_primary_key") {
         warnings.push({
           code: "AUTO_INCREMENT_IGNORED",
           tableName,
@@ -139,12 +195,36 @@ export function collectDdlGenerationWarnings(request: GenerateDdlRequest): DdlGe
         return;
       }
 
+      if (reason === "non_numeric_type") {
+        warnings.push({
+          code: "AUTO_INCREMENT_IGNORED",
+          tableName,
+          columnName,
+          reason: "non_numeric_type",
+          message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because data type is not integer-based.`,
+        });
+        return;
+      }
+
+      if (reason === "pk_order_incompatible") {
+        warnings.push({
+          code: "AUTO_INCREMENT_IGNORED",
+          tableName,
+          columnName,
+          reason: "pk_order_incompatible",
+          message:
+            `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because MySQL requires the column ` +
+            `to be the first column in a key.`,
+        });
+        return;
+      }
+
       warnings.push({
         code: "AUTO_INCREMENT_IGNORED",
         tableName,
         columnName,
-        reason: "non_numeric_type",
-        message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because data type is not integer-based.`,
+        reason: "multiple_auto_increment",
+        message: `AUTO_INCREMENT on ${tableName}.${columnName} is ignored because MySQL allows only one AUTO_INCREMENT column per table.`,
       });
     });
   });
@@ -160,11 +240,7 @@ function renderDDLChunks(
   validateGenerateDdlRequest({ tables, dialect });
 
   tables.forEach((table) => {
-    if (dialect === 'mysql') {
-      push(generateMySQL(table, settings));
-    } else {
-      push(generateOracle(table, settings));
-    }
+    push(renderTableDdl(table, dialect, settings));
   });
 }
 
@@ -179,43 +255,47 @@ export async function streamDDL(
     if (!isFirst) {
       await writeChunk(DDL_GENERATION_DEFAULTS.chunkSeparator);
     }
-    const ddlChunk = dialect === 'mysql'
-      ? generateMySQL(table, settings)
-      : generateOracle(table, settings);
-    await writeChunk(ddlChunk);
+    await writeChunk(renderTableDdl(table, dialect, settings));
     isFirst = false;
   }
 }
 
+function renderTableDdl(
+  table: TableInfo,
+  dialect: GenerateDdlRequest["dialect"],
+  settings: DdlSettings,
+): string {
+  return dialect === "mysql"
+    ? generateMySQL(table, settings)
+    : generateOracle(table, settings);
+}
+
+function buildCommentHeaderLines(table: TableInfo, settings: DdlSettings): string[] {
+  if (!settings.includeCommentHeader) {
+    return [];
+  }
+
+  const headerBody = settings.useCustomHeader && settings.customHeaderTemplate
+    ? substituteTemplateVariables(settings.customHeaderTemplate, table, settings.authorName)
+    : [
+        `TableName: ${table.logicalTableName}`,
+        `Author: ${settings.authorName}`,
+        `Date: ${formatDdlDate(new Date())}`,
+      ].join("\n");
+
+  return [
+    "/*",
+    ...headerBody.split("\n").map((line) => (line ? ` ${line}` : "")),
+    "*/",
+    "",
+  ];
+}
+
 function generateMySQL(table: TableInfo, settings: DdlSettings): string {
   const lines: string[] = [];
+  const autoIncrementPlan = resolveMySqlAutoIncrementPlan(table);
 
-  // Add comment header (if enabled)
-  if (settings.includeCommentHeader) {
-    if (settings.useCustomHeader && settings.customHeaderTemplate) {
-      // Use custom header template with variable substitution
-      const customHeader = substituteTemplateVariables(
-        settings.customHeaderTemplate,
-        table,
-        settings.authorName
-      );
-      lines.push('/*');
-      customHeader.split('\n').forEach(line => {
-        lines.push(line ? ` ${line}` : '');
-      });
-      lines.push('*/');
-      lines.push('');
-    } else {
-      // Use default header format
-      const today = formatDdlDate(new Date());
-      lines.push('/*');
-      lines.push(` TableName: ${table.logicalTableName}`);
-      lines.push(` Author: ${settings.authorName}`);
-      lines.push(` Date: ${today}`);
-      lines.push('*/');
-      lines.push('');
-    }
-  }
+  lines.push(...buildCommentHeaderLines(table, settings));
 
   // Add SET NAMES (if enabled)
   if (settings.includeSetNames) {
@@ -242,7 +322,7 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
       line += ' NOT NULL';
     }
 
-    if (resolveMySqlAutoIncrementEligibility(col).eligible) {
+    if (autoIncrementPlan.enabledColumnIndexes.has(index)) {
       line += ' AUTO_INCREMENT';
     }
 
@@ -274,32 +354,7 @@ function generateMySQL(table: TableInfo, settings: DdlSettings): string {
 function generateOracle(table: TableInfo, settings: DdlSettings = DEFAULT_SETTINGS): string {
   const lines: string[] = [];
 
-  // Add comment header (if enabled)
-  if (settings.includeCommentHeader) {
-    if (settings.useCustomHeader && settings.customHeaderTemplate) {
-      // Use custom header template with variable substitution
-      const customHeader = substituteTemplateVariables(
-        settings.customHeaderTemplate,
-        table,
-        settings.authorName
-      );
-      lines.push('/*');
-      customHeader.split('\n').forEach(line => {
-        lines.push(line ? ` ${line}` : '');
-      });
-      lines.push('*/');
-      lines.push('');
-    } else {
-      // Use default header format
-      const today = formatDdlDate(new Date());
-      lines.push('/*');
-      lines.push(` TableName: ${table.logicalTableName}`);
-      lines.push(` Author: ${settings.authorName}`);
-      lines.push(` Date: ${today}`);
-      lines.push('*/');
-      lines.push('');
-    }
-  }
+  lines.push(...buildCommentHeaderLines(table, settings));
 
   lines.push(`CREATE TABLE ${table.physicalTableName} (`);
 

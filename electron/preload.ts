@@ -114,4 +114,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: async (url: string): Promise<boolean> => {
     return await ipcRenderer.invoke('open-external', url);
   },
+
+  extensions: {
+    getInstallContext: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:get-install-context", extensionId);
+    },
+    openInstallFlow: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:open-install-flow", extensionId);
+    },
+    getCatalog: async (extensionId: string, force?: boolean) => {
+      return await ipcRenderer.invoke("extensions:get-catalog", extensionId, force);
+    },
+    startInstall: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:start-install", extensionId);
+    },
+    getLifecycleState: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:get-lifecycle-state", extensionId);
+    },
+    uninstall: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:uninstall", extensionId);
+    },
+    activate: async (extensionId: string) => {
+      return await ipcRenderer.invoke("extensions:activate", extensionId);
+    },
+  },
 });

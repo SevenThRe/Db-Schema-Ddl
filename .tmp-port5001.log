@@ -1,0 +1,11 @@
+
+> db-schema-excel-2-ddl@1.1.4 dev
+> tsx server/index.ts
+
+Using SQLite database at: C:\Users\ISI202502\Downloads\Db-Schema-Ddl\data\database.sqlite
+[storage] mode=database
+Initializing SQLite database...
+Database initialized successfully
+7:16:42 PM [uploads-backfill] [uploads-backfill] marker exists, skip scanning (C:\Users\ISI202502\Downloads\Db-Schema-Ddl\uploads\.uploads-backfill.done.json)
+7:16:43 PM [express] serving on port 5001
+7:16:53 PM [express] GET /api/files :: {"status":200,"durationMs":4}

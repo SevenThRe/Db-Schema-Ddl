@@ -15,6 +15,7 @@ import { getSheetData } from "../lib/excel";
 import { assertValidExcelFile, ExcelValidationError } from "../lib/excel-validation";
 import { runParseRegion, runParseWorkbookBundle } from "../lib/excel-executor";
 import { taskManager, TaskQueueOverflowError } from "../lib/task-manager";
+import { createWorkbookFromTemplate, listWorkbookTemplates, WorkbookTemplateError } from "../lib/workbook-templates";
 import { storage } from "../storage";
 import type { UploadMiddlewares } from "./module-types";
 
@@ -99,6 +100,10 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
   app.get(api.files.list.path, async (_req, res) => {
     const files = await storage.getUploadedFiles();
     res.json(files);
+  });
+
+  app.get(api.files.listTemplates.path, async (_req, res) => {
+    res.json(listWorkbookTemplates());
   });
 
   app.post(
@@ -222,6 +227,40 @@ export function registerFileRoutes(app: Express, deps: FileRouteDeps): void {
         taskId: task.id,
         processing: true,
       });
+    },
+  );
+
+  app.post(
+    api.files.createFromTemplate.path,
+    globalProtectRateLimit,
+    globalProtectInFlightLimit,
+    async (req, res) => {
+      try {
+        const request = api.files.createFromTemplate.input.parse(req.body);
+        const created = await createWorkbookFromTemplate(request, {
+          storage,
+          uploadsDir,
+        });
+        res.status(HTTP_STATUS.CREATED).json(created);
+      } catch (error) {
+        if (error instanceof WorkbookTemplateError) {
+          const status =
+            error.code === "template_not_found" || error.code === "template_asset_missing"
+              ? HTTP_STATUS.NOT_FOUND
+              : HTTP_STATUS.BAD_REQUEST;
+          return sendApiError(res, {
+            status,
+            code: API_ERROR_CODES.requestFailed,
+            message: error.message,
+          });
+        }
+
+        return sendApiError(res, {
+          status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: API_ERROR_CODES.requestFailed,
+          message: "Failed to create workbook from template",
+        });
+      }
     },
   );
 

@@ -2,6 +2,7 @@
  * Electron API の型定義
  * preload.ts で contextBridge 経由で公開される API の型
  */
+import type { ExtensionCatalogRelease, ExtensionLifecycleState } from "@shared/schema";
 
 export interface ElectronAPI {
   onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => () => void;
@@ -22,6 +23,28 @@ export interface ElectronAPI {
   selectDirectory: () => Promise<string | null>;
   selectExcelFile: () => Promise<string | null>;
   openExternal: (url: string) => Promise<boolean>;
+  extensions: {
+    getInstallContext: (extensionId: string) => Promise<{
+      extensionId: string;
+      extensionsRoot: string;
+      installRoot: string;
+      releasesUrl: string;
+    }>;
+    openInstallFlow: (extensionId: string) => Promise<{
+      extensionId: string;
+      extensionsRoot: string;
+      installRoot: string;
+      releasesUrl: string;
+    }>;
+    getCatalog: (extensionId: string, force?: boolean) => Promise<ExtensionCatalogRelease | null>;
+    startInstall: (extensionId: string) => Promise<ExtensionLifecycleState | null>;
+    getLifecycleState: (extensionId: string) => Promise<ExtensionLifecycleState | null>;
+    uninstall: (extensionId: string) => Promise<ExtensionLifecycleState | null>;
+    activate: (extensionId: string) => Promise<{
+      accepted: boolean;
+      restartRequired: boolean;
+    }>;
+  };
 }
 
 declare global {

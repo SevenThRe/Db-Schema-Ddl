@@ -2,13 +2,52 @@ import { z } from 'zod';
 import {
   uploadedFiles,
   insertUploadedFileSchema,
+  workbookTemplateVariantSchema,
+  createWorkbookFromTemplateRequestSchema,
+  createWorkbookFromTemplateResponseSchema,
   tableInfoSchema,
   generateDdlRequestSchema,
   exportZipRequestSchema,
   generateDdlByReferenceRequestSchema,
   exportZipByReferenceRequestSchema,
   ddlSettingsSchema,
-  processingTaskSchema,
+  extensionHostStateSchema,
+  extensionLifecycleActionRequestSchema,
+  extensionCatalogReleaseSchema,
+  extensionLifecycleStateSchema,
+  dbConnectionSummarySchema,
+  dbConnectionUpsertRequestSchema,
+  dbConnectionTestResponseSchema,
+  dbDatabaseOptionSchema,
+  dbSelectDatabaseRequestSchema,
+  dbSchemaIntrospectRequestSchema,
+  dbSchemaIntrospectResponseSchema,
+  dbDiffPreviewRequestSchema,
+  dbDiffPreviewResponseSchema,
+  dbDiffConfirmRenamesRequestSchema,
+  dbSqlPreviewRequestSchema,
+  dbSqlPreviewResponseSchema,
+  dbDryRunRequestSchema,
+  dbDryRunResponseSchema,
+  dbHistoryListRequestSchema,
+  dbHistoryListResponseSchema,
+  dbHistoryDetailResponseSchema,
+  dbHistoryCompareRequestSchema,
+  dbHistoryCompareResponseSchema,
+  dbApplyRequestSchema,
+  dbApplyResponseSchema,
+  dbDeployJobDetailResponseSchema,
+  dbComparePolicySchema,
+  dbGraphRequestSchema,
+  dbGraphResponseSchema,
+  dbVsDbCompareRequestSchema,
+  dbVsDbCompareResponseSchema,
+  dbVsDbGraphRequestSchema,
+  dbVsDbGraphResponseSchema,
+  dbVsDbPreviewRequestSchema,
+  dbVsDbPreviewResponseSchema,
+  dbVsDbRenameReviewRequestSchema,
+  processingTaskResponseSchema,
   nameFixPreviewRequestSchema,
   nameFixPreviewResponseSchema,
   nameFixApplyRequestSchema,
@@ -44,6 +83,13 @@ export const api = {
         200: z.array(z.custom<typeof uploadedFiles.$inferSelect>()),
       },
     },
+    listTemplates: {
+      method: "GET" as const,
+      path: "/api/files/templates" as const,
+      responses: {
+        200: z.array(workbookTemplateVariantSchema),
+      },
+    },
     upload: {
       method: 'POST' as const,
       path: '/api/files' as const,
@@ -51,6 +97,16 @@ export const api = {
       responses: {
         201: z.custom<typeof uploadedFiles.$inferSelect>(),
         400: apiErrorSchema,
+      },
+    },
+    createFromTemplate: {
+      method: "POST" as const,
+      path: "/api/files/create-from-template" as const,
+      input: createWorkbookFromTemplateRequestSchema,
+      responses: {
+        201: createWorkbookFromTemplateResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
       },
     },
     getSheets: {
@@ -175,7 +231,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/tasks/:id' as const,
       responses: {
-        200: processingTaskSchema,
+        200: processingTaskResponseSchema,
         404: apiErrorSchema,
       },
     },
@@ -223,6 +279,297 @@ export const api = {
       input: ddlSettingsSchema,
       responses: {
         200: ddlSettingsSchema,
+        400: apiErrorSchema,
+      },
+    },
+  },
+  extensions: {
+    list: {
+      method: "GET" as const,
+      path: "/api/extensions" as const,
+      responses: {
+        200: z.array(extensionHostStateSchema),
+      },
+    },
+    get: {
+      method: "GET" as const,
+      path: "/api/extensions/:id" as const,
+      responses: {
+        200: extensionHostStateSchema,
+        404: apiErrorSchema,
+      },
+    },
+    catalog: {
+      method: "GET" as const,
+      path: "/api/extensions/:id/catalog" as const,
+      responses: {
+        200: extensionCatalogReleaseSchema.nullable(),
+        404: apiErrorSchema,
+      },
+    },
+    lifecycle: {
+      method: "GET" as const,
+      path: "/api/extensions/:id/lifecycle" as const,
+      responses: {
+        200: extensionLifecycleStateSchema.nullable(),
+        404: apiErrorSchema,
+      },
+    },
+    enable: {
+      method: "POST" as const,
+      path: "/api/extensions/:id/enable" as const,
+      input: extensionLifecycleActionRequestSchema,
+      responses: {
+        200: extensionHostStateSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    disable: {
+      method: "POST" as const,
+      path: "/api/extensions/:id/disable" as const,
+      input: extensionLifecycleActionRequestSchema,
+      responses: {
+        200: extensionHostStateSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    uninstall: {
+      method: "POST" as const,
+      path: "/api/extensions/:id/uninstall" as const,
+      input: extensionLifecycleActionRequestSchema,
+      responses: {
+        200: extensionHostStateSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+  },
+  dbManagement: {
+    listConnections: {
+      method: "GET" as const,
+      path: "/api/db-management/connections" as const,
+      responses: {
+        200: z.array(dbConnectionSummarySchema),
+      },
+    },
+    createConnection: {
+      method: "POST" as const,
+      path: "/api/db-management/connections" as const,
+      input: dbConnectionUpsertRequestSchema,
+      responses: {
+        201: dbConnectionSummarySchema,
+        400: apiErrorSchema,
+      },
+    },
+    updateConnection: {
+      method: "PUT" as const,
+      path: "/api/db-management/connections/:id" as const,
+      input: dbConnectionUpsertRequestSchema,
+      responses: {
+        200: dbConnectionSummarySchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    deleteConnection: {
+      method: "DELETE" as const,
+      path: "/api/db-management/connections/:id" as const,
+      responses: {
+        200: z.object({
+          success: z.boolean(),
+        }),
+        404: apiErrorSchema,
+      },
+    },
+    testConnection: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/test" as const,
+      responses: {
+        200: dbConnectionTestResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    listDatabases: {
+      method: "GET" as const,
+      path: "/api/db-management/connections/:id/databases" as const,
+      responses: {
+        200: z.array(dbDatabaseOptionSchema),
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    selectDatabase: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/select-database" as const,
+      input: dbSelectDatabaseRequestSchema,
+      responses: {
+        200: dbConnectionSummarySchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    introspect: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/introspect" as const,
+      input: dbSchemaIntrospectRequestSchema,
+      responses: {
+        200: dbSchemaIntrospectResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    diffPreview: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/diff-preview" as const,
+      input: dbDiffPreviewRequestSchema,
+      responses: {
+        200: dbDiffPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    confirmRenames: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/confirm-renames" as const,
+      input: dbDiffConfirmRenamesRequestSchema,
+      responses: {
+        200: dbDiffPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    previewSql: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/preview-sql" as const,
+      input: dbSqlPreviewRequestSchema,
+      responses: {
+        200: dbSqlPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    dryRun: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/dry-run" as const,
+      input: dbDryRunRequestSchema,
+      responses: {
+        200: dbDryRunResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    listHistory: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/history" as const,
+      input: dbHistoryListRequestSchema,
+      responses: {
+        200: dbHistoryListResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    historyDetail: {
+      method: "GET" as const,
+      path: "/api/db-management/connections/:id/history/:eventId" as const,
+      responses: {
+        200: dbHistoryDetailResponseSchema,
+        404: apiErrorSchema,
+      },
+    },
+    compareHistory: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/history/compare" as const,
+      input: dbHistoryCompareRequestSchema,
+      responses: {
+        200: dbHistoryCompareResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    applyChanges: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/apply" as const,
+      input: dbApplyRequestSchema,
+      responses: {
+        202: dbApplyResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    deployJobDetail: {
+      method: "GET" as const,
+      path: "/api/db-management/connections/:id/deploy-jobs/:jobId" as const,
+      responses: {
+        200: dbDeployJobDetailResponseSchema,
+        404: apiErrorSchema,
+      },
+    },
+    graphData: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/:id/graph" as const,
+      input: dbGraphRequestSchema,
+      responses: {
+        200: dbGraphResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    compareDatabases: {
+      method: "POST" as const,
+      path: "/api/db-management/db-compare" as const,
+      input: dbVsDbCompareRequestSchema,
+      responses: {
+        200: dbVsDbCompareResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    reviewDatabaseRenames: {
+      method: "POST" as const,
+      path: "/api/db-management/db-compare/review-renames" as const,
+      input: dbVsDbRenameReviewRequestSchema,
+      responses: {
+        200: dbVsDbCompareResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    previewDatabaseSql: {
+      method: "POST" as const,
+      path: "/api/db-management/db-compare/preview-sql" as const,
+      input: dbVsDbPreviewRequestSchema,
+      responses: {
+        200: dbVsDbPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    databaseGraph: {
+      method: "POST" as const,
+      path: "/api/db-management/db-compare/graph" as const,
+      input: dbVsDbGraphRequestSchema,
+      responses: {
+        200: dbVsDbGraphResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    getComparePolicy: {
+      method: "GET" as const,
+      path: "/api/db-management/db-compare/policy" as const,
+      responses: {
+        200: dbComparePolicySchema,
+      },
+    },
+    updateComparePolicy: {
+      method: "PUT" as const,
+      path: "/api/db-management/db-compare/policy" as const,
+      input: dbComparePolicySchema,
+      responses: {
+        200: dbComparePolicySchema,
         400: apiErrorSchema,
       },
     },
@@ -332,12 +679,17 @@ export const api = {
 
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
   let url = path;
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (url.includes(`:${key}`)) {
-        url = url.replace(`:${key}`, String(value));
-      }
-    });
+  if (!params) {
+    return url;
   }
+
+  for (const [key, value] of Object.entries(params)) {
+    const token = `:${key}`;
+    if (!url.includes(token)) {
+      continue;
+    }
+    url = url.replace(token, String(value));
+  }
+
   return url;
 }

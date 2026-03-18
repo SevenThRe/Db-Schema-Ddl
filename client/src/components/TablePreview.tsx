@@ -20,6 +20,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 interface TablePreviewProps {
   fileId: number | null;
   sheetName: string | null;
+  selectionMemoryKey?: string | null;
   jumpToPhysicalTableName?: string | null;
   jumpToken?: number;
   onTablesLoaded?: (tables: TableInfo[]) => void;
@@ -35,6 +36,47 @@ const TOOLBAR_ICON_BUTTON_CLASS =
   "h-7 w-7 shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
 const TOOLBAR_BUTTON_CLASS =
   "h-7 px-2 text-[11px] rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
+const LAST_SELECTED_TABLE_STORAGE_KEY = "tablePreview:lastSelectedTableByFileSheet";
+
+type StoredTableSelections = Record<string, string>;
+
+function readStoredTableSelections(): StoredTableSelections {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LAST_SELECTED_TABLE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const normalized: StoredTableSelections = {};
+    for (const [scopeKey, tableName] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof tableName === "string" && tableName.trim()) {
+        normalized[scopeKey] = tableName.trim();
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function buildTableSelectionStorageKey(scopeKey: string | null, sheetName: string | null): string | null {
+  if (!scopeKey || !sheetName) {
+    return null;
+  }
+  const normalizedSheetName = sheetName.trim();
+  if (!normalizedSheetName) {
+    return null;
+  }
+  return `${scopeKey}::${normalizedSheetName}`;
+}
 
 function columnLabelToNumber(label: string): number {
   let result = 0;
@@ -280,6 +322,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
 export function TablePreview({
   fileId,
   sheetName,
+  selectionMemoryKey,
   jumpToPhysicalTableName,
   jumpToken,
   onTablesLoaded,
@@ -298,13 +341,30 @@ export function TablePreview({
   const [showFilterBar, setShowFilterBar] = useState(false);
   const contentContainerRef = useRef<HTMLDivElement | null>(null);
   const [isCompactColumns, setIsCompactColumns] = useState(false);
+  const [lastSelectedTableByScope, setLastSelectedTableByScope] = useState<StoredTableSelections>(() =>
+    readStoredTableSelections(),
+  );
+  const selectionScopeKey = useMemo(() => {
+    const normalizedMemoryKey = (selectionMemoryKey || "").trim();
+    if (normalizedMemoryKey) {
+      return normalizedMemoryKey;
+    }
+    if (fileId == null) {
+      return null;
+    }
+    return `id:${fileId}`;
+  }, [fileId, selectionMemoryKey]);
+  const tableSelectionStorageKey = useMemo(
+    () => buildTableSelectionStorageKey(selectionScopeKey, sheetName),
+    [selectionScopeKey, sheetName],
+  );
 
   useEffect(() => {
     setCurrentTableIndex(0);
     setTableFilterQuery("");
     setColumnFilterQuery("");
     setShowFilterBar(false);
-  }, [sheetName]);
+  }, [fileId, sheetName]);
 
   useEffect(() => {
     const container = contentContainerRef.current;
@@ -375,6 +435,60 @@ export function TablePreview({
     const foundIndex = filteredEntries.findIndex((entry) => entry.absoluteIndex === currentTableIndex);
     return foundIndex >= 0 ? foundIndex + 1 : 1;
   }, [filteredEntries, currentTableIndex]);
+
+  useEffect(() => {
+    if (!tableSelectionStorageKey || tableList.length === 0) {
+      return;
+    }
+
+    const rememberedTableName = lastSelectedTableByScope[tableSelectionStorageKey];
+    if (!rememberedTableName) {
+      return;
+    }
+
+    const normalizedRemembered = rememberedTableName.trim().toLowerCase();
+    if (!normalizedRemembered) {
+      return;
+    }
+
+    const targetIndex = tableList.findIndex((table) => {
+      return (table.physicalTableName || "").trim().toLowerCase() === normalizedRemembered;
+    });
+    if (targetIndex >= 0 && targetIndex !== currentTableIndex) {
+      setCurrentTableIndex(targetIndex);
+    }
+  }, [currentTableIndex, lastSelectedTableByScope, tableList, tableSelectionStorageKey]);
+
+  useEffect(() => {
+    if (!tableSelectionStorageKey || !currentTable) {
+      return;
+    }
+
+    const physicalTableName = (currentTable.physicalTableName || "").trim();
+    if (!physicalTableName) {
+      return;
+    }
+
+    setLastSelectedTableByScope((previous) =>
+      previous[tableSelectionStorageKey] === physicalTableName
+        ? previous
+        : { ...previous, [tableSelectionStorageKey]: physicalTableName },
+    );
+  }, [currentTable, tableSelectionStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        LAST_SELECTED_TABLE_STORAGE_KEY,
+        JSON.stringify(lastSelectedTableByScope),
+      );
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [lastSelectedTableByScope]);
 
   // 通知父组件当前选中的表发生了变化
   useEffect(() => {

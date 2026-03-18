@@ -1,9 +1,9 @@
 ---
 phase: 2
 slug: github-delivery-and-lifecycle
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: passed
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-17
 ---
 
@@ -38,18 +38,18 @@ created: 2026-03-17
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 02-01-01 | 01 | 1 | DIST-01 | typecheck | `npm run check` | existing | pending |
-| 02-01-02 | 01 | 1 | DIST-03 | integration | `npm test` | W0 | pending |
-| 02-01-03 | 01 | 1 | DIST-04 | typecheck | `npm run check` | existing | pending |
-| 02-02-01 | 02 | 2 | DIST-02 | integration | `npm test` | W0 | pending |
-| 02-02-02 | 02 | 2 | DIST-03 | integration | `npm test` | W0 | pending |
-| 02-02-03 | 02 | 2 | DIST-04 | regression | `npm test` | W0 | pending |
-| 02-03-01 | 03 | 3 | DIST-01 | integration | `npm test` | W0 | pending |
-| 02-03-02 | 03 | 3 | DIST-04 | typecheck | `npm run check` | existing | pending |
-| 02-03-03 | 03 | 3 | DIST-04 | integration | `npm test` | W0 | pending |
-| 02-04-01 | 04 | 4 | DIST-01 | manual+typecheck | `npm run check` | existing | pending |
-| 02-04-02 | 04 | 4 | DIST-02 | manual+integration | `npm test` | W0 | pending |
-| 02-04-03 | 04 | 4 | DIST-04 | manual+regression | `npm test` | W0 | pending |
+| 02-01-01 | 01 | 1 | DIST-01 | typecheck | `npm run check` | existing | green |
+| 02-01-02 | 01 | 1 | DIST-03 | integration | `npm test` | W0 | green |
+| 02-01-03 | 01 | 1 | DIST-04 | typecheck | `npm run check` | existing | green |
+| 02-02-01 | 02 | 2 | DIST-02 | integration | `npm test` | W0 | green |
+| 02-02-02 | 02 | 2 | DIST-03 | integration | `npm test` | W0 | green |
+| 02-02-03 | 02 | 2 | DIST-04 | regression | `npm test` | W0 | green |
+| 02-03-01 | 03 | 3 | DIST-01 | integration | `npm test` | W0 | green |
+| 02-03-02 | 03 | 3 | DIST-04 | typecheck | `npm run check` | existing | green |
+| 02-03-03 | 03 | 3 | DIST-04 | integration | `npm test` | W0 | green |
+| 02-04-01 | 04 | 4 | DIST-01 | manual+typecheck | `npm run check` | existing | green |
+| 02-04-02 | 04 | 4 | DIST-02 | manual+integration | `npm test` | W0 | green |
+| 02-04-03 | 04 | 4 | DIST-04 | manual+regression | `npm test` | W0 | green |
 
 *Status: pending / green / red / flaky*
 
@@ -57,9 +57,9 @@ created: 2026-03-17
 
 ## Wave 0 Requirements
 
-- [ ] `test/server/extensions-catalog.test.ts` - official catalog and metadata contract coverage for DIST-01
-- [ ] `test/electron/extensions-delivery.test.ts` - download, verify, unpack, enable, update, and uninstall lifecycle coverage for DIST-02, DIST-03, and DIST-04
-- [ ] `test/client/extension-management-ui.test.tsx` - install panel and settings management UI coverage for DIST-01, DIST-02, and DIST-04
+- [x] `test/server/extensions-catalog.test.ts` - official catalog and metadata contract coverage for DIST-01
+- [x] `test/electron/extensions-delivery.test.ts` - download, verify, unpack, enable, update, and uninstall lifecycle coverage for DIST-02, DIST-03, and DIST-04
+- [x] `test/client/extension-management-ui.test.tsx` - install panel and settings management UI coverage for DIST-01, DIST-02, and DIST-04
 
 ---
 
@@ -75,11 +75,11 @@ created: 2026-03-17
 
 ## Validation Sign-Off
 
-- [ ] All tasks have automated verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have automated verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** passed

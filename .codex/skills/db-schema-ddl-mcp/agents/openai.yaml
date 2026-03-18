@@ -1,0 +1,4 @@
+interface:
+  display_name: "DB Schema DDL MCP"
+  short_description: "Project workflow for Excel-to-DDL MCP tasks"
+  default_prompt: "Use $db-schema-ddl-mcp to inspect a workbook with this project's MCP flow and generate or debug DDL output."

@@ -30,7 +30,9 @@ import {
   ROUTE_UPLOAD_RULES,
 } from "./constants/route-runtime";
 import { registerDdlRoutes } from "./routes/ddl-routes";
+import { registerDbManagementRoutes } from "./routes/db-management-routes";
 import { registerDiffRoutes } from "./routes/diff-routes";
+import { registerExtensionRoutes } from "./routes/extensions-routes";
 import { registerFileRoutes } from "./routes/files-routes";
 import { registerNameFixRoutes } from "./routes/name-fix-routes";
 import { registerSettingsRoutes } from "./routes/settings-routes";
@@ -597,6 +599,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       excelExecutor: getExcelExecutorDiagnostics(),
     }),
   });
+
+  registerExtensionRoutes(app);
+  registerDbManagementRoutes(app);
 
   const seedFileName = ROUTE_STRING_MARKERS.storageSeedFilename;
   const attachedFile = process.env.RESOURCES_PATH

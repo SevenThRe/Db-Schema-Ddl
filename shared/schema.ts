@@ -25,6 +25,61 @@ export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 
+export const uploadedFileRecordSchema = z.object({
+  id: z.number().int().positive(),
+  filePath: z.string().min(1),
+  originalName: z.string().min(1),
+  originalModifiedAt: z.string().optional().nullable(),
+  fileHash: z.string().min(1),
+  fileSize: z.number().int().nonnegative(),
+  uploadedAt: z.string().optional().nullable(),
+});
+
+export const workbookTemplateVariantIdSchema = z.enum([
+  "format-a-table-sheet",
+  "format-b-multi-table-sheet",
+]);
+
+export const workbookTemplateLayoutSchema = z.enum([
+  "table_per_sheet",
+  "multi_table_per_sheet",
+]);
+
+export const workbookTemplateVariantSchema = z.object({
+  id: workbookTemplateVariantIdSchema,
+  label: z.string().min(1),
+  description: z.string().min(1),
+  parserFormat: z.enum(["A", "B"]),
+  layout: workbookTemplateLayoutSchema,
+  seedAssetName: z.string().min(1),
+  suggestedFileName: z.string().min(1),
+  starterSheetName: z.string().min(1),
+});
+
+export const workbookTemplateValidationSchema = z.object({
+  parserFormat: z.enum(["A", "B", "UNKNOWN"]),
+  expectedParserFormat: z.enum(["A", "B"]),
+  recognized: z.boolean(),
+  workbookSheetCount: z.number().int().positive(),
+  checkedSheetName: z.string().min(1),
+  reasons: z.array(z.string()).default([]),
+});
+
+export const createWorkbookFromTemplateRequestSchema = z.object({
+  templateId: workbookTemplateVariantIdSchema,
+  originalName: z
+    .string()
+    .min(1)
+    .max(255)
+    .optional(),
+});
+
+export const createWorkbookFromTemplateResponseSchema = z.object({
+  file: uploadedFileRecordSchema,
+  template: workbookTemplateVariantSchema,
+  validation: workbookTemplateValidationSchema,
+});
+
 // DDL Settings table
 export const ddlSettings = sqliteTable("ddl_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -69,6 +124,189 @@ export const ddlSettings = sqliteTable("ddl_settings", {
   nameFixMaxBatchConcurrency: integer("name_fix_max_batch_concurrency").notNull().default(DEFAULT_DDL_SETTINGS_VALUES.nameFixMaxBatchConcurrency),
   allowOverwriteInElectron: integer("allow_overwrite_in_electron", { mode: "boolean" }).notNull().default(DEFAULT_DDL_SETTINGS_VALUES.allowOverwriteInElectron),
   allowExternalPathWrite: integer("allow_external_path_write", { mode: "boolean" }).notNull().default(DEFAULT_DDL_SETTINGS_VALUES.allowExternalPathWrite),
+  updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const EXTENSION_HOST_API_VERSION = 1 as const;
+export const DB_MANAGEMENT_EXTENSION_ID = "db-management" as const;
+export const OFFICIAL_EXTENSION_PUBLISHER = "SevenThRe" as const;
+export const OFFICIAL_EXTENSION_GITHUB_OWNER = "SevenThRe" as const;
+export const OFFICIAL_EXTENSION_GITHUB_REPO = "Db-Schema-Ddl" as const;
+export const OFFICIAL_EXTENSION_RELEASES_URL = `https://github.com/${OFFICIAL_EXTENSION_GITHUB_OWNER}/${OFFICIAL_EXTENSION_GITHUB_REPO}/releases`;
+export const OFFICIAL_EXTENSION_MANIFEST_ASSET_NAME = "db-management-extension-manifest.json" as const;
+
+export const installedExtensions = sqliteTable(
+  "installed_extensions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    extensionId: text("extension_id").notNull(),
+    version: text("version").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    installPath: text("install_path").notNull(),
+    manifestJson: text("manifest_json"),
+    minAppVersion: text("min_app_version"),
+    hostApiVersion: integer("host_api_version").notNull().default(EXTENSION_HOST_API_VERSION),
+    compatibilityStatus: text("compatibility_status").notNull().default("unknown"),
+    compatibilityMessage: text("compatibility_message"),
+    installedAt: text("installed_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    extensionIdUniqueIndex: uniqueIndex("installed_extensions_extension_id_unique").on(table.extensionId),
+  }),
+);
+
+export const extensionLifecycleStates = sqliteTable(
+  "extension_lifecycle_states",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    extensionId: text("extension_id").notNull(),
+    stage: text("stage").notNull().default("idle"),
+    progressPercent: integer("progress_percent").notNull().default(0),
+    downloadedBytes: integer("downloaded_bytes").notNull().default(0),
+    totalBytes: integer("total_bytes"),
+    availableVersion: text("available_version"),
+    releaseTag: text("release_tag"),
+    assetName: text("asset_name"),
+    assetUrl: text("asset_url"),
+    downloadPath: text("download_path"),
+    stagedPath: text("staged_path"),
+    activeVersion: text("active_version"),
+    previousVersion: text("previous_version"),
+    catalogJson: text("catalog_json"),
+    lastErrorCode: text("last_error_code"),
+    lastErrorMessage: text("last_error_message"),
+    lastCheckedAt: text("last_checked_at"),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    extensionIdUniqueIndex: uniqueIndex("extension_lifecycle_states_extension_id_unique").on(table.extensionId),
+  }),
+);
+
+export const dbConnections = sqliteTable(
+  "db_connections",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    dialect: text("dialect").notNull().default("mysql"),
+    host: text("host").notNull(),
+    port: integer("port").notNull().default(3306),
+    username: text("username").notNull(),
+    encryptedPassword: text("encrypted_password"),
+    passwordStorage: text("password_storage").notNull().default("electron-safe-storage"),
+    rememberPassword: integer("remember_password", { mode: "boolean" }).notNull().default(true),
+    sslMode: text("ssl_mode").notNull().default("preferred"),
+    lastSelectedDatabase: text("last_selected_database"),
+    lastTestStatus: text("last_test_status").notNull().default("unknown"),
+    lastTestMessage: text("last_test_message"),
+    lastTestedAt: text("last_tested_at"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    nameUniqueIndex: uniqueIndex("db_connections_name_unique").on(table.name),
+  }),
+);
+
+export const dbSchemaSnapshots = sqliteTable(
+  "db_schema_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    connectionId: integer("connection_id").notNull(),
+    dialect: text("dialect").notNull().default("mysql"),
+    databaseName: text("database_name").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    tableCount: integer("table_count").notNull().default(0),
+    schemaJson: text("schema_json").notNull(),
+    capturedAt: text("captured_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    snapshotUniqueIndex: uniqueIndex("db_schema_snapshots_conn_db_hash_unique").on(
+      table.connectionId,
+      table.databaseName,
+      table.snapshotHash,
+    ),
+  }),
+);
+
+export const dbSchemaScanEvents = sqliteTable(
+  "db_schema_scan_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    connectionId: integer("connection_id").notNull(),
+    dialect: text("dialect").notNull().default("mysql"),
+    databaseName: text("database_name").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    eventType: text("event_type").notNull().default("new_snapshot"),
+    previousSnapshotHash: text("previous_snapshot_hash"),
+    changeSummaryJson: text("change_summary_json"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    scanEventUniqueIndex: uniqueIndex("db_schema_scan_events_conn_db_snapshot_created_unique").on(
+      table.connectionId,
+      table.databaseName,
+      table.snapshotHash,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const dbDeployJobs = sqliteTable(
+  "db_deploy_jobs",
+  {
+    id: text("id").primaryKey(),
+    connectionId: integer("connection_id").notNull(),
+    dialect: text("dialect").notNull().default("mysql"),
+    databaseName: text("database_name").notNull(),
+    compareHash: text("compare_hash").notNull(),
+    compareSourceJson: text("compare_source_json").notNull(),
+    baselineSourceJson: text("baseline_source_json").notNull(),
+    targetSnapshotHash: text("target_snapshot_hash").notNull(),
+    selectedTablesJson: text("selected_tables_json").notNull(),
+    summaryJson: text("summary_json"),
+    status: text("status").notNull().default("pending"),
+    errorMessage: text("error_message"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    compareHashIndex: uniqueIndex("db_deploy_jobs_compare_hash_unique").on(table.compareHash, table.id),
+  }),
+);
+
+export const dbDeployJobStatementResults = sqliteTable(
+  "db_deploy_job_statement_results",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    jobId: text("job_id").notNull(),
+    statementId: text("statement_id").notNull(),
+    tableName: text("table_name"),
+    statementKind: text("statement_kind").notNull(),
+    relatedEntityKeysJson: text("related_entity_keys_json").notNull().default("[]"),
+    blockerCodesJson: text("blocker_codes_json").notNull().default("[]"),
+    blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+    status: text("status").notNull().default("pending"),
+    sql: text("sql").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    executedAt: text("executed_at"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    jobStatementUniqueIndex: uniqueIndex("db_deploy_job_statement_results_job_statement_unique").on(
+      table.jobId,
+      table.statementId,
+    ),
+  }),
+);
+
+export const dbComparePolicies = sqliteTable("db_compare_policies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tableRenameAutoAcceptThreshold: integer("table_rename_auto_accept_threshold"),
+  columnRenameAutoAcceptThreshold: integer("column_rename_auto_accept_threshold"),
   updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -119,6 +357,879 @@ export const ddlSettingsSchema = z.object({
 });
 
 export type DdlSettings = z.infer<typeof ddlSettingsSchema>;
+
+export const extensionIdSchema = z.enum([DB_MANAGEMENT_EXTENSION_ID]);
+export const extensionHostStatusSchema = z.enum(["not_installed", "enabled", "disabled", "incompatible"]);
+export const extensionCompatibilityStatusSchema = z.enum(["unknown", "compatible", "incompatible"]);
+export const extensionHostActionSchema = z.enum([
+  "install",
+  "enable",
+  "disable",
+  "activate",
+  "check_for_updates",
+  "update",
+  "uninstall",
+  "retry",
+]);
+export const extensionSourceSchema = z.enum(["official"]);
+export const extensionRuntimeTargetSchema = z.enum([
+  "win32-x64",
+  "win32-arm64",
+  "darwin-x64",
+  "darwin-arm64",
+  "linux-x64",
+]);
+export const extensionLifecycleStageSchema = z.enum([
+  "idle",
+  "checking",
+  "available",
+  "downloading",
+  "downloaded",
+  "verifying",
+  "verified",
+  "installing",
+  "installed",
+  "ready_to_enable",
+  "update_available",
+  "uninstalling",
+  "failed",
+]);
+export const extensionLifecycleErrorCodeSchema = z.enum([
+  "network_error",
+  "catalog_unavailable",
+  "asset_not_found",
+  "verification_failed",
+  "incompatible",
+  "install_failed",
+  "uninstall_failed",
+]);
+
+export const installedExtensionRecordSchema = z.object({
+  id: z.number().int().positive(),
+  extensionId: extensionIdSchema,
+  version: z.string().min(1),
+  enabled: z.boolean(),
+  installPath: z.string().min(1),
+  manifestJson: z.string().optional(),
+  minAppVersion: z.string().optional(),
+  hostApiVersion: z.number().int().positive().default(EXTENSION_HOST_API_VERSION),
+  compatibilityStatus: extensionCompatibilityStatusSchema.default("unknown"),
+  compatibilityMessage: z.string().optional(),
+  installedAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const officialExtensionCatalogItemSchema = z.object({
+  extensionId: extensionIdSchema,
+  name: z.string().min(1),
+  shortName: z.string().min(1),
+  description: z.string().min(1),
+  publisher: z.string().min(1),
+  source: extensionSourceSchema.default("official"),
+  official: z.boolean().default(true),
+  hostApiVersion: z.number().int().positive().default(EXTENSION_HOST_API_VERSION),
+  minAppVersion: z.string().optional(),
+  recommended: z.boolean().default(true),
+});
+
+export const extensionManifestPackageSchema = z.object({
+  target: extensionRuntimeTargetSchema,
+  assetName: z.string().min(1),
+  downloadUrl: z.string().min(1),
+  size: z.number().int().nonnegative().optional(),
+  sha256: z.string().min(32),
+  releaseUrl: z.string().min(1).optional(),
+});
+
+export const officialExtensionManifestSchema = officialExtensionCatalogItemSchema.extend({
+  version: z.string().min(1),
+  summary: z.string().min(1).optional(),
+  releaseNotes: z.string().optional(),
+  packages: z.array(extensionManifestPackageSchema).min(1),
+});
+
+export const extensionCatalogReleaseSchema = z.object({
+  version: z.string().min(1),
+  tagName: z.string().min(1).optional(),
+  summary: z.string().min(1).optional(),
+  releaseNotes: z.string().optional(),
+  publishedAt: z.string().optional(),
+  releaseUrl: z.string().min(1).optional(),
+  package: extensionManifestPackageSchema.optional(),
+  compatibilityStatus: extensionCompatibilityStatusSchema.default("unknown"),
+  compatibilityMessage: z.string().optional(),
+  checkedAt: z.string().optional(),
+});
+
+export const extensionLifecycleStateSchema = z.object({
+  id: z.number().int().positive(),
+  extensionId: extensionIdSchema,
+  stage: extensionLifecycleStageSchema.default("idle"),
+  progressPercent: z.number().int().min(0).max(100).default(0),
+  downloadedBytes: z.number().int().min(0).default(0),
+  totalBytes: z.number().int().min(0).optional(),
+  availableVersion: z.string().min(1).optional(),
+  releaseTag: z.string().min(1).optional(),
+  assetName: z.string().min(1).optional(),
+  assetUrl: z.string().min(1).optional(),
+  downloadPath: z.string().min(1).optional(),
+  stagedPath: z.string().min(1).optional(),
+  activeVersion: z.string().min(1).optional(),
+  previousVersion: z.string().min(1).optional(),
+  catalogJson: z.string().optional(),
+  lastErrorCode: extensionLifecycleErrorCodeSchema.optional(),
+  lastErrorMessage: z.string().optional(),
+  lastCheckedAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const extensionHostStateSchema = officialExtensionCatalogItemSchema.extend({
+  status: extensionHostStatusSchema,
+  enabled: z.boolean(),
+  installedVersion: z.string().optional(),
+  installPath: z.string().optional(),
+  compatibilityStatus: extensionCompatibilityStatusSchema.default("unknown"),
+  compatibilityMessage: z.string().optional(),
+  requiresAppRestart: z.boolean().default(false),
+  availableActions: z.array(extensionHostActionSchema).default([]),
+  installMarkerLabel: z.string().optional(),
+  stateLabel: z.string().min(1),
+  updateAvailable: z.boolean().default(false),
+  updateVersion: z.string().optional(),
+  catalog: extensionCatalogReleaseSchema.optional(),
+  lifecycle: extensionLifecycleStateSchema.optional(),
+});
+
+export const extensionLifecycleActionRequestSchema = z.object({
+  extensionId: extensionIdSchema,
+  action: extensionHostActionSchema.optional(),
+  force: z.boolean().default(false),
+});
+
+export const dbConnectionDialectSchema = z.enum(["mysql"]);
+export const dbConnectionSslModeSchema = z.enum(["disable", "preferred", "required"]);
+export const dbPasswordStorageSchema = z.enum(["electron-safe-storage"]);
+export const dbConnectionTestStatusSchema = z.enum(["unknown", "ok", "failed"]);
+export const dbSchemaIndexDirectionSchema = z.enum(["A", "D"]);
+
+export const dbConnectionRecordSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1),
+  dialect: dbConnectionDialectSchema.default("mysql"),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(3306),
+  username: z.string().min(1),
+  encryptedPassword: z.string().optional(),
+  passwordStorage: dbPasswordStorageSchema.default("electron-safe-storage"),
+  rememberPassword: z.boolean().default(true),
+  sslMode: dbConnectionSslModeSchema.default("preferred"),
+  lastSelectedDatabase: z.string().optional(),
+  lastTestStatus: dbConnectionTestStatusSchema.default("unknown"),
+  lastTestMessage: z.string().optional(),
+  lastTestedAt: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const dbConnectionSummarySchema = dbConnectionRecordSchema
+  .omit({ encryptedPassword: true })
+  .extend({
+    passwordStored: z.boolean().default(false),
+  });
+
+export const dbConnectionUpsertRequestSchema = z.object({
+  name: z.string().min(1).max(120),
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535).default(3306),
+  username: z.string().min(1).max(255),
+  password: z.string().min(1).optional(),
+  rememberPassword: z.boolean().default(true),
+  clearSavedPassword: z.boolean().default(false),
+  sslMode: dbConnectionSslModeSchema.default("preferred"),
+});
+
+export const dbConnectionTestResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  serverVersion: z.string().optional(),
+  databaseCount: z.number().int().min(0).optional(),
+});
+
+export const dbDatabaseOptionSchema = z.object({
+  name: z.string().min(1),
+  isSelected: z.boolean().default(false),
+});
+
+export const dbPrimaryKeySchema = z.object({
+  name: z.string().optional(),
+  columns: z.array(z.string().min(1)).min(1),
+});
+
+export const dbForeignKeyColumnMappingSchema = z.object({
+  columnName: z.string().min(1),
+  referencedColumnName: z.string().min(1),
+});
+
+export const dbForeignKeySchema = z.object({
+  name: z.string().min(1),
+  referencedTableSchema: z.string().optional(),
+  referencedTableName: z.string().min(1),
+  updateRule: z.string().optional(),
+  deleteRule: z.string().optional(),
+  columnMappings: z.array(dbForeignKeyColumnMappingSchema).min(1),
+});
+
+export const dbIndexColumnSchema = z.object({
+  columnName: z.string().min(1),
+  seqInIndex: z.number().int().min(1),
+  direction: dbSchemaIndexDirectionSchema.optional(),
+  subPart: z.number().int().min(1).optional(),
+});
+
+export const dbIndexSchema = z.object({
+  name: z.string().min(1),
+  unique: z.boolean(),
+  primary: z.boolean().default(false),
+  indexType: z.string().optional(),
+  columns: z.array(dbIndexColumnSchema).min(1),
+});
+
+export const dbColumnSchema = z.object({
+  name: z.string().min(1),
+  ordinalPosition: z.number().int().min(1),
+  dataType: z.string().min(1),
+  columnType: z.string().optional(),
+  nullable: z.boolean(),
+  defaultValue: z.string().nullable().optional(),
+  autoIncrement: z.boolean().default(false),
+  comment: z.string().optional(),
+  characterMaxLength: z.number().int().positive().optional(),
+  numericPrecision: z.number().int().positive().optional(),
+  numericScale: z.number().int().min(0).optional(),
+});
+
+export const dbTableSchema = z.object({
+  name: z.string().min(1),
+  engine: z.string().optional(),
+  comment: z.string().optional(),
+  columns: z.array(dbColumnSchema).default([]),
+  primaryKey: dbPrimaryKeySchema.optional(),
+  foreignKeys: z.array(dbForeignKeySchema).default([]),
+  indexes: z.array(dbIndexSchema).default([]),
+});
+
+export const dbSchemaCatalogSchema = z.object({
+  dialect: dbConnectionDialectSchema.default("mysql"),
+  databaseName: z.string().min(1),
+  tables: z.array(dbTableSchema).default([]),
+  capturedAt: z.string().optional(),
+});
+
+export const dbSchemaSnapshotSchema = z.object({
+  id: z.number().int().positive(),
+  connectionId: z.number().int().positive(),
+  dialect: dbConnectionDialectSchema.default("mysql"),
+  databaseName: z.string().min(1),
+  snapshotHash: z.string().min(8),
+  tableCount: z.number().int().min(0),
+  schemaJson: z.string(),
+  capturedAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const dbSelectDatabaseRequestSchema = z.object({
+  databaseName: z.string().min(1),
+});
+
+export const dbSchemaIntrospectRequestSchema = z.object({
+  databaseName: z.string().min(1).optional(),
+  forceRefresh: z.boolean().default(true),
+});
+
+export const dbSchemaIntrospectResponseSchema = z.object({
+  connection: dbConnectionSummarySchema,
+  selectedDatabase: z.string().min(1),
+  cacheHit: z.boolean().default(false),
+  snapshot: dbSchemaSnapshotSchema,
+  schema: dbSchemaCatalogSchema,
+});
+
+export const dbDiffScopeSchema = z.enum(["sheet", "table"]);
+export const dbDiffActionSchema = z.enum(["added", "removed", "modified", "rename_suggest", "renamed"]);
+export const dbDiffEntityTypeSchema = z.enum(["table", "column"]);
+export const dbRenameDecisionSchema = z.enum(["pending", "accept", "reject"]);
+export const dbDiffBlockerCodeSchema = z.enum([
+  "drop_table",
+  "drop_column",
+  "type_shrink",
+  "rename_unconfirmed",
+  "not_null_without_fill",
+]);
+export const dbDiffBlockerSeveritySchema = z.enum(["blocking", "warning"]);
+export const dbSqlStatementKindSchema = z.enum([
+  "create_table",
+  "drop_table",
+  "rename_table",
+  "add_column",
+  "drop_column",
+  "modify_column",
+  "rename_column",
+  "note",
+]);
+
+export const dbFileColumnSchema = z.object({
+  logicalName: z.string().optional(),
+  physicalName: z.string().optional(),
+  dataType: z.string().optional(),
+  size: z.string().optional(),
+  nullable: z.boolean().optional(),
+  isPk: z.boolean().optional(),
+  autoIncrement: z.boolean().optional(),
+  comment: z.string().optional(),
+});
+
+export const dbFileTableSchema = z.object({
+  sheetName: z.string().min(1),
+  logicalTableName: z.string().optional(),
+  physicalTableName: z.string().optional(),
+  columns: z.array(dbFileColumnSchema).default([]),
+});
+
+export const dbDiffBlockerSchema = z.object({
+  code: dbDiffBlockerCodeSchema,
+  severity: dbDiffBlockerSeveritySchema.default("blocking"),
+  entityType: dbDiffEntityTypeSchema,
+  entityKey: z.string().min(1),
+  sheetName: z.string().optional(),
+  tableName: z.string().optional(),
+  columnName: z.string().optional(),
+  message: z.string().min(1),
+});
+
+export const dbRenameSuggestionSchema = z.object({
+  entityType: dbDiffEntityTypeSchema,
+  entityKey: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  decision: dbRenameDecisionSchema.default("pending"),
+  sheetName: z.string().min(1),
+  tableNameBefore: z.string().optional(),
+  tableNameAfter: z.string().optional(),
+  columnNameBefore: z.string().optional(),
+  columnNameAfter: z.string().optional(),
+});
+
+export const dbDiffColumnChangeSchema = z.object({
+  action: dbDiffActionSchema,
+  entityKey: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  requiresConfirmation: z.boolean().default(false),
+  changedFields: z.array(z.string()).default([]),
+  fileColumn: dbFileColumnSchema.optional(),
+  dbColumn: dbColumnSchema.optional(),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+});
+
+export const dbDiffTableChangeSchema = z.object({
+  action: dbDiffActionSchema,
+  entityKey: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  requiresConfirmation: z.boolean().default(false),
+  sheetName: z.string().min(1),
+  changedFields: z.array(z.string()).default([]),
+  fileTable: dbFileTableSchema.optional(),
+  dbTable: dbTableSchema.optional(),
+  columnChanges: z.array(dbDiffColumnChangeSchema).default([]),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+});
+
+export const dbDiffSummarySchema = z.object({
+  addedTables: z.number().int().min(0),
+  removedTables: z.number().int().min(0),
+  changedTables: z.number().int().min(0),
+  renameSuggestions: z.number().int().min(0),
+  pendingRenameConfirmations: z.number().int().min(0),
+  addedColumns: z.number().int().min(0),
+  removedColumns: z.number().int().min(0),
+  changedColumns: z.number().int().min(0),
+  blockingCount: z.number().int().min(0),
+});
+
+export const dbDiffContextSchema = z.object({
+  fileId: z.number().int().positive(),
+  fileName: z.string().min(1),
+  scope: dbDiffScopeSchema,
+  sheetName: z.string().min(1),
+  tableName: z.string().optional(),
+  connectionId: z.number().int().positive(),
+  connectionName: z.string().min(1),
+  databaseName: z.string().min(1),
+  snapshotHash: z.string().min(8),
+  snapshotCapturedAt: z.string().optional(),
+});
+
+export const dbDiffPreviewRequestSchema = z
+  .object({
+    fileId: z.number().int().positive(),
+    sheetName: z.string().min(1),
+    scope: dbDiffScopeSchema.default("sheet"),
+    tableName: z.string().min(1).optional(),
+    databaseName: z.string().min(1).optional(),
+    refreshLiveSchema: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scope === "table" && !value.tableName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tableName"],
+        message: "tableName is required when scope=table",
+      });
+    }
+  });
+
+export const dbRenameDecisionItemSchema = z.object({
+  entityType: dbDiffEntityTypeSchema,
+  entityKey: z.string().min(1),
+  decision: z.enum(["accept", "reject"]),
+});
+
+export const dbDiffConfirmRenamesRequestSchema = z.object({
+  compare: dbDiffPreviewRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).min(1),
+});
+
+export const dbDiffPreviewResponseSchema = z.object({
+  context: dbDiffContextSchema,
+  cacheHit: z.boolean().default(false),
+  summary: dbDiffSummarySchema,
+  tableChanges: z.array(dbDiffTableChangeSchema).default([]),
+  renameSuggestions: z.array(dbRenameSuggestionSchema).default([]),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+  canPreview: z.boolean().default(false),
+});
+
+export const dbSqlPreviewStatementSchema = z.object({
+  id: z.string().min(1),
+  kind: dbSqlStatementKindSchema,
+  tableName: z.string().optional(),
+  sql: z.string().min(1),
+  relatedEntityKeys: z.array(z.string()).default([]),
+  blocked: z.boolean().default(false),
+  blockerCodes: z.array(dbDiffBlockerCodeSchema).default([]),
+});
+
+export const dbSqlPreviewArtifactSchema = z.object({
+  artifactName: z.string().min(1),
+  tableName: z.string().optional(),
+  sql: z.string().min(1),
+  statements: z.array(dbSqlPreviewStatementSchema).default([]),
+});
+
+export const dbSqlPreviewRequestSchema = z.object({
+  compare: dbDiffPreviewRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).default([]),
+  dialect: z.enum(["mysql", "oracle"]).default("mysql"),
+});
+
+export const dbSqlPreviewResponseSchema = z.object({
+  compareResult: dbDiffPreviewResponseSchema,
+  dialect: z.enum(["mysql", "oracle"]),
+  artifacts: z.array(dbSqlPreviewArtifactSchema).default([]),
+  blocked: z.boolean().default(false),
+});
+
+export const dbDryRunRequestSchema = z.object({
+  compare: dbDiffPreviewRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).default([]),
+  dialect: z.enum(["mysql", "oracle"]).default("mysql"),
+});
+
+export const dbDryRunSummarySchema = z.object({
+  dialect: z.enum(["mysql", "oracle"]),
+  statementCount: z.number().int().min(0),
+  executableStatementCount: z.number().int().min(0),
+  blockedStatementCount: z.number().int().min(0),
+  blockingCount: z.number().int().min(0),
+  tableCount: z.number().int().min(0),
+});
+
+export const dbDryRunResponseSchema = z.object({
+  compareResult: dbDiffPreviewResponseSchema,
+  summary: dbDryRunSummarySchema,
+  artifacts: z.array(dbSqlPreviewArtifactSchema).default([]),
+});
+
+export const dbComparePolicySchema = z.object({
+  tableRenameAutoAcceptThreshold: z.number().min(0).max(1).optional(),
+  columnRenameAutoAcceptThreshold: z.number().min(0).max(1).optional(),
+});
+
+export const dbCompareLiveTargetSchema = z.object({
+  connectionId: z.number().int().positive(),
+  databaseName: z.string().min(1),
+  snapshotHash: z.string().min(8).optional(),
+});
+
+export const dbVsDbCompareScopeSchema = z.enum(["database", "table"]);
+
+export const dbVsDbCompareRequestSchema = z
+  .object({
+    source: dbCompareLiveTargetSchema,
+    target: dbCompareLiveTargetSchema,
+    scope: dbVsDbCompareScopeSchema.default("database"),
+    tableName: z.string().min(1).optional(),
+    refreshSourceSchema: z.boolean().default(false),
+    refreshTargetSchema: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scope === "table" && !value.tableName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tableName"],
+        message: "tableName is required when scope=table",
+      });
+    }
+  });
+
+export const dbVsDbCompareContextSchema = z.object({
+  sourceConnectionId: z.number().int().positive(),
+  sourceConnectionName: z.string().min(1),
+  sourceDatabaseName: z.string().min(1),
+  sourceSnapshotHash: z.string().min(8),
+  targetConnectionId: z.number().int().positive(),
+  targetConnectionName: z.string().min(1),
+  targetDatabaseName: z.string().min(1),
+  targetSnapshotHash: z.string().min(8),
+  scope: dbVsDbCompareScopeSchema.default("database"),
+  tableName: z.string().min(1).optional(),
+});
+
+export const dbVsDbCompareResponseSchema = z.object({
+  context: dbVsDbCompareContextSchema,
+  summary: dbDiffSummarySchema,
+  tableChanges: z.array(dbDiffTableChangeSchema).default([]),
+  renameSuggestions: z.array(dbRenameSuggestionSchema).default([]),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+  canPreview: z.boolean().default(false),
+  policy: dbComparePolicySchema.default({}),
+});
+
+export const dbVsDbRenameReviewRequestSchema = z.object({
+  compare: dbVsDbCompareRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).min(1),
+});
+
+export const dbVsDbPreviewRequestSchema = z.object({
+  compare: dbVsDbCompareRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).default([]),
+  dialect: z.enum(["mysql", "oracle"]).default("mysql"),
+});
+
+export const dbVsDbPreviewResponseSchema = z.object({
+  compareResult: dbVsDbCompareResponseSchema,
+  dialect: z.enum(["mysql", "oracle"]),
+  artifacts: z.array(dbSqlPreviewArtifactSchema).default([]),
+  blocked: z.boolean().default(false),
+});
+
+export const dbManagementViewModeSchema = z.enum(["diff", "db-vs-db", "history", "apply", "graph"]);
+
+export const dbHistoryCompareSourceKindSchema = z.enum(["file", "live", "snapshot"]);
+
+export const dbHistoryCompareSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("file"),
+    fileId: z.number().int().positive(),
+    fileName: z.string().min(1),
+    sheetName: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("live"),
+    connectionId: z.number().int().positive(),
+    databaseName: z.string().min(1),
+    snapshotHash: z.string().min(8).optional(),
+  }),
+  z.object({
+    kind: z.literal("snapshot"),
+    connectionId: z.number().int().positive(),
+    databaseName: z.string().min(1),
+    snapshotHash: z.string().min(8),
+  }),
+]);
+
+export const dbHistoryCompareScopeSchema = z.enum(["database", "table"]);
+
+export const dbSchemaScanEventTypeSchema = z.enum(["new_snapshot", "unchanged_scan"]);
+
+export const dbSchemaScanEventSchema = z.object({
+  id: z.number().int().positive(),
+  connectionId: z.number().int().positive(),
+  dialect: dbConnectionDialectSchema.default("mysql"),
+  databaseName: z.string().min(1),
+  snapshotHash: z.string().min(8),
+  eventType: dbSchemaScanEventTypeSchema,
+  previousSnapshotHash: z.string().min(8).optional(),
+  changeSummaryJson: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export const dbHistoryListRequestSchema = z.object({
+  databaseName: z.string().min(1),
+  limit: z.number().int().min(1).max(200).default(50),
+  changedOnly: z.boolean().default(false),
+});
+
+export const dbHistoryEntrySchema = z.object({
+  scanEvent: dbSchemaScanEventSchema,
+  snapshot: dbSchemaSnapshotSchema.optional(),
+  previousSnapshot: dbSchemaSnapshotSchema.optional(),
+  createdNewSnapshot: z.boolean().default(false),
+});
+
+export const dbHistoryListResponseSchema = z.object({
+  connectionId: z.number().int().positive(),
+  databaseName: z.string().min(1),
+  latestSnapshotHash: z.string().min(8).optional(),
+  entries: z.array(dbHistoryEntrySchema).default([]),
+});
+
+export const dbHistoryDetailResponseSchema = z.object({
+  entry: dbHistoryEntrySchema,
+});
+
+export const dbHistoryCompareContextSchema = z.object({
+  connectionId: z.number().int().positive(),
+  databaseName: z.string().min(1),
+  left: dbHistoryCompareSourceSchema,
+  right: dbHistoryCompareSourceSchema,
+  scope: dbHistoryCompareScopeSchema.default("database"),
+  tableName: z.string().min(1).optional(),
+});
+
+export const dbHistoryCompareRequestSchema = z
+  .object({
+    left: dbHistoryCompareSourceSchema,
+    right: dbHistoryCompareSourceSchema,
+    scope: dbHistoryCompareScopeSchema.default("database"),
+    tableName: z.string().min(1).optional(),
+    refreshLiveSchema: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scope === "table" && !value.tableName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tableName"],
+        message: "tableName is required when scope=table",
+      });
+    }
+    if (value.left.kind === "live" && value.right.kind === "live") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["right"],
+        message: "live-to-live DB comparison is deferred",
+      });
+    }
+  });
+
+export const dbHistoryCompareResponseSchema = z.object({
+  context: dbHistoryCompareContextSchema,
+  summary: dbDiffSummarySchema,
+  tableChanges: z.array(dbDiffTableChangeSchema).default([]),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+  canApply: z.boolean().default(false),
+});
+
+export const dbApplySelectionSchema = z.object({
+  tableName: z.string().min(1),
+  relatedEntityKeys: z.array(z.string().min(1)).default([]),
+  blocked: z.boolean().default(false),
+  blockerCodes: z.array(dbDiffBlockerCodeSchema).default([]),
+});
+
+export const dbDeployJobStatusSchema = z.enum([
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "partial",
+  "blocked",
+]);
+
+export const dbDeployJobSummarySchema = z.object({
+  selectedTableCount: z.number().int().min(0),
+  appliedTableCount: z.number().int().min(0),
+  statementCount: z.number().int().min(0),
+  executedStatementCount: z.number().int().min(0),
+  blockedStatementCount: z.number().int().min(0),
+  failedStatementCount: z.number().int().min(0),
+});
+
+export const dbApplyRequestSchema = z
+  .object({
+    databaseName: z.string().min(1),
+    compareSource: dbHistoryCompareSourceSchema,
+    baselineSource: dbHistoryCompareSourceSchema,
+    compareHash: z.string().min(8),
+    comparedTargetSnapshotHash: z.string().min(8),
+    currentTargetSnapshotHash: z.string().min(8),
+    selections: z.array(dbApplySelectionSchema).min(1),
+    dialect: z.enum(["mysql", "oracle"]).default("mysql"),
+  })
+  .superRefine((value, ctx) => {
+    if (value.comparedTargetSnapshotHash !== value.currentTargetSnapshotHash) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["currentTargetSnapshotHash"],
+        message: "Apply request is stale. Refresh the compare result before applying.",
+      });
+    }
+    if (value.compareSource.kind === "live" && value.baselineSource.kind === "live") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["baselineSource"],
+        message: "live-to-live DB apply is deferred",
+      });
+    }
+    const blockedSelection = value.selections.find(
+      (selection) => selection.blocked || selection.blockerCodes.length > 0,
+    );
+    if (blockedSelection) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["selections"],
+        message: `Blocked table selections cannot be applied: ${blockedSelection.tableName}`,
+      });
+    }
+  });
+
+export const dbDeployJobSchema = z.object({
+  id: z.string().min(1),
+  connectionId: z.number().int().positive(),
+  dialect: z.enum(["mysql", "oracle"]).default("mysql"),
+  databaseName: z.string().min(1),
+  compareHash: z.string().min(8),
+  compareSource: dbHistoryCompareSourceSchema,
+  baselineSource: dbHistoryCompareSourceSchema,
+  targetSnapshotHash: z.string().min(8),
+  selectedTables: z.array(z.string().min(1)).default([]),
+  summary: dbDeployJobSummarySchema.optional(),
+  status: dbDeployJobStatusSchema.default("pending"),
+  errorMessage: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const dbDeployJobStatementStatusSchema = z.enum([
+  "pending",
+  "succeeded",
+  "failed",
+  "blocked",
+  "skipped",
+]);
+
+export const dbDeployJobStatementResultSchema = z.object({
+  id: z.number().int().positive(),
+  jobId: z.string().min(1),
+  statementId: z.string().min(1),
+  tableName: z.string().optional(),
+  statementKind: dbSqlStatementKindSchema,
+  relatedEntityKeys: z.array(z.string().min(1)).default([]),
+  blockerCodes: z.array(dbDiffBlockerCodeSchema).default([]),
+  blocked: z.boolean().default(false),
+  status: dbDeployJobStatementStatusSchema.default("pending"),
+  sql: z.string().min(1),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  executedAt: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export const dbApplyResponseSchema = z.object({
+  job: dbDeployJobSchema,
+  results: z.array(dbDeployJobStatementResultSchema).default([]),
+});
+
+export const dbDeployJobDetailResponseSchema = z.object({
+  job: dbDeployJobSchema,
+  results: z.array(dbDeployJobStatementResultSchema).default([]),
+});
+
+export const dbGraphModeSchema = z.enum(["full", "changed", "selection"]);
+
+export const dbGraphNodeSchema = z.object({
+  id: z.string().min(1),
+  tableName: z.string().min(1),
+  label: z.string().min(1),
+  columnCount: z.number().int().min(0),
+  foreignKeyCount: z.number().int().min(0),
+  changed: z.boolean().default(false),
+  highlighted: z.boolean().default(false),
+  position: z.object({
+    x: z.number(),
+    y: z.number(),
+  }),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+});
+
+export const dbGraphEdgeSchema = z.object({
+  id: z.string().min(1),
+  sourceId: z.string().min(1),
+  targetId: z.string().min(1),
+  relationshipName: z.string().optional(),
+  changed: z.boolean().default(false),
+});
+
+export const dbGraphRequestSchema = z
+  .object({
+    source: dbHistoryCompareSourceSchema,
+    compareTo: dbHistoryCompareSourceSchema.optional(),
+    mode: dbGraphModeSchema.default("full"),
+    selectedTableNames: z.array(z.string().min(1)).default([]),
+    includeNeighbors: z.boolean().default(true),
+  })
+  .superRefine((value, ctx) => {
+    if (value.source.kind === "live" && value.compareTo?.kind === "live") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["compareTo"],
+        message: "live-to-live DB graph comparison is deferred",
+      });
+    }
+  });
+
+export const dbGraphResponseSchema = z.object({
+  source: dbHistoryCompareSourceSchema,
+  compareTo: dbHistoryCompareSourceSchema.optional(),
+  mode: dbGraphModeSchema.default("full"),
+  nodes: z.array(dbGraphNodeSchema).default([]),
+  edges: z.array(dbGraphEdgeSchema).default([]),
+  changedTableNames: z.array(z.string().min(1)).default([]),
+  availableTableNames: z.array(z.string().min(1)).default([]),
+});
+
+export const dbVsDbGraphRequestSchema = z.object({
+  compare: dbVsDbCompareRequestSchema,
+  decisions: z.array(dbRenameDecisionItemSchema).default([]),
+  mode: dbGraphModeSchema.default("full"),
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  includeNeighbors: z.boolean().default(true),
+});
+
+export const dbVsDbGraphResponseSchema = z.object({
+  compareResult: dbVsDbCompareResponseSchema,
+  mode: dbGraphModeSchema.default("full"),
+  nodes: z.array(dbGraphNodeSchema).default([]),
+  edges: z.array(dbGraphEdgeSchema).default([]),
+  changedTableNames: z.array(z.string().min(1)).default([]),
+  availableTableNames: z.array(z.string().min(1)).default([]),
+});
+
+export const dbVsDbWorkspaceStateSchema = z.object({
+  lastCompareInput: dbVsDbCompareRequestSchema.nullable().default(null),
+  compareResult: dbVsDbCompareResponseSchema.nullable().default(null),
+  previewResult: dbVsDbPreviewResponseSchema.nullable().default(null),
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+});
 
 // Non-DB types for Excel parsing
 export const codeValueOptionSchema = z.object({
@@ -791,6 +1902,18 @@ export const processingTaskSchema = z.object({
   updatedAt: z.date(),
 });
 
+export const processingTaskResponseSchema = z.object({
+  id: z.string(),
+  fileId: z.number().optional(),
+  taskType: z.string(),
+  status: z.enum(["pending", "processing", "completed", "failed"]),
+  progress: z.number().min(0).max(100),
+  error: z.string().optional(),
+  result: z.unknown().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 export const schemaSnapshotSchema = z.object({
   id: z.number().int(),
   fileId: z.number().int(),
@@ -840,7 +1963,127 @@ export const diffRenameDecisionSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+export const OFFICIAL_DB_MANAGEMENT_EXTENSION = officialExtensionCatalogItemSchema.parse({
+  extensionId: DB_MANAGEMENT_EXTENSION_ID,
+  name: "DB 管理",
+  shortName: "DB",
+  description: "既存 DB 管理、差异可视化与部署能力的官方扩展。",
+  publisher: OFFICIAL_EXTENSION_PUBLISHER,
+  source: "official",
+  official: true,
+  hostApiVersion: EXTENSION_HOST_API_VERSION,
+  recommended: true,
+});
+
 export type ProcessingTask = z.infer<typeof processingTaskSchema>;
+export type ProcessingTaskResponse = z.infer<typeof processingTaskResponseSchema>;
+export type UploadedFileRecord = z.infer<typeof uploadedFileRecordSchema>;
+export type WorkbookTemplateVariantId = z.infer<typeof workbookTemplateVariantIdSchema>;
+export type WorkbookTemplateLayout = z.infer<typeof workbookTemplateLayoutSchema>;
+export type WorkbookTemplateVariant = z.infer<typeof workbookTemplateVariantSchema>;
+export type WorkbookTemplateValidation = z.infer<typeof workbookTemplateValidationSchema>;
+export type CreateWorkbookFromTemplateRequest = z.infer<typeof createWorkbookFromTemplateRequestSchema>;
+export type CreateWorkbookFromTemplateResponse = z.infer<typeof createWorkbookFromTemplateResponseSchema>;
+export type ExtensionId = z.infer<typeof extensionIdSchema>;
+export type ExtensionHostStatus = z.infer<typeof extensionHostStatusSchema>;
+export type ExtensionCompatibilityStatus = z.infer<typeof extensionCompatibilityStatusSchema>;
+export type ExtensionHostAction = z.infer<typeof extensionHostActionSchema>;
+export type ExtensionRuntimeTarget = z.infer<typeof extensionRuntimeTargetSchema>;
+export type ExtensionLifecycleStage = z.infer<typeof extensionLifecycleStageSchema>;
+export type ExtensionLifecycleErrorCode = z.infer<typeof extensionLifecycleErrorCodeSchema>;
+export type InstalledExtensionRecord = z.infer<typeof installedExtensionRecordSchema>;
+export type OfficialExtensionCatalogItem = z.infer<typeof officialExtensionCatalogItemSchema>;
+export type OfficialExtensionManifest = z.infer<typeof officialExtensionManifestSchema>;
+export type ExtensionManifestPackage = z.infer<typeof extensionManifestPackageSchema>;
+export type ExtensionCatalogRelease = z.infer<typeof extensionCatalogReleaseSchema>;
+export type ExtensionLifecycleState = z.infer<typeof extensionLifecycleStateSchema>;
+export type ExtensionHostState = z.infer<typeof extensionHostStateSchema>;
+export type DbConnectionDialect = z.infer<typeof dbConnectionDialectSchema>;
+export type DbConnectionSslMode = z.infer<typeof dbConnectionSslModeSchema>;
+export type DbPasswordStorage = z.infer<typeof dbPasswordStorageSchema>;
+export type DbConnectionTestStatus = z.infer<typeof dbConnectionTestStatusSchema>;
+export type DbConnectionRecord = z.infer<typeof dbConnectionRecordSchema>;
+export type DbConnectionSummary = z.infer<typeof dbConnectionSummarySchema>;
+export type DbConnectionUpsertRequest = z.infer<typeof dbConnectionUpsertRequestSchema>;
+export type DbConnectionTestResponse = z.infer<typeof dbConnectionTestResponseSchema>;
+export type DbDatabaseOption = z.infer<typeof dbDatabaseOptionSchema>;
+export type DbPrimaryKey = z.infer<typeof dbPrimaryKeySchema>;
+export type DbForeignKeyColumnMapping = z.infer<typeof dbForeignKeyColumnMappingSchema>;
+export type DbForeignKey = z.infer<typeof dbForeignKeySchema>;
+export type DbIndexColumn = z.infer<typeof dbIndexColumnSchema>;
+export type DbIndex = z.infer<typeof dbIndexSchema>;
+export type DbColumn = z.infer<typeof dbColumnSchema>;
+export type DbTable = z.infer<typeof dbTableSchema>;
+export type DbSchemaCatalog = z.infer<typeof dbSchemaCatalogSchema>;
+export type DbSchemaSnapshot = z.infer<typeof dbSchemaSnapshotSchema>;
+export type DbComparePolicy = z.infer<typeof dbComparePolicySchema>;
+export type DbCompareLiveTarget = z.infer<typeof dbCompareLiveTargetSchema>;
+export type DbVsDbCompareScope = z.infer<typeof dbVsDbCompareScopeSchema>;
+export type DbVsDbCompareRequest = z.infer<typeof dbVsDbCompareRequestSchema>;
+export type DbVsDbCompareContext = z.infer<typeof dbVsDbCompareContextSchema>;
+export type DbVsDbCompareResponse = z.infer<typeof dbVsDbCompareResponseSchema>;
+export type DbVsDbRenameReviewRequest = z.infer<typeof dbVsDbRenameReviewRequestSchema>;
+export type DbVsDbPreviewRequest = z.infer<typeof dbVsDbPreviewRequestSchema>;
+export type DbVsDbPreviewResponse = z.infer<typeof dbVsDbPreviewResponseSchema>;
+export type DbManagementViewMode = z.infer<typeof dbManagementViewModeSchema>;
+export type DbHistoryCompareSourceKind = z.infer<typeof dbHistoryCompareSourceKindSchema>;
+export type DbHistoryCompareSource = z.infer<typeof dbHistoryCompareSourceSchema>;
+export type DbHistoryCompareScope = z.infer<typeof dbHistoryCompareScopeSchema>;
+export type DbSchemaScanEventType = z.infer<typeof dbSchemaScanEventTypeSchema>;
+export type DbSchemaScanEvent = z.infer<typeof dbSchemaScanEventSchema>;
+export type DbHistoryListRequest = z.infer<typeof dbHistoryListRequestSchema>;
+export type DbHistoryEntry = z.infer<typeof dbHistoryEntrySchema>;
+export type DbHistoryListResponse = z.infer<typeof dbHistoryListResponseSchema>;
+export type DbHistoryDetailResponse = z.infer<typeof dbHistoryDetailResponseSchema>;
+export type DbHistoryCompareContext = z.infer<typeof dbHistoryCompareContextSchema>;
+export type DbHistoryCompareRequest = z.infer<typeof dbHistoryCompareRequestSchema>;
+export type DbHistoryCompareResponse = z.infer<typeof dbHistoryCompareResponseSchema>;
+export type DbApplySelection = z.infer<typeof dbApplySelectionSchema>;
+export type DbDeployJobStatus = z.infer<typeof dbDeployJobStatusSchema>;
+export type DbDeployJobSummary = z.infer<typeof dbDeployJobSummarySchema>;
+export type DbApplyRequest = z.infer<typeof dbApplyRequestSchema>;
+export type DbDeployJob = z.infer<typeof dbDeployJobSchema>;
+export type DbDeployJobStatementStatus = z.infer<typeof dbDeployJobStatementStatusSchema>;
+export type DbDeployJobStatementResult = z.infer<typeof dbDeployJobStatementResultSchema>;
+export type DbApplyResponse = z.infer<typeof dbApplyResponseSchema>;
+export type DbDeployJobDetailResponse = z.infer<typeof dbDeployJobDetailResponseSchema>;
+export type DbGraphMode = z.infer<typeof dbGraphModeSchema>;
+export type DbGraphNode = z.infer<typeof dbGraphNodeSchema>;
+export type DbGraphEdge = z.infer<typeof dbGraphEdgeSchema>;
+export type DbGraphRequest = z.infer<typeof dbGraphRequestSchema>;
+export type DbGraphResponse = z.infer<typeof dbGraphResponseSchema>;
+export type DbVsDbGraphRequest = z.infer<typeof dbVsDbGraphRequestSchema>;
+export type DbVsDbGraphResponse = z.infer<typeof dbVsDbGraphResponseSchema>;
+export type DbVsDbWorkspaceState = z.infer<typeof dbVsDbWorkspaceStateSchema>;
+export type DbSelectDatabaseRequest = z.infer<typeof dbSelectDatabaseRequestSchema>;
+export type DbSchemaIntrospectRequest = z.infer<typeof dbSchemaIntrospectRequestSchema>;
+export type DbSchemaIntrospectResponse = z.infer<typeof dbSchemaIntrospectResponseSchema>;
+export type DbDiffScope = z.infer<typeof dbDiffScopeSchema>;
+export type DbDiffAction = z.infer<typeof dbDiffActionSchema>;
+export type DbDiffEntityType = z.infer<typeof dbDiffEntityTypeSchema>;
+export type DbRenameDecision = z.infer<typeof dbRenameDecisionSchema>;
+export type DbDiffBlockerCode = z.infer<typeof dbDiffBlockerCodeSchema>;
+export type DbDiffBlockerSeverity = z.infer<typeof dbDiffBlockerSeveritySchema>;
+export type DbSqlStatementKind = z.infer<typeof dbSqlStatementKindSchema>;
+export type DbFileColumn = z.infer<typeof dbFileColumnSchema>;
+export type DbFileTable = z.infer<typeof dbFileTableSchema>;
+export type DbDiffBlocker = z.infer<typeof dbDiffBlockerSchema>;
+export type DbRenameSuggestion = z.infer<typeof dbRenameSuggestionSchema>;
+export type DbDiffColumnChange = z.infer<typeof dbDiffColumnChangeSchema>;
+export type DbDiffTableChange = z.infer<typeof dbDiffTableChangeSchema>;
+export type DbDiffSummary = z.infer<typeof dbDiffSummarySchema>;
+export type DbDiffContext = z.infer<typeof dbDiffContextSchema>;
+export type DbDiffPreviewRequest = z.infer<typeof dbDiffPreviewRequestSchema>;
+export type DbRenameDecisionItem = z.infer<typeof dbRenameDecisionItemSchema>;
+export type DbDiffConfirmRenamesRequest = z.infer<typeof dbDiffConfirmRenamesRequestSchema>;
+export type DbDiffPreviewResponse = z.infer<typeof dbDiffPreviewResponseSchema>;
+export type DbSqlPreviewStatement = z.infer<typeof dbSqlPreviewStatementSchema>;
+export type DbSqlPreviewArtifact = z.infer<typeof dbSqlPreviewArtifactSchema>;
+export type DbSqlPreviewRequest = z.infer<typeof dbSqlPreviewRequestSchema>;
+export type DbSqlPreviewResponse = z.infer<typeof dbSqlPreviewResponseSchema>;
+export type DbDryRunRequest = z.infer<typeof dbDryRunRequestSchema>;
+export type DbDryRunSummary = z.infer<typeof dbDryRunSummarySchema>;
+export type DbDryRunResponse = z.infer<typeof dbDryRunResponseSchema>;
 export type CellSourceRef = z.infer<typeof cellSourceRefSchema>;
 export type TableSourceRef = z.infer<typeof tableSourceRefSchema>;
 export type NameFixMode = z.infer<typeof nameFixModeSchema>;

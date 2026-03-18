@@ -1,0 +1,11 @@
+HTTP/1.1 500 Internal Server Error
+Content-Length: 125
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Fri, 06 Mar 2026 10:17:48 GMT
+Etag: W/"7d-F1dEZYhqTcYLnJQQUkDanipVFf0"
+Keep-Alive: timeout=4
+Proxy-Connection: keep-alive
+X-Powered-By: Express
+
+{"code":"SEARCH_INDEX_FAILED","message":"Failed to generate search index","requestId":"994b53b6-11ae-48c0-9aed-a96e06365369"}

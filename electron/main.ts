@@ -4,6 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import net from 'net';
+import { extensionIdSchema } from '@shared/schema';
+import { extensionService } from './extensions';
 import { initAutoUpdater } from './updater';
 import type { Server } from 'http';
 
@@ -133,6 +135,7 @@ async function startExpressServer() {
   process.env.PORT = serverPort.toString();
   process.env.NODE_ENV = 'production';
   process.env.ELECTRON_MODE = 'true';
+  process.env.APP_VERSION = app.getVersion();
 
   // Electronアプリケーションのリソースディレクトリを設定
   const isDev = !app.isPackaged;
@@ -401,4 +404,60 @@ ipcMain.handle('open-external', async (_event, rawUrl: string) => {
   } catch {
     return false;
   }
+});
+
+ipcMain.handle("extensions:get-install-context", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.getInstallContext(parsed.data);
+});
+
+ipcMain.handle("extensions:open-install-flow", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.openInstallFlow(parsed.data);
+});
+
+ipcMain.handle("extensions:get-catalog", async (_event, rawExtensionId: string, force = false) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.getCatalog(parsed.data, Boolean(force));
+});
+
+ipcMain.handle("extensions:start-install", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.startInstall(parsed.data);
+});
+
+ipcMain.handle("extensions:get-lifecycle-state", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.getLifecycleState(parsed.data);
+});
+
+ipcMain.handle("extensions:uninstall", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.uninstallExtension(parsed.data);
+});
+
+ipcMain.handle("extensions:activate", async (_event, rawExtensionId: string) => {
+  const parsed = extensionIdSchema.safeParse(rawExtensionId);
+  if (!parsed.success) {
+    throw new Error("Unknown extension id");
+  }
+  return extensionService.activateExtension(parsed.data);
 });

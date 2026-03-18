@@ -2,14 +2,54 @@
 
 A full-stack web application that parses Japanese Excel-based database definition documents (データベース定義書) and generates SQL DDL statements for MySQL or Oracle.
 
-## Features
+## Capability Overview
 
-- 📁 Upload Excel files containing database definitions
-- 📊 Browse and select sheets from uploaded files
-- 🔍 Preview parsed table structures (columns, types, constraints)
-- 🛠️ Generate DDL statements for MySQL or Oracle
-- 📋 Copy generated DDL to clipboard
-- 🎯 Support for multiple tables per sheet
+This project is no longer just "upload + generate DDL". It currently includes:
+
+### Workspace and Input
+
+- Upload Excel files by button or drag-and-drop
+- Versioned file list (same filename can keep multiple revisions)
+- Auto-restore last selected file and sheet
+- Sheet search and jump (`Ctrl/Cmd + P`)
+- Auto / Spreadsheet / Diff view modes in the center panel
+
+### Parsing and Generation
+
+- Parse multiple tables per sheet by Japanese labels (e.g. `論理テーブル名`, `物理テーブル名`)
+- Generate MySQL or Oracle DDL
+- Single output or per-table ZIP export
+- SQL preview with syntax highlighting and copy action
+- Region-based parsing from spreadsheet selection
+
+### Guardrails and Repair
+
+- Missing data type guard dialog with manual fill and size validation
+- Name Fix quick gate before generation
+- Full Name Fix workflow (preview/apply/rollback/job tracking/download)
+- Export summary (selected/succeeded/skipped tables)
+
+### Schema Diff and Incremental Delivery
+
+- Diff current file vs historical version
+- Rename confirmation workflow to reduce false positives
+- ALTER preview and export
+- Output control: single/multi-table, single file/ZIP, split by sheet
+
+### Settings and Runtime Governance
+
+- DDL, MySQL, export, parser, and Name Fix defaults
+- Developer runtime guard settings (rate limit, queue, prewarm, concurrency)
+- Electron integration (open external docs, update check, desktop update flow)
+
+### API and Automation
+
+- Typed API contract in `shared/routes.ts`
+- File/sheet/table/search endpoints
+- DDL generate/export endpoints
+- Name Fix endpoints
+- Schema Diff endpoints
+- MCP server (`npm run mcp`) for agent automation
 
 ## Tech Stack
 
@@ -106,6 +146,9 @@ npm run docs:serve # Serve docs build locally
 - Source: `docs-site/`
 - Local preview: `npm run docs:dev`
 - Production (GitHub Pages): `https://seventhre.github.io/Db-Schema-Ddl/`
+- Main entry: `docs-site/docs/manual-architecture.md`
+- Full capability index: `docs-site/docs/component-capability-index.md`
+- Schema Diff guide: `docs-site/docs/schema-diff-workflow.md`
 
 ## Project Structure
 

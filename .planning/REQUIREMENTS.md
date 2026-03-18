@@ -1,105 +1,72 @@
-# Requirements: DB Management Extension Platform
+# Requirements: Bidirectional Schema Workflow Platform
 
-**Defined:** 2026-03-17
-**Core Value:** Users can optionally turn the desktop app into a schema management workstation by downloading one official extension on demand, without bloating the base product for everyone else.
+**Defined:** 2026-03-18
+**Core Value:** Users can compare real database environments directly and move between supported DDL and parser-compatible Excel schema workbooks without rebuilding structure by hand.
 
-## v1 Requirements
+## v1.1 Requirements
 
-### Extension Host
+### DB-vs-DB Compare
 
-- [ ] **HOST-01**: User can see whether the DB management extension is installed, not installed, disabled, or incompatible
-- [ ] **HOST-02**: User can click a DB-management entry point and be prompted to download the extension when it is not installed
-- [ ] **HOST-03**: Core app can load only enabled, compatible, verified official extensions at startup
-- [ ] **HOST-04**: Core app remains fully usable for existing Excel/DDl workflows when the extension is absent
+- [x] **DBDB-01**: User can choose a source DB and a target DB from saved connections and compare their schemas directly
+- [x] **DBDB-02**: User can inspect `DB vs DB` differences in the `DB 管理` workspace with clear source/target labels, filters, and object drilldown
+- [x] **DBDB-03**: User can review ambiguous rename or equivalence candidates before directional preview proceeds
+- [x] **DBDB-04**: User can generate a non-applying directional preview that shows how the target DB would need to change to match the selected source DB
 
-### Distribution and Lifecycle
+### XLSX Templates and Round-Trip Validation
 
-- [ ] **DIST-01**: User can view extension version, size, compatibility, and release summary before download
-- [ ] **DIST-02**: User can download the extension from the official GitHub release channel from inside the app
-- [ ] **DIST-03**: App verifies checksum and compatibility before installing the extension
-- [ ] **DIST-04**: User can enable, disable, upgrade, and uninstall the extension without reinstalling the base app
+- [x] **TPL-01**: User can create a new schema-definition workbook from a built-in `.xlsx` template aligned to the supported Japanese header layout
+- [x] **TPL-02**: User can choose a template variant for `multi-table per sheet` versus `table per sheet` authoring
+- [x] **TPL-03**: App can round-trip validate generated or templated `.xlsx` outputs by reopening them through the parser and surfacing mismatches before the user trusts them
 
-### DB Connectivity
+### DDL-to-XLSX Conversion
 
-- [ ] **DBCO-01**: User can create, edit, delete, and test a target database connection
-- [ ] **DBCO-02**: App stores DB credentials locally in a protected form rather than exposing them in plain text
-- [ ] **DBCO-03**: Extension can introspect tables, columns, primary keys, foreign keys, indexes, and comments from a target schema
+- [ ] **DDLX-01**: User can paste or import supported MySQL `CREATE TABLE` DDL and parse it into the app's canonical schema model
+- [ ] **DDLX-02**: App surfaces unsupported or lossy DDL constructs before workbook export so the user knows what requires manual cleanup
+- [ ] **DDLX-03**: User can export parsed DDL into an `.xlsx` workbook that the existing Excel parser can open without format surgery
+- [ ] **DDLX-04**: Oracle DDL import remains explicitly deferred until the MySQL-first reverse-authoring workflow is stable
 
-### Schema Comparison
+## Deferred / Future
 
-- [ ] **DIFF-01**: User can compare the currently selected file or sheet with a target DB schema
-- [ ] **DIFF-02**: User can compare the last deployed baseline snapshot with the live target DB schema
-- [ ] **DIFF-03**: User can review and confirm rename suggestions before SQL generation when the comparison is ambiguous
+### Reverse Authoring Expansion
 
-### Deploy and History
+- **DDLX-05**: Oracle DDL import supports a documented first-class subset once MySQL-first reverse authoring is stable
+- **DDLX-06**: Users can import generated SQL bundles rather than single pasted statements
 
-- [ ] **DEPL-01**: User can preview CREATE and ALTER SQL derived from file-vs-DB differences before execution
-- [ ] **DEPL-02**: User can run a dry-run deployment to see the planned changes and risk summary without applying them
-- [ ] **DEPL-03**: User can apply approved non-destructive schema changes to the target DB and see per-object execution results
-- [ ] **DEPL-04**: App records deployment jobs and baseline snapshots per target connection and schema
+### DB Operations
 
-### Visualization
-
-- [ ] **VIZ-01**: User can inspect DB-oriented diff results in a filterable tree view aligned with current diff workflows
-- [ ] **VIZ-02**: User can open an ER-style schema diagram that highlights changed tables and relationships
-
-## v2 Requirements
-
-### Distribution
-
-- **DIST-05**: User can install multiple official extensions from the same extension host
-- **DIST-06**: App can stage rollback to the previous extension version after a failed update
-
-### DB Coverage
-
-- **DBCO-04**: Extension supports advanced Oracle-specific packaging and driver requirements with guided setup
-- **DBCO-05**: Extension supports additional object types such as views, triggers, and stored procedures
-
-### Operations
-
-- **DEPL-05**: User can opt into explicitly destructive schema changes with extra safeguards and approvals
-- **DEPL-06**: User can export deployment reports suitable for audit and handoff
+- **DBDB-05**: User can compare stored snapshots from two different DB environments without requiring both to be live at compare time
+- **DBDB-06**: User can export DB-vs-DB compare reports for review and handoff
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Third-party plugin marketplace | Too much trust and support surface for initial release |
-| General SQL editor and result grid | Not required for the core schema-management value |
-| Data migration and ETL tooling | Separate problem space from schema deployment |
-| Automatic destructive migration execution by default | Too risky for the first supported release |
+| Automatic `DB -> DB` sync/apply | Too risky for the compare-first milestone |
+| Arbitrary SQL parser | Breaks the “supported subset” contract and balloons scope |
+| Custom user-defined Excel formats | Conflicts with parser compatibility and trust goals |
+| First-cut Oracle reverse import | Better deferred than rushed into unstable support |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HOST-01 | Phase 1 | Pending |
-| HOST-02 | Phase 1 | Pending |
-| HOST-03 | Phase 1 | Pending |
-| HOST-04 | Phase 1 | Pending |
-| DIST-01 | Phase 2 | Pending |
-| DIST-02 | Phase 2 | Pending |
-| DIST-03 | Phase 2 | Pending |
-| DIST-04 | Phase 2 | Pending |
-| DBCO-01 | Phase 3 | Pending |
-| DBCO-02 | Phase 3 | Pending |
-| DBCO-03 | Phase 3 | Pending |
-| DIFF-01 | Phase 4 | Pending |
-| DIFF-02 | Phase 4 | Pending |
-| DIFF-03 | Phase 4 | Pending |
-| DEPL-01 | Phase 4 | Pending |
-| DEPL-02 | Phase 4 | Pending |
-| DEPL-03 | Phase 5 | Pending |
-| DEPL-04 | Phase 5 | Pending |
-| VIZ-01 | Phase 5 | Pending |
-| VIZ-02 | Phase 5 | Pending |
+| DBDB-01 | Phase 1 | Complete |
+| DBDB-02 | Phase 1 | Complete |
+| DBDB-03 | Phase 1 | Complete |
+| DBDB-04 | Phase 1 | Complete |
+| TPL-01 | Phase 2 | Complete |
+| TPL-02 | Phase 2 | Complete |
+| TPL-03 | Phase 2 | Complete |
+| DDLX-01 | Phase 3 | Pending |
+| DDLX-02 | Phase 3 | Pending |
+| DDLX-03 | Phase 3 | Pending |
+| DDLX-04 | Phase 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 20 total
-- Mapped to phases: 20
+- v1.1 requirements: 11 total
+- Mapped to phases: 11
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after initial definition*
-
+*Requirements defined: 2026-03-18*
+*Last updated: 2026-03-18 after completing v1.1 Phase 2*
