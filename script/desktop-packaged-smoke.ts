@@ -72,7 +72,7 @@ export function buildPackagedSmokeFailureFinding(
 
 export function extractPackagedCheckpointNames(logContents: string): string[] {
   const checkpoints = new Set<string>();
-  const matches = logContents.matchAll(/^\[checkpoint:([^\]]+)\]/gm);
+  const matches = logContents.matchAll(/\[checkpoint:([^\]]+)\]/g);
   for (const match of matches) {
     if (match[1]) {
       checkpoints.add(match[1]);
