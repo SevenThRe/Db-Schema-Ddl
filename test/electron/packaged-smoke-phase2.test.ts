@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { buildDesktopSmokeArtifact, renderDesktopSmokeMarkdown } from "../../script/desktop-smoke";
 import {
@@ -192,4 +193,48 @@ test("packaged smoke emits blocker findings for launch, readiness, and shutdown 
   assert.match(launchFinding.message, /spawn EACCES/);
   assert.match(readinessFinding.message, /checkpoint timeout/);
   assert.match(shutdownFinding.message, /window still alive/);
+});
+
+test("installer smoke helper records installer path, install directory, timestamps, and evidence refs", () => {
+  const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
+  const installerScript = fs.readFileSync(installerScriptPath, "utf8");
+
+  assert.match(installerScript, /NSIS installer/i);
+  assert.match(installerScript, /\$InstallerArtifactPath/);
+  assert.match(installerScript, /\$InstallDirectory/);
+  assert.match(installerScript, /startedAt/);
+  assert.match(installerScript, /finishedAt/);
+  assert.match(installerScript, /evidenceRefs/);
+  assert.match(installerScript, /semi-manual/i);
+  assert.match(installerScript, /blocker/i);
+});
+
+test("packaged smoke docs classify installer release blockers explicitly", () => {
+  const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
+  const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
+
+  assert.match(packagedSmokeDoc, /win-unpacked/);
+  assert.match(packagedSmokeDoc, /NSIS installer/);
+  assert.match(packagedSmokeDoc, /release blocker/i);
+  assert.match(packagedSmokeDoc, /startup failure/i);
+  assert.match(packagedSmokeDoc, /native module load failure/i);
+  assert.match(packagedSmokeDoc, /migration failure/i);
+  assert.match(packagedSmokeDoc, /close/i);
+  assert.match(packagedSmokeDoc, /catalog/i);
+  assert.match(packagedSmokeDoc, /DB 管理/);
+});
+
+test("installer packaged smoke stays structured even when the run is semi-manual", () => {
+  const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
+  const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
+  const installerScript = fs.readFileSync(installerScriptPath, "utf8");
+  const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
+
+  assert.match(installerScript, /\$SemiManual/);
+  assert.match(installerScript, /artifactJsonPath/);
+  assert.match(installerScript, /artifactMarkdownPath/);
+  assert.match(installerScript, /ManualEvidence/);
+  assert.match(packagedSmokeDoc, /semi-manual/i);
+  assert.match(packagedSmokeDoc, /JSON artifact/i);
+  assert.match(packagedSmokeDoc, /Markdown summary/i);
 });
