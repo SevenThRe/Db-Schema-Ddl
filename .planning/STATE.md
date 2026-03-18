@@ -6,9 +6,9 @@ status: active
 last_updated: "2026-03-18T16:55:00+09:00"
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 2
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 **Core value:** Users can compare historical DB states, reverse live DB structure into trusted Excel workbooks, and broaden reverse import beyond the current MySQL-first single-DDL flow.
-**Current focus:** `v1.2` Phase 2 is planned and ready for execution
+**Current focus:** `v1.2` Phase 3 is the next planned phase
 
 ## Current Status
 
@@ -33,7 +33,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 - Phase 1 execution is complete and verified at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-VERIFICATION.md`
 - Phase 2 context is captured at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-CONTEXT.md`
 - Phase 2 UI contract is approved at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-UI-SPEC.md`
-- Phase 2 validation and plans are ready at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-VALIDATION.md` and `02-0*-PLAN.md`
+- Phase 2 execution is complete and verified at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-VERIFICATION.md`
 
 ## Important Assumptions
 
@@ -44,7 +44,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 ## Next Command
 
-- Execute Phase 2: live DB to XLSX export
+- Discuss / plan Phase 3: reverse import expansion
 
 ---
-*Last updated: 2026-03-18 after planning v1.2 Phase 2*
+*Last updated: 2026-03-18 after completing v1.2 Phase 2*

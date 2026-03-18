@@ -24,6 +24,7 @@ function toDbColumn(row: MySqlIntrospectionPayload["columns"][number]): DbColumn
     ordinalPosition: row.ordinalPosition,
     dataType: row.dataType,
     columnType: row.columnType,
+    extra: row.extra ?? undefined,
     nullable: row.isNullable === "YES",
     defaultValue: row.columnDefault,
     autoIncrement: String(row.extra ?? "").toLowerCase().includes("auto_increment"),

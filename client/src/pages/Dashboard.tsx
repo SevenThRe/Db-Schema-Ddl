@@ -694,6 +694,10 @@ export default function Dashboard() {
   const renderDbManagementWorkspace = () => (
     <DbManagementWorkspace
       onBack={() => setActiveModule("workspace")}
+      onActivateFile={(fileId) => {
+        setSelectedFileId(fileId);
+        setActiveModule("workspace");
+      }}
       selectedFileId={selectedFileId}
       selectedFileName={selectedFileName}
       selectedSheet={selectedSheet}

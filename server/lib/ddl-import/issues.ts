@@ -1,8 +1,20 @@
-import type { DdlImportCatalog, DdlImportIssue, DdlImportIssueSummary } from "@shared/schema";
+import type {
+  DbLiveExportIssue,
+  DbLiveExportIssueSummary,
+  DbSchemaCatalog,
+  DdlImportCatalog,
+  DdlImportIssue,
+  DdlImportIssueSummary,
+} from "@shared/schema";
 
 interface IssueCollectionResult {
   issues: DdlImportIssue[];
   summary: DdlImportIssueSummary;
+}
+
+interface LiveExportIssueCollectionResult {
+  issues: DbLiveExportIssue[];
+  summary: DbLiveExportIssueSummary;
 }
 
 function pushIssue(
@@ -12,8 +24,31 @@ function pushIssue(
   issues.push(issue);
 }
 
+function pushLiveExportIssue(
+  issues: DbLiveExportIssue[],
+  issue: DbLiveExportIssue,
+): void {
+  issues.push(issue);
+}
+
 export function summarizeDdlImportIssues(issues: DdlImportIssue[]): DdlImportIssueSummary {
   return issues.reduce<DdlImportIssueSummary>(
+    (summary, issue) => {
+      if (issue.severity === "blocking") {
+        summary.blockingCount += 1;
+      } else if (issue.severity === "confirm") {
+        summary.confirmCount += 1;
+      } else {
+        summary.infoCount += 1;
+      }
+      return summary;
+    },
+    { blockingCount: 0, confirmCount: 0, infoCount: 0 },
+  );
+}
+
+export function summarizeDbLiveExportIssues(issues: DbLiveExportIssue[]): DbLiveExportIssueSummary {
+  return issues.reduce<DbLiveExportIssueSummary>(
     (summary, issue) => {
       if (issue.severity === "blocking") {
         summary.blockingCount += 1;
@@ -194,5 +229,99 @@ export function collectDdlImportIssues(args: {
   return {
     issues,
     summary: summarizeDdlImportIssues(issues),
+  };
+}
+
+export function collectDbLiveExportIssues(args: {
+  catalog: DbSchemaCatalog;
+  selectedTableNames?: string[];
+}): LiveExportIssueCollectionResult {
+  const selectedNames = new Set(
+    (args.selectedTableNames ?? []).map((name) => name.trim().toLowerCase()).filter(Boolean),
+  );
+  const tables = args.catalog.tables.filter((table) =>
+    selectedNames.size === 0 || selectedNames.has(table.name.trim().toLowerCase()),
+  );
+
+  const issues: DbLiveExportIssue[] = [];
+
+  for (const table of tables) {
+    if (table.comment) {
+      pushLiveExportIssue(issues, {
+        severity: "confirm",
+        kind: "workbook_lossy",
+        entityKey: `table:${table.name}:comment`,
+        tableName: table.name,
+        message: "Table comments are not modeled explicitly by the current workbook contract.",
+      });
+    }
+
+    if (table.engine) {
+      pushLiveExportIssue(issues, {
+        severity: "info",
+        kind: "info",
+        entityKey: `table:${table.name}:engine`,
+        tableName: table.name,
+        message: "Engine metadata is informational and may not be preserved structurally in workbook export.",
+        detail: table.engine,
+      });
+    }
+
+    table.columns.forEach((column) => {
+      const extra = String(column.extra ?? "").toLowerCase();
+      if (extra.includes("generated")) {
+        pushLiveExportIssue(issues, {
+          severity: "blocking",
+          kind: "workbook_inexpressible",
+          entityKey: `column:${table.name}.${column.name}:generated`,
+          tableName: table.name,
+          columnName: column.name,
+          message: "Generated columns cannot be represented safely in the official workbook contract.",
+          detail: column.extra,
+        });
+      }
+
+      if (column.defaultValue != null && String(column.defaultValue).trim() !== "") {
+        pushLiveExportIssue(issues, {
+          severity: "confirm",
+          kind: "workbook_lossy",
+          entityKey: `column:${table.name}.${column.name}:default`,
+          tableName: table.name,
+          columnName: column.name,
+          message: "Column default values are not preserved structurally in workbook export.",
+        });
+      }
+    });
+
+    table.indexes
+      .filter((index) => !index.primary)
+      .forEach((index) => {
+        pushLiveExportIssue(issues, {
+          severity: "confirm",
+          kind: "workbook_lossy",
+          entityKey: `index:${table.name}.${index.name}`,
+          tableName: table.name,
+          constraintName: index.name,
+          message: index.unique
+            ? "Secondary UNIQUE intent is not preserved structurally in workbook export."
+            : "Secondary indexes are not preserved structurally in workbook export.",
+        });
+      });
+
+    table.foreignKeys.forEach((foreignKey) => {
+      pushLiveExportIssue(issues, {
+        severity: "confirm",
+        kind: "workbook_lossy",
+        entityKey: `fk:${table.name}.${foreignKey.name}`,
+        tableName: table.name,
+        constraintName: foreignKey.name,
+        message: "Foreign keys are not preserved structurally in workbook export.",
+      });
+    });
+  }
+
+  return {
+    issues,
+    summary: summarizeDbLiveExportIssues(issues),
   };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, GitBranch, History, Network, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, FileSpreadsheet, GitBranch, History, Network, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -19,6 +19,7 @@ import { SchemaIntrospectionPanel } from "./SchemaIntrospectionPanel";
 import { DbApplyPanel } from "./DbApplyPanel";
 import { DbDiffWorkspace, type DbDiffWorkspaceStateSnapshot } from "./DbDiffWorkspace";
 import { DbHistoryPanel } from "./DbHistoryPanel";
+import { DbLiveExportWorkspace } from "./DbLiveExportWorkspace";
 import { DbSchemaGraph } from "./DbSchemaGraph";
 import { DbSnapshotCompareWorkspace, type DbSnapshotCompareWorkspaceSeed } from "./DbSnapshotCompareWorkspace";
 import { DbVsDbWorkspace } from "./DbVsDbWorkspace";
@@ -29,6 +30,7 @@ import type { DbManagementViewMode } from "@shared/schema";
 
 interface DbManagementWorkspaceProps {
   onBack: () => void;
+  onActivateFile?: (fileId: number) => void;
   selectedFileId: number | null;
   selectedSheet: string | null;
   selectedFileName?: string | null;
@@ -42,7 +44,7 @@ const DEFAULT_DIFF_STATE: DbDiffWorkspaceStateSnapshot = {
   dryRunResult: null,
 };
 
-const VIEW_MODES: readonly DbManagementViewMode[] = ["diff", "db-vs-db", "snapshot-compare", "history", "apply", "graph"];
+const VIEW_MODES: readonly DbManagementViewMode[] = ["diff", "db-vs-db", "snapshot-compare", "live-export", "history", "apply", "graph"];
 
 function readStoredViewMode(): DbManagementViewMode {
   if (typeof window === "undefined") {
@@ -52,7 +54,7 @@ function readStoredViewMode(): DbManagementViewMode {
   return VIEW_MODES.includes(stored as DbManagementViewMode) ? (stored as DbManagementViewMode) : "diff";
 }
 
-export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, selectedFileName }: DbManagementWorkspaceProps) {
+export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, selectedSheet, selectedFileName }: DbManagementWorkspaceProps) {
   const { toast } = useToast();
   const { data: connections = [] } = useDbConnections();
   const createConnection = useCreateDbConnection();
@@ -279,6 +281,10 @@ export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, s
                 <ArrowRightLeft className="h-4 w-4" />
                 Snapshot Compare
               </TabsTrigger>
+              <TabsTrigger value="live-export" className="gap-2 rounded-lg px-3 py-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                Live DB to XLSX
+              </TabsTrigger>
               <TabsTrigger value="apply" className="gap-2 rounded-lg px-3 py-2">
                 <ShieldCheck className="h-4 w-4" />
                 Apply
@@ -321,6 +327,13 @@ export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, s
             <DbSnapshotCompareWorkspace
               seedConnection={selectedConnection}
               initialSeed={snapshotCompareSeed}
+            />
+          </TabsContent>
+
+          <TabsContent value="live-export" className="mt-0">
+            <DbLiveExportWorkspace
+              selectedConnection={selectedConnection}
+              onActivateFile={onActivateFile}
             />
           </TabsContent>
 

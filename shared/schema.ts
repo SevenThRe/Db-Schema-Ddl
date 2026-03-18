@@ -601,6 +601,7 @@ export const dbColumnSchema = z.object({
   ordinalPosition: z.number().int().min(1),
   dataType: z.string().min(1),
   columnType: z.string().optional(),
+  extra: z.string().optional(),
   nullable: z.boolean(),
   defaultValue: z.string().nullable().optional(),
   autoIncrement: z.boolean().default(false),
@@ -1039,7 +1040,86 @@ export const dbSnapshotCompareWorkspaceStateSchema = z.object({
   lastReportFormat: dbSnapshotCompareReportFormatSchema.default("markdown"),
 });
 
-export const dbManagementViewModeSchema = z.enum(["diff", "db-vs-db", "snapshot-compare", "history", "apply", "graph"]);
+export const dbLiveExportIssueKindSchema = z.enum([
+  "workbook_inexpressible",
+  "workbook_lossy",
+  "round_trip_failed",
+  "info",
+]);
+
+export const dbLiveExportIssueSeveritySchema = z.enum(["blocking", "confirm", "info"]);
+
+export const dbLiveExportIssueSchema = z.object({
+  severity: dbLiveExportIssueSeveritySchema,
+  kind: dbLiveExportIssueKindSchema,
+  entityKey: z.string().min(1),
+  tableName: z.string().optional(),
+  columnName: z.string().optional(),
+  constraintName: z.string().optional(),
+  message: z.string().min(1),
+  detail: z.string().optional(),
+});
+
+export const dbLiveExportIssueSummarySchema = z.object({
+  blockingCount: z.number().int().min(0).default(0),
+  confirmCount: z.number().int().min(0).default(0),
+  infoCount: z.number().int().min(0).default(0),
+});
+
+export const dbLiveExportPreviewArtifactSchema = z.object({
+  artifactVersion: z.literal("v1").default("v1"),
+  artifactKey: z.string().min(1),
+  connectionId: z.number().int().positive(),
+  databaseName: z.string().min(1),
+  freshnessMode: dbSnapshotCompareLiveFreshnessSchema.default("latest_snapshot"),
+  resolvedSnapshotHash: z.string().min(8),
+  resolvedSnapshotCapturedAt: z.string().optional(),
+  catalog: dbSchemaCatalogSchema,
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  selectableTableNames: z.array(z.string().min(1)).default([]),
+  templateId: workbookTemplateVariantIdSchema,
+  issueSummary: dbLiveExportIssueSummarySchema,
+  issues: z.array(dbLiveExportIssueSchema).default([]),
+  canExport: z.boolean().default(false),
+});
+
+export const dbLiveExportPreviewRequestSchema = z.object({
+  connectionId: z.number().int().positive(),
+  databaseName: z.string().min(1),
+  freshnessMode: dbSnapshotCompareLiveFreshnessSchema.default("latest_snapshot"),
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  templateId: workbookTemplateVariantIdSchema,
+});
+
+export const dbLiveExportPreviewResponseSchema = dbLiveExportPreviewArtifactSchema;
+
+export const dbLiveExportExecuteRequestSchema = z.object({
+  artifact: dbLiveExportPreviewArtifactSchema,
+  selectedTableNames: z.array(z.string().min(1)).min(1),
+  templateId: workbookTemplateVariantIdSchema,
+  allowLossyExport: z.boolean().default(false),
+  originalName: z.string().min(1).max(255).optional(),
+});
+
+export const dbLiveExportExecuteResponseSchema = z.object({
+  artifact: dbLiveExportPreviewArtifactSchema,
+  file: uploadedFileRecordSchema,
+  template: workbookTemplateVariantSchema,
+  validation: workbookTemplateValidationSchema,
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  issueSummary: dbLiveExportIssueSummarySchema,
+  rememberedTemplateId: workbookTemplateVariantIdSchema.optional(),
+});
+
+export const dbManagementViewModeSchema = z.enum([
+  "diff",
+  "db-vs-db",
+  "snapshot-compare",
+  "live-export",
+  "history",
+  "apply",
+  "graph",
+]);
 
 export const dbHistoryCompareSourceKindSchema = z.enum(["file", "live", "snapshot"]);
 
@@ -1790,6 +1870,7 @@ export type DdlImportExportResponse = z.infer<typeof ddlImportExportResponseSche
 export type DdlImportCatalog = z.infer<typeof ddlImportCatalogSchema>;
 export type DdlImportIssue = z.infer<typeof ddlImportIssueSchema>;
 export type DdlImportIssueSummary = z.infer<typeof ddlImportIssueSummarySchema>;
+export type DdlImportDefaultValue = z.infer<typeof ddlImportDefaultValueSchema>;
 export type DdlImportTable = z.infer<typeof ddlImportTableSchema>;
 export type DdlImportColumn = z.infer<typeof ddlImportColumnSchema>;
 export type DdlImportIndex = z.infer<typeof ddlImportIndexSchema>;
@@ -2303,6 +2384,15 @@ export type DbSnapshotCompareReportFormat = z.infer<typeof dbSnapshotCompareRepo
 export type DbSnapshotCompareReportRequest = z.infer<typeof dbSnapshotCompareReportRequestSchema>;
 export type DbSnapshotCompareReportResponse = z.infer<typeof dbSnapshotCompareReportResponseSchema>;
 export type DbSnapshotCompareWorkspaceState = z.infer<typeof dbSnapshotCompareWorkspaceStateSchema>;
+export type DbLiveExportIssueKind = z.infer<typeof dbLiveExportIssueKindSchema>;
+export type DbLiveExportIssueSeverity = z.infer<typeof dbLiveExportIssueSeveritySchema>;
+export type DbLiveExportIssue = z.infer<typeof dbLiveExportIssueSchema>;
+export type DbLiveExportIssueSummary = z.infer<typeof dbLiveExportIssueSummarySchema>;
+export type DbLiveExportPreviewArtifact = z.infer<typeof dbLiveExportPreviewArtifactSchema>;
+export type DbLiveExportPreviewRequest = z.infer<typeof dbLiveExportPreviewRequestSchema>;
+export type DbLiveExportPreviewResponse = z.infer<typeof dbLiveExportPreviewResponseSchema>;
+export type DbLiveExportExecuteRequest = z.infer<typeof dbLiveExportExecuteRequestSchema>;
+export type DbLiveExportExecuteResponse = z.infer<typeof dbLiveExportExecuteResponseSchema>;
 export type DbHistoryCompareSourceKind = z.infer<typeof dbHistoryCompareSourceKindSchema>;
 export type DbHistoryCompareSource = z.infer<typeof dbHistoryCompareSourceSchema>;
 export type DbHistoryCompareScope = z.infer<typeof dbHistoryCompareScopeSchema>;

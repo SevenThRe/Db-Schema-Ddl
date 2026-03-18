@@ -16,6 +16,10 @@ import type {
   DbHistoryDetailResponse,
   DbHistoryCompareRequest,
   DbHistoryCompareResponse,
+  DbLiveExportExecuteRequest,
+  DbLiveExportExecuteResponse,
+  DbLiveExportPreviewRequest,
+  DbLiveExportPreviewResponse,
   DbSnapshotCompareArtifact,
   DbSnapshotCompareReportRequest,
   DbSnapshotCompareReportResponse,
@@ -103,6 +107,7 @@ export const DB_MANAGEMENT_VIEW_MODES: readonly DbManagementViewMode[] = [
   "diff",
   "db-vs-db",
   "snapshot-compare",
+  "live-export",
   "history",
   "apply",
   "graph",
@@ -527,6 +532,51 @@ export function useExportDbSnapshotCompareReport() {
         },
       );
       return api.dbManagement.exportSnapshotCompareReport.responses[200].parse(data);
+    },
+  });
+}
+
+export function usePreviewLiveDbWorkbookExport() {
+  return useMutation({
+    mutationFn: async (input: DbLiveExportPreviewRequest) => {
+      const data = await fetchJson<DbLiveExportPreviewResponse>(
+        api.dbManagement.previewLiveExport.path,
+        {
+          code: "REQUEST_FAILED",
+          message: "Failed to preview live DB workbook export",
+        },
+        {
+          method: api.dbManagement.previewLiveExport.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      return api.dbManagement.previewLiveExport.responses[200].parse(data);
+    },
+  });
+}
+
+export function useExecuteLiveDbWorkbookExport() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (request: DbLiveExportExecuteRequest) => {
+      const data = await fetchJson<DbLiveExportExecuteResponse>(
+        api.dbManagement.executeLiveExport.path,
+        {
+          code: "REQUEST_FAILED",
+          message: "Failed to export live DB workbook",
+        },
+        {
+          method: api.dbManagement.executeLiveExport.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+        },
+      );
+      return api.dbManagement.executeLiveExport.responses[200].parse(data);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
     },
   });
 }

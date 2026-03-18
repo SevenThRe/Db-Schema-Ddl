@@ -13,9 +13,9 @@
 
 ### Live DB to XLSX Export
 
-- [ ] **DBXLSX-01**: User can export selected live DB tables into an official parser-compatible `.xlsx` workbook without first converting through pasted DDL
-- [ ] **DBXLSX-02**: Live DB exports reuse the same template family, lossy reporting, and parser-backed round-trip validation as other workbook creation flows
-- [ ] **DBXLSX-03**: User can choose whole-database or filtered-table export scopes before generating the workbook
+- [x] **DBXLSX-01**: User can export selected live DB tables into an official parser-compatible `.xlsx` workbook without first converting through pasted DDL
+- [x] **DBXLSX-02**: Live DB exports reuse the same template family, lossy reporting, and parser-backed round-trip validation as other workbook creation flows
+- [x] **DBXLSX-03**: User can choose whole-database or filtered-table export scopes before generating the workbook
 
 ### Reverse Import Expansion
 
@@ -46,9 +46,9 @@
 | HIST-01 | Phase 1 | Complete |
 | HIST-02 | Phase 1 | Complete |
 | HIST-03 | Phase 1 | Complete |
-| DBXLSX-01 | Phase 2 | Pending |
-| DBXLSX-02 | Phase 2 | Pending |
-| DBXLSX-03 | Phase 2 | Pending |
+| DBXLSX-01 | Phase 2 | Complete |
+| DBXLSX-02 | Phase 2 | Complete |
+| DBXLSX-03 | Phase 2 | Complete |
 | REV-01 | Phase 3 | Pending |
 | REV-02 | Phase 3 | Pending |
 | REV-03 | Phase 3 | Pending |
@@ -61,4 +61,4 @@
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after completing v1.2 Phase 1*
+*Last updated: 2026-03-18 after completing v1.2 Phase 2*

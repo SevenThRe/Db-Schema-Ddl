@@ -33,6 +33,10 @@ import {
   reviewLiveDatabaseRenames,
 } from "../lib/extensions/db-management/history-service";
 import { buildDbGraph, buildDbVsDbGraph } from "../lib/extensions/db-management/graph-service";
+import {
+  executeLiveDbWorkbookExport,
+  previewLiveDbWorkbookExport,
+} from "../lib/extensions/db-management/live-export-service";
 import { introspectMySqlDatabase } from "../lib/extensions/db-management/mysql-introspection";
 import { normalizeMySqlSchema } from "../lib/extensions/db-management/schema-normalizer";
 import { persistDbSchemaSnapshot } from "../lib/extensions/db-management/snapshot-service";
@@ -511,6 +515,68 @@ export function registerDbManagementRoutes(app: Express): void {
     try {
       const result = await compareSnapshotSources(payload.data);
       res.json(api.dbManagement.snapshotCompare.responses[200].parse(result));
+    } catch (error) {
+      handleRouteError(res, error);
+    }
+  });
+
+  app.post(api.dbManagement.previewLiveExport.path, async (req, res) => {
+    if (!requireElectronMode(res)) {
+      return;
+    }
+
+    const payload = api.dbManagement.previewLiveExport.input.safeParse(req.body);
+    if (!payload.success) {
+      sendApiError(res, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.invalidRequest,
+        message: "Invalid live export preview payload.",
+        issues: payload.error.issues,
+      });
+      return;
+    }
+
+    try {
+      const result = await previewLiveDbWorkbookExport(payload.data);
+      res.json(api.dbManagement.previewLiveExport.responses[200].parse(result));
+    } catch (error) {
+      handleRouteError(res, error);
+    }
+  });
+
+  app.post(api.dbManagement.executeLiveExport.path, async (req, res) => {
+    if (!requireElectronMode(res)) {
+      return;
+    }
+
+    const payload = api.dbManagement.executeLiveExport.input.safeParse(req.body);
+    if (!payload.success) {
+      sendApiError(res, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.invalidRequest,
+        message: "Invalid live export execution payload.",
+        issues: payload.error.issues,
+      });
+      return;
+    }
+
+    try {
+      const settings = await storage.getSettings();
+      const result = await executeLiveDbWorkbookExport(payload.data, {
+        uploadsDir: process.env.UPLOADS_DIR || "uploads",
+        settings,
+      });
+
+      try {
+        await storage.updateSettings({
+          ...settings,
+          ddlImportTemplatePreference: payload.data.templateId,
+        });
+      } catch (settingsError) {
+        console.warn("Failed to persist live export template preference:", settingsError);
+      }
+
+      res.json(api.dbManagement.executeLiveExport.responses[200].parse(result));
     } catch (error) {
       handleRouteError(res, error);
     }

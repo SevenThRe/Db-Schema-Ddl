@@ -42,6 +42,10 @@ import {
   dbSnapshotCompareResponseSchema,
   dbSnapshotCompareReportRequestSchema,
   dbSnapshotCompareReportResponseSchema,
+  dbLiveExportPreviewRequestSchema,
+  dbLiveExportPreviewResponseSchema,
+  dbLiveExportExecuteRequestSchema,
+  dbLiveExportExecuteResponseSchema,
   dbApplyRequestSchema,
   dbApplyResponseSchema,
   dbDeployJobDetailResponseSchema,
@@ -532,6 +536,26 @@ export const api = {
       responses: {
         200: dbSnapshotCompareReportResponseSchema,
         400: apiErrorSchema,
+      },
+    },
+    previewLiveExport: {
+      method: "POST" as const,
+      path: "/api/db-management/live-export/preview" as const,
+      input: dbLiveExportPreviewRequestSchema,
+      responses: {
+        200: dbLiveExportPreviewResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    executeLiveExport: {
+      method: "POST" as const,
+      path: "/api/db-management/live-export/export" as const,
+      input: dbLiveExportExecuteRequestSchema,
+      responses: {
+        200: dbLiveExportExecuteResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
       },
     },
     applyChanges: {

@@ -26,6 +26,7 @@ import {
   type DbSnapshotCompareArtifact,
   type DbSnapshotCompareReportFormat,
   type DbSnapshotCompareReportResponse,
+  type DbSnapshotCompareLiveFreshness,
   type DbSnapshotCompareRequest,
   type DbSnapshotCompareResolvedSource,
   type DbSnapshotCompareResponse,
@@ -64,6 +65,19 @@ interface ResolvedLiveCompareCatalog {
   catalog: DbSchemaCatalog;
   snapshot: DbSchemaSnapshot;
   cacheHit: boolean;
+}
+
+export interface ResolvedLiveDbCatalogSource {
+  connectionId: number;
+  connectionName: string;
+  databaseName: string;
+  freshnessMode: DbSnapshotCompareLiveFreshness;
+  resolvedSnapshotHash: string;
+  resolvedSnapshotCapturedAt?: string;
+  snapshot: DbSchemaSnapshot;
+  catalog: DbSchemaCatalog;
+  cacheHit: boolean;
+  usedFreshLiveScan: boolean;
 }
 
 const DEFAULT_DB_COMPARE_POLICY: DbComparePolicy = {};
@@ -357,9 +371,8 @@ async function resolveAnyHistoryCatalog(
 async function resolveSnapshotCompareCatalog(
   source: DbSnapshotCompareSource,
 ): Promise<ResolvedSnapshotCompareCatalog> {
-  const connection = await getDbConnectionRecordOrThrow(source.connectionId);
-
   if (source.kind === "snapshot") {
+    const connection = await getDbConnectionRecordOrThrow(source.connectionId);
     const snapshot = await resolveSnapshot(source.connectionId, source.databaseName, source.snapshotHash);
     return {
       requestedSource: source,
@@ -381,39 +394,11 @@ async function resolveSnapshotCompareCatalog(
     };
   }
 
-  if (source.freshness === "refresh_live") {
-    const rawSchema = await introspectMySqlDatabase(source.connectionId, source.databaseName);
-    const catalog = normalizeMySqlSchema(rawSchema);
-    const persisted = await persistDbSchemaSnapshot(source.connectionId, catalog);
-    return {
-      requestedSource: source,
-      resolvedSource: {
-        sourceKey: buildSnapshotSourceKey({
-          kind: "live",
-          connectionId: source.connectionId,
-          databaseName: source.databaseName,
-          snapshotHash: persisted.snapshot.snapshotHash,
-        }),
-        label: `${connection.name}/${source.databaseName} (refreshed live)`,
-        kind: "live",
-        connectionId: source.connectionId,
-        connectionName: connection.name,
-        databaseName: source.databaseName,
-        snapshotHash: persisted.snapshot.snapshotHash,
-        snapshotCapturedAt: persisted.snapshot.capturedAt,
-        freshness: source.freshness,
-        usedFreshLiveScan: true,
-        cacheHit: persisted.cacheHit,
-      },
-      snapshot: persisted.snapshot,
-      catalog,
-    };
-  }
-
-  const latest = await storage.getLatestDbSchemaSnapshot(source.connectionId, source.databaseName);
-  if (!latest) {
-    throw new Error(`No schema snapshot exists for database "${source.databaseName}". Run scan first.`);
-  }
+  const resolved = await resolveLiveDbCatalogSource({
+    connectionId: source.connectionId,
+    databaseName: source.databaseName,
+    freshnessMode: source.freshness,
+  });
   return {
     requestedSource: source,
     resolvedSource: {
@@ -421,21 +406,68 @@ async function resolveSnapshotCompareCatalog(
         kind: "live",
         connectionId: source.connectionId,
         databaseName: source.databaseName,
-        snapshotHash: latest.snapshotHash,
+        snapshotHash: resolved.resolvedSnapshotHash,
       }),
-      label: `${connection.name}/${source.databaseName} (latest snapshot)`,
+      label:
+        resolved.freshnessMode === "refresh_live"
+          ? `${resolved.connectionName}/${resolved.databaseName} (refreshed live)`
+          : `${resolved.connectionName}/${resolved.databaseName} (latest snapshot)`,
       kind: "live",
       connectionId: source.connectionId,
-      connectionName: connection.name,
-      databaseName: source.databaseName,
-      snapshotHash: latest.snapshotHash,
-      snapshotCapturedAt: latest.capturedAt,
-      freshness: source.freshness,
-      usedFreshLiveScan: false,
-      cacheHit: true,
+      connectionName: resolved.connectionName,
+      databaseName: resolved.databaseName,
+      snapshotHash: resolved.resolvedSnapshotHash,
+      snapshotCapturedAt: resolved.resolvedSnapshotCapturedAt,
+      freshness: resolved.freshnessMode,
+      usedFreshLiveScan: resolved.usedFreshLiveScan,
+      cacheHit: resolved.cacheHit,
     },
+    snapshot: resolved.snapshot,
+    catalog: resolved.catalog,
+  };
+}
+
+export async function resolveLiveDbCatalogSource(args: {
+  connectionId: number;
+  databaseName: string;
+  freshnessMode: DbSnapshotCompareLiveFreshness;
+}): Promise<ResolvedLiveDbCatalogSource> {
+  const connection = await getDbConnectionRecordOrThrow(args.connectionId);
+
+  if (args.freshnessMode === "refresh_live") {
+    const rawSchema = await introspectMySqlDatabase(args.connectionId, args.databaseName);
+    const catalog = normalizeMySqlSchema(rawSchema);
+    const persisted = await persistDbSchemaSnapshot(args.connectionId, catalog);
+    return {
+      connectionId: args.connectionId,
+      connectionName: connection.name,
+      databaseName: args.databaseName,
+      freshnessMode: args.freshnessMode,
+      resolvedSnapshotHash: persisted.snapshot.snapshotHash,
+      resolvedSnapshotCapturedAt: persisted.snapshot.capturedAt,
+      snapshot: persisted.snapshot,
+      catalog,
+      cacheHit: persisted.cacheHit,
+      usedFreshLiveScan: true,
+    };
+  }
+
+  const latest = await storage.getLatestDbSchemaSnapshot(args.connectionId, args.databaseName);
+  if (!latest) {
+    throw new Error(`No schema snapshot exists for database "${args.databaseName}". Run scan first.`);
+  }
+
+  return {
+    connectionId: args.connectionId,
+    connectionName: connection.name,
+    databaseName: args.databaseName,
+    freshnessMode: args.freshnessMode,
+    resolvedSnapshotHash: latest.snapshotHash,
+    resolvedSnapshotCapturedAt: latest.capturedAt,
     snapshot: latest,
     catalog: JSON.parse(latest.schemaJson) as DbSchemaCatalog,
+    cacheHit: true,
+    usedFreshLiveScan: false,
   };
 }
 
