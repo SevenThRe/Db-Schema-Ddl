@@ -23,8 +23,24 @@ let hasShownFatalErrorDialog = false;
 
 const relaunchGuardEnv = 'DBSCHEMA_ELECTRON_RELAUNCH_ATTEMPTED';
 
+function getSmokeModeConfig() {
+  const autoCloseDelay = Number.parseInt(process.env.DBSCHEMA_SMOKE_AUTO_CLOSE_MS ?? '', 10);
+  return {
+    enabled: isTruthyEnv(process.env.DBSCHEMA_SMOKE_MODE),
+    logPath: process.env.DBSCHEMA_SMOKE_LOG_PATH?.trim() || undefined,
+    screenshotPath: process.env.DBSCHEMA_SMOKE_SCREENSHOT_PATH?.trim() || undefined,
+    autoCloseDelayMs: Number.isFinite(autoCloseDelay) ? Math.max(autoCloseDelay, 0) : undefined,
+  };
+}
+
 function getBootstrapLogPath() {
   try {
+    const smokeMode = getSmokeModeConfig();
+    if (smokeMode.enabled && smokeMode.logPath) {
+      fs.mkdirSync(path.dirname(smokeMode.logPath), { recursive: true });
+      return smokeMode.logPath;
+    }
+
     const baseDir =
       app && typeof app.getPath === "function"
         ? path.join(app.getPath("userData"), "logs")
@@ -267,12 +283,48 @@ function createWindow() {
 
   // Express サーバーにアクセス
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
-  writeBootstrapLog(formatDesktopCheckpoint("browser_window_loaded", { port: serverPort }));
 
   // 開発環境では DevTools を開く
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
+
+  mainWindow.webContents.once('did-finish-load', async () => {
+    writeBootstrapLog(formatDesktopCheckpoint("browser_window_loaded", { port: serverPort }));
+
+    const smokeMode = getSmokeModeConfig();
+    if (!smokeMode.enabled) {
+      return;
+    }
+
+    if (smokeMode.screenshotPath) {
+      try {
+        const image = await mainWindow?.webContents.capturePage();
+        if (image) {
+          fs.mkdirSync(path.dirname(smokeMode.screenshotPath), { recursive: true });
+          fs.writeFileSync(smokeMode.screenshotPath, image.toPNG());
+          writeBootstrapLog(
+            formatDesktopCheckpoint("smoke_screenshot_written", {
+              path: smokeMode.screenshotPath,
+            }),
+          );
+        }
+      } catch (error) {
+        reportMainProcessError("Smoke screenshot capture failed", error, { showDialog: false });
+      }
+    }
+
+    if (typeof smokeMode.autoCloseDelayMs === 'number') {
+      setTimeout(() => {
+        writeBootstrapLog(
+          formatDesktopCheckpoint("smoke_auto_close_requested", {
+            delayMs: smokeMode.autoCloseDelayMs,
+          }),
+        );
+        app.quit();
+      }, smokeMode.autoCloseDelayMs);
+    }
+  });
 
   // F12 キーで DevTools を開く（プロダクション環境でもデバッグ可能）
   mainWindow.webContents.on('before-input-event', (event, input) => {

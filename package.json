@@ -12,6 +12,7 @@
     "build": "tsx script/build.ts",
     "preflight:desktop": "tsx script/desktop-preflight.ts",
     "smoke:desktop": "tsx script/desktop-smoke.ts",
+    "smoke:packaged": "npm run build:electron && tsx script/desktop-packaged-smoke.ts",
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "rebuild:native:electron": "npx electron-rebuild -f -w better-sqlite3",
     "build:electron": "npm run build && npm run rebuild:native:electron && npm run preflight:desktop && electron-builder -c.npmRebuild=false",

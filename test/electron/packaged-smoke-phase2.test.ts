@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { buildDesktopSmokeArtifact, renderDesktopSmokeMarkdown } from "../../script/desktop-smoke";
 import {
   buildPackagedSmokeFailureFinding,
@@ -132,7 +133,7 @@ test("packaged smoke resolves the win-unpacked executable path", () => {
 
   assert.equal(
     executablePath,
-    "C:/workspace/db-schema-ddl/dist-electron/win-unpacked/DBSchemaExcel2DDL.exe",
+    path.join("C:/workspace/db-schema-ddl", "dist-electron", "win-unpacked", "DBSchemaExcel2DDL.exe"),
   );
 });
 
