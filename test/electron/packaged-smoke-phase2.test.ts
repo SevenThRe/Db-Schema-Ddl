@@ -5,6 +5,7 @@ import path from "node:path";
 import { buildDesktopSmokeArtifact, renderDesktopSmokeMarkdown } from "../../script/desktop-smoke";
 import {
   buildPackagedSmokeFailureFinding,
+  extractPackagedCheckpointNames,
   resolvePackagedExecutablePath,
   waitForPackagedCheckpointEvidence,
 } from "../../script/desktop-packaged-smoke";
@@ -138,6 +139,22 @@ test("packaged smoke resolves the win-unpacked executable path", () => {
   );
 });
 
+test("packaged smoke extracts checkpoint names from timestamp-prefixed production logs", () => {
+  const checkpoints = extractPackagedCheckpointNames(
+    [
+      '[2026-03-18T15:15:47.771Z] [checkpoint:server_bootstrap_ready] {"port":5000}',
+      '[2026-03-18T15:15:48.289Z] app ready [checkpoint:browser_window_loaded] {"port":5000}',
+      '[2026-03-18T15:15:50.266Z] shutdown [checkpoint:server_shutdown_complete]',
+    ].join("\n"),
+  );
+
+  assert.deepEqual(checkpoints, [
+    "server_bootstrap_ready",
+    "browser_window_loaded",
+    "server_shutdown_complete",
+  ]);
+});
+
 test("packaged smoke waits for readiness checkpoints instead of fixed sleep alone", async () => {
   const sleeps: number[] = [];
   let readCount = 0;
@@ -150,12 +167,12 @@ test("packaged smoke waits for readiness checkpoints instead of fixed sleep alon
     readFile: async () => {
       readCount += 1;
       if (readCount === 1) {
-        return '[checkpoint:server_bootstrap_ready] {"port":5000}\n';
+        return '[2026-03-18T15:15:47.771Z] [checkpoint:server_bootstrap_ready] {"port":5000}\n';
       }
 
       return [
-        '[checkpoint:server_bootstrap_ready] {"port":5000}',
-        '[checkpoint:browser_window_loaded] {"port":5000}',
+        '[2026-03-18T15:15:47.771Z] [checkpoint:server_bootstrap_ready] {"port":5000}',
+        '[2026-03-18T15:15:48.289Z] [checkpoint:browser_window_loaded] {"port":5000}',
       ].join("\n");
     },
     sleep: async (ms) => {
