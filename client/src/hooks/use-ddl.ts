@@ -8,6 +8,8 @@ import {
   type WorkbookTemplateVariant,
   type CreateWorkbookFromTemplateRequest,
   type CreateWorkbookFromTemplateResponse,
+  type DdlImportPreviewRequest,
+  type DdlImportExportRequest,
   type ProcessingTaskResponse,
   type NameFixPreviewRequest,
   type NameFixApplyRequest,
@@ -275,6 +277,46 @@ export function useGenerateDdl() {
       });
 
       return api.ddl.generate.responses[200].parse(response);
+    },
+  });
+}
+
+export function usePreviewDdlImport() {
+  return useMutation({
+    mutationFn: async (request: DdlImportPreviewRequest) => {
+      const data = await fetchJson(api.ddl.previewImport.path, {
+        code: "REQUEST_FAILED",
+        message: "Failed to preview DDL import",
+      }, {
+        method: api.ddl.previewImport.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+
+      return api.ddl.previewImport.responses[200].parse(data);
+    },
+  });
+}
+
+export function useExportWorkbookFromDdl() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (request: DdlImportExportRequest) => {
+      const data = await fetchJson(api.ddl.exportWorkbook.path, {
+        code: "REQUEST_FAILED",
+        message: "Failed to export workbook from DDL",
+      }, {
+        method: api.ddl.exportWorkbook.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+
+      return api.ddl.exportWorkbook.responses[201].parse(data);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
+      void queryClient.invalidateQueries({ queryKey: [api.settings.get.path] });
     },
   });
 }

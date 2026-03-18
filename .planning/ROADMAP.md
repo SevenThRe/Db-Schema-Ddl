@@ -14,7 +14,7 @@ This roadmap treats `v1.1` as the follow-on milestone to the shipped DB manageme
 |---|-------|------|--------------|------------------|--------|
 | 1 | Cross-Database Compare | Compare two saved DB targets directly and inspect directional preview inside `DB 管理` | DBDB-01, DBDB-02, DBDB-03, DBDB-04 | 4 | Complete (2026-03-18) |
 | 2 | Template and Round-Trip Authoring | Provide built-in `.xlsx` templates and validate that outputs reopen cleanly | TPL-01, TPL-02, TPL-03 | 3 | Complete (2026-03-18) |
-| 3 | DDL Import and XLSX Export | Turn supported MySQL DDL into canonical schema and parser-compatible `.xlsx` output | DDLX-01, DDLX-02, DDLX-03, DDLX-04 | 4 | Proposed |
+| 3 | DDL Import and XLSX Export | Turn supported MySQL DDL into canonical schema and parser-compatible `.xlsx` output | DDLX-01, DDLX-02, DDLX-03, DDLX-04 | 4 | Complete (2026-03-18) |
 
 ## Phase Details
 
@@ -75,6 +75,8 @@ Success criteria:
 - Keep reverse authoring inside a supported subset contract
 - Preserve the `v1.0` audit trail as historical evidence rather than trying to fold it into the new milestone docs
 - Phase 1 shipped with a dedicated `db-vs-db` workspace, directional preview, graph linkage, and settings-backed rename policy thresholds
+- Phase 2 shipped with first-party parser-backed workbook templates and create-from-template registration flow
+- Phase 3 shipped with a dedicated DDL import workspace, parser-backed issue review, and official-template export with round-trip validation
 
 ---
-*Last updated: 2026-03-18 after completing v1.1 Phase 2*
+*Last updated: 2026-03-18 after completing v1.1 Phase 3*

@@ -571,6 +571,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   registerDdlRoutes(app, {
+    uploadsDir: UPLOADS_DIR,
     resolveTablesByReference,
     handleReferenceRequestError: (err, res) => {
       if (!(err instanceof ReferenceRequestError)) {

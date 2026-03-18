@@ -36,6 +36,7 @@
     "docs:serve": "npm run serve --prefix docs-site"
   },
   "dependencies": {
+    "@dbml/core": "^6.4.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@modelcontextprotocol/sdk": "^1.27.0",

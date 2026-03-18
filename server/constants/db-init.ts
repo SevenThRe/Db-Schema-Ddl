@@ -57,6 +57,7 @@ export const DB_INIT_SQL = {
       name_fix_max_batch_concurrency INTEGER NOT NULL DEFAULT 4,
       allow_overwrite_in_electron INTEGER NOT NULL DEFAULT 1,
       allow_external_path_write INTEGER NOT NULL DEFAULT 0,
+      ddl_import_template_preference TEXT,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `,

@@ -124,6 +124,7 @@ export const ddlSettings = sqliteTable("ddl_settings", {
   nameFixMaxBatchConcurrency: integer("name_fix_max_batch_concurrency").notNull().default(DEFAULT_DDL_SETTINGS_VALUES.nameFixMaxBatchConcurrency),
   allowOverwriteInElectron: integer("allow_overwrite_in_electron", { mode: "boolean" }).notNull().default(DEFAULT_DDL_SETTINGS_VALUES.allowOverwriteInElectron),
   allowExternalPathWrite: integer("allow_external_path_write", { mode: "boolean" }).notNull().default(DEFAULT_DDL_SETTINGS_VALUES.allowExternalPathWrite),
+  ddlImportTemplatePreference: text("ddl_import_template_preference"),
   updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -354,6 +355,7 @@ export const ddlSettingsSchema = z.object({
   nameFixMaxBatchConcurrency: z.number().int().min(1).max(16).default(APP_DEFAULTS.nameFix.maxBatchConcurrency),
   allowOverwriteInElectron: z.boolean().default(APP_DEFAULTS.nameFix.allowOverwriteInElectron),
   allowExternalPathWrite: z.boolean().default(APP_DEFAULTS.nameFix.allowExternalPathWrite),
+  ddlImportTemplatePreference: workbookTemplateVariantIdSchema.optional(),
 });
 
 export type DdlSettings = z.infer<typeof ddlSettingsSchema>;
@@ -1322,6 +1324,151 @@ export const exportZipByReferenceRequestSchema = generateDdlByReferenceRequestSc
   includeErrorReport: z.boolean().default(true),
 });
 
+export const ddlImportSourceModeSchema = z.enum(["paste", "upload"]);
+export const ddlImportIssueSeveritySchema = z.enum(["blocking", "confirm", "info"]);
+export const ddlImportIssueKindSchema = z.enum([
+  "parser_error",
+  "parser_unsupported",
+  "workbook_inexpressible",
+  "workbook_lossy",
+  "info",
+]);
+
+export const ddlImportDefaultValueSchema = z.object({
+  type: z.enum(["number", "string", "boolean", "expression"]),
+  value: z.string().min(1),
+});
+
+export const ddlImportColumnSchema = z.object({
+  name: z.string().min(1),
+  dataType: z.string().min(1),
+  dataTypeArgs: z.string().optional(),
+  columnType: z.string().min(1),
+  nullable: z.boolean(),
+  defaultValue: ddlImportDefaultValueSchema.optional(),
+  autoIncrement: z.boolean().default(false),
+  primaryKey: z.boolean().default(false),
+  unique: z.boolean().default(false),
+  comment: z.string().optional(),
+});
+
+export const ddlImportIndexColumnSchema = z.object({
+  columnName: z.string().min(1),
+  expression: z.string().optional(),
+  order: z.enum(["ASC", "DESC"]).optional(),
+});
+
+export const ddlImportIndexSchema = z.object({
+  name: z.string().min(1),
+  unique: z.boolean().default(false),
+  primary: z.boolean().default(false),
+  indexType: z.string().optional(),
+  comment: z.string().optional(),
+  columns: z.array(ddlImportIndexColumnSchema).min(1),
+});
+
+export const ddlImportForeignKeyColumnSchema = z.object({
+  columnName: z.string().min(1),
+  referencedColumnName: z.string().min(1),
+});
+
+export const ddlImportForeignKeySchema = z.object({
+  name: z.string().min(1),
+  referencedTableName: z.string().min(1),
+  referencedTableSchema: z.string().optional(),
+  onDelete: z.string().optional(),
+  onUpdate: z.string().optional(),
+  columns: z.array(ddlImportForeignKeyColumnSchema).min(1),
+});
+
+export const ddlImportTableSchema = z.object({
+  name: z.string().min(1),
+  comment: z.string().optional(),
+  engine: z.string().optional(),
+  columns: z.array(ddlImportColumnSchema).default([]),
+  indexes: z.array(ddlImportIndexSchema).default([]),
+  foreignKeys: z.array(ddlImportForeignKeySchema).default([]),
+});
+
+export const ddlImportCatalogSchema = z.object({
+  dialect: z.literal("mysql"),
+  databaseName: z.string().min(1).default("ddl_import"),
+  tables: z.array(ddlImportTableSchema).default([]),
+});
+
+export const ddlImportIssueSchema = z.object({
+  severity: ddlImportIssueSeveritySchema,
+  kind: ddlImportIssueKindSchema,
+  entityKey: z.string().min(1),
+  tableName: z.string().optional(),
+  columnName: z.string().optional(),
+  constraintName: z.string().optional(),
+  message: z.string().min(1),
+  detail: z.string().optional(),
+});
+
+export const ddlImportIssueSummarySchema = z.object({
+  blockingCount: z.number().int().min(0).default(0),
+  confirmCount: z.number().int().min(0).default(0),
+  infoCount: z.number().int().min(0).default(0),
+});
+
+export const ddlImportPreviewRequestSchema = z
+  .object({
+    sourceMode: ddlImportSourceModeSchema.default("paste"),
+    sqlText: z.string().min(1),
+    fileName: z.string().min(1).max(255).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.sqlText.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sqlText"],
+        message: "sqlText is required",
+      });
+    }
+  });
+
+export const ddlImportPreviewResponseSchema = z.object({
+  sourceMode: ddlImportSourceModeSchema,
+  fileName: z.string().optional(),
+  sourceSql: z.string().min(1),
+  catalog: ddlImportCatalogSchema,
+  issues: z.array(ddlImportIssueSchema).default([]),
+  issueSummary: ddlImportIssueSummarySchema,
+  selectableTableNames: z.array(z.string().min(1)).default([]),
+  rememberedTemplateId: workbookTemplateVariantIdSchema.optional(),
+});
+
+export const ddlImportExportRequestSchema = z
+  .object({
+    sourceMode: ddlImportSourceModeSchema.default("paste"),
+    sqlText: z.string().min(1),
+    fileName: z.string().min(1).max(255).optional(),
+    templateId: workbookTemplateVariantIdSchema,
+    selectedTableNames: z.array(z.string().min(1)).min(1),
+    allowLossyExport: z.boolean().default(false),
+    originalName: z.string().min(1).max(255).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.sqlText.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sqlText"],
+        message: "sqlText is required",
+      });
+    }
+  });
+
+export const ddlImportExportResponseSchema = z.object({
+  file: uploadedFileRecordSchema,
+  template: workbookTemplateVariantSchema,
+  validation: workbookTemplateValidationSchema,
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  issueSummary: ddlImportIssueSummarySchema,
+  rememberedTemplateId: workbookTemplateVariantIdSchema.optional(),
+});
+
 export const schemaDiffScopeSchema = z.enum(["current_sheet", "all_sheets"]);
 export const schemaDiffSelectionModeSchema = z.enum(["auto", "manual"]);
 export const schemaDiffEntityTypeSchema = z.enum(["table", "column"]);
@@ -1530,6 +1677,17 @@ export type CodeReference = z.infer<typeof codeReferenceSchema>;
 export type TableInfo = z.infer<typeof tableInfoSchema>;
 export type GenerateDdlRequest = z.infer<typeof generateDdlRequestSchema>;
 export type ExportZipRequest = z.infer<typeof exportZipRequestSchema>;
+export type DdlImportPreviewRequest = z.infer<typeof ddlImportPreviewRequestSchema>;
+export type DdlImportPreviewResponse = z.infer<typeof ddlImportPreviewResponseSchema>;
+export type DdlImportExportRequest = z.infer<typeof ddlImportExportRequestSchema>;
+export type DdlImportExportResponse = z.infer<typeof ddlImportExportResponseSchema>;
+export type DdlImportCatalog = z.infer<typeof ddlImportCatalogSchema>;
+export type DdlImportIssue = z.infer<typeof ddlImportIssueSchema>;
+export type DdlImportIssueSummary = z.infer<typeof ddlImportIssueSummarySchema>;
+export type DdlImportTable = z.infer<typeof ddlImportTableSchema>;
+export type DdlImportColumn = z.infer<typeof ddlImportColumnSchema>;
+export type DdlImportIndex = z.infer<typeof ddlImportIndexSchema>;
+export type DdlImportForeignKey = z.infer<typeof ddlImportForeignKeySchema>;
 
 export const nameFixModeSchema = z.enum(["copy", "overwrite", "replace_download"]);
 export const nameFixScopeSchema = z.enum(["current_sheet", "selected_sheets", "all_sheets"]);

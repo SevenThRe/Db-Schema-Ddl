@@ -52,6 +52,7 @@ interface DdlGeneratorProps {
   currentTable?: TableInfo | null;
   selectedTableNames?: Set<string>;
   onSelectedTableNamesChange?: (next: Set<string>) => void;
+  onOpenImportWorkspace?: () => void;
 }
 
 interface MissingDataTypeIssue {
@@ -572,6 +573,7 @@ export function DdlGenerator({
   currentTable,
   selectedTableNames,
   onSelectedTableNamesChange,
+  onOpenImportWorkspace,
 }: DdlGeneratorProps) {
   const CONTROL_BUTTON_CLASS = "h-7 text-[11px]";
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
@@ -1954,7 +1956,34 @@ export function DdlGenerator({
     }
   };
 
-  if (!tables || tables.length === 0) return null;
+  if (!tables || tables.length === 0) {
+    if (!onOpenImportWorkspace) {
+      return null;
+    }
+
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <div className="border-b border-border/60 bg-background/80 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Code className="h-3.5 w-3.5 text-primary" />
+            <h3 className="text-xs font-semibold uppercase tracking-wide" data-testid="text-ddl-header">
+              {t("ddl.output")}
+            </h3>
+          </div>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+          <Database className="h-12 w-12 opacity-25" />
+          <div>
+            <p className="text-sm font-medium text-foreground">当前没有可生成 DDL 的表。</p>
+            <p className="mt-1 text-xs">你仍然可以直接进入 DDL Import，把 MySQL DDL 反向生成官方 XLSX 模板。</p>
+          </div>
+          <Button size="sm" onClick={onOpenImportWorkspace}>
+            DDL Import
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -1975,6 +2004,16 @@ export function DdlGenerator({
         </div>
 
         <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+          {onOpenImportWorkspace ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onOpenImportWorkspace}
+              className="h-7 text-[11px] px-2.5 shrink-0"
+            >
+              DDL Import
+            </Button>
+          ) : null}
           <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
             <SelectTrigger className="w-[92px] sm:w-[100px] h-7 text-[11px] shrink-0" data-testid="select-dialect">
               <SelectValue placeholder="Dialect" />

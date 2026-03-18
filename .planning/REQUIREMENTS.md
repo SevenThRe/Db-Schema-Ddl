@@ -20,10 +20,10 @@
 
 ### DDL-to-XLSX Conversion
 
-- [ ] **DDLX-01**: User can paste or import supported MySQL `CREATE TABLE` DDL and parse it into the app's canonical schema model
-- [ ] **DDLX-02**: App surfaces unsupported or lossy DDL constructs before workbook export so the user knows what requires manual cleanup
-- [ ] **DDLX-03**: User can export parsed DDL into an `.xlsx` workbook that the existing Excel parser can open without format surgery
-- [ ] **DDLX-04**: Oracle DDL import remains explicitly deferred until the MySQL-first reverse-authoring workflow is stable
+- [x] **DDLX-01**: User can paste or import supported MySQL `CREATE TABLE` DDL and parse it into the app's canonical schema model
+- [x] **DDLX-02**: App surfaces unsupported or lossy DDL constructs before workbook export so the user knows what requires manual cleanup
+- [x] **DDLX-03**: User can export parsed DDL into an `.xlsx` workbook that the existing Excel parser can open without format surgery
+- [x] **DDLX-04**: Oracle DDL import remains explicitly deferred until the MySQL-first reverse-authoring workflow is stable
 
 ## Deferred / Future
 
@@ -57,10 +57,10 @@
 | TPL-01 | Phase 2 | Complete |
 | TPL-02 | Phase 2 | Complete |
 | TPL-03 | Phase 2 | Complete |
-| DDLX-01 | Phase 3 | Pending |
-| DDLX-02 | Phase 3 | Pending |
-| DDLX-03 | Phase 3 | Pending |
-| DDLX-04 | Phase 3 | Pending |
+| DDLX-01 | Phase 3 | Complete |
+| DDLX-02 | Phase 3 | Complete |
+| DDLX-03 | Phase 3 | Complete |
+| DDLX-04 | Phase 3 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 11 total
@@ -69,4 +69,4 @@
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after completing v1.1 Phase 2*
+*Last updated: 2026-03-18 after completing v1.1 Phase 3*

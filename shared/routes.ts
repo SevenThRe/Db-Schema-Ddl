@@ -7,6 +7,10 @@ import {
   createWorkbookFromTemplateResponseSchema,
   tableInfoSchema,
   generateDdlRequestSchema,
+  ddlImportPreviewRequestSchema,
+  ddlImportPreviewResponseSchema,
+  ddlImportExportRequestSchema,
+  ddlImportExportResponseSchema,
   exportZipRequestSchema,
   generateDdlByReferenceRequestSchema,
   exportZipByReferenceRequestSchema,
@@ -223,6 +227,24 @@ export const api = {
         200: z.custom<Blob>(), // Binary response (ZIP file)
         400: apiErrorSchema,
         404: apiErrorSchema,
+      },
+    },
+    previewImport: {
+      method: "POST" as const,
+      path: "/api/ddl/import/preview" as const,
+      input: ddlImportPreviewRequestSchema,
+      responses: {
+        200: ddlImportPreviewResponseSchema,
+        400: apiErrorSchema,
+      },
+    },
+    exportWorkbook: {
+      method: "POST" as const,
+      path: "/api/ddl/import/export-workbook" as const,
+      input: ddlImportExportRequestSchema,
+      responses: {
+        201: ddlImportExportResponseSchema,
+        400: apiErrorSchema,
       },
     },
   },

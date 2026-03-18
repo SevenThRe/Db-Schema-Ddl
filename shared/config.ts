@@ -82,9 +82,9 @@ export function createDefaultDdlSettings() {
   return {
     ...DEFAULT_DDL_SETTINGS_VALUES,
     pkMarkers: [...DEFAULT_DDL_SETTINGS_VALUES.pkMarkers],
+    ddlImportTemplatePreference: undefined,
     downloadPath: undefined,
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
   };
 }
-

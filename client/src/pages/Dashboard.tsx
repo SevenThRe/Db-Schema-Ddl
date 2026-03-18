@@ -7,14 +7,14 @@ import { SpreadsheetViewer } from "@/components/SpreadsheetViewer";
 import { SearchDialog } from "@/components/SearchDialog";
 import { SchemaDiffPanel } from "@/components/SchemaDiffPanel";
 import { DbManagementWorkspace } from "@/components/db-management/DbManagementWorkspace";
+import { DdlImportWorkspace } from "@/components/ddl-import/DdlImportWorkspace";
 import { ExtensionInstallDialog } from "@/components/extensions/ExtensionInstallDialog";
 import { ExtensionStatusDialog } from "@/components/extensions/ExtensionStatusDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { FileCode2, Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useFiles, useSheets } from "@/hooks/use-ddl";
 import {
   useDisableExtension,
@@ -131,7 +131,7 @@ export default function Dashboard() {
     return typeof fileId === "number" ? fileId : null;
   });
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
-  const [activeModule, setActiveModule] = useState<"workspace" | "db-management">("workspace");
+  const [activeModule, setActiveModule] = useState<"workspace" | "db-management" | "ddl-import">("workspace");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
@@ -700,6 +700,16 @@ export default function Dashboard() {
     />
   );
 
+  const renderDdlImportWorkspace = () => (
+    <DdlImportWorkspace
+      onBack={() => setActiveModule("workspace")}
+      onActivateFile={(fileId) => {
+        setSelectedFileId(fileId);
+        setActiveModule("workspace");
+      }}
+    />
+  );
+
   return (
     <div className="h-screen w-full bg-background overflow-hidden flex flex-col">
       <header className="h-12 shrink-0 border-b border-border/60 bg-background/95 px-3">
@@ -712,6 +722,15 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setActiveModule("ddl-import")}
+            >
+              <FileCode2 className="mr-1 h-3 w-3" />
+              DDL Import
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -746,7 +765,9 @@ export default function Dashboard() {
         />
 
         <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
-          {activeModule === "db-management" && dbManagementExtension?.status === "enabled" ? (
+          {activeModule === "ddl-import" ? (
+            renderDdlImportWorkspace()
+          ) : activeModule === "db-management" && dbManagementExtension?.status === "enabled" ? (
             renderDbManagementWorkspace()
           ) : isCompactLayout ? (
             <>
@@ -758,13 +779,14 @@ export default function Dashboard() {
                 <ResizableHandle />
 
                 <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={35} minSize={25}>
-                  <DdlGenerator
-                    fileId={selectedFileId}
-                    sheetName={selectedSheet}
-                    overrideTables={activeTables}
-                    currentTable={viewMode === "auto" ? currentTable : null}
-                    selectedTableNames={selectedTableNames}
-                    onSelectedTableNamesChange={setSelectedTableNames}
+                <DdlGenerator
+                  fileId={selectedFileId}
+                  sheetName={selectedSheet}
+                  overrideTables={activeTables}
+                  currentTable={viewMode === "auto" ? currentTable : null}
+                  selectedTableNames={selectedTableNames}
+                  onSelectedTableNamesChange={setSelectedTableNames}
+                  onOpenImportWorkspace={() => setActiveModule("ddl-import")}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
@@ -810,6 +832,7 @@ export default function Dashboard() {
                   currentTable={viewMode === "auto" ? currentTable : null}
                   selectedTableNames={selectedTableNames}
                   onSelectedTableNamesChange={setSelectedTableNames}
+                  onOpenImportWorkspace={() => setActiveModule("ddl-import")}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>

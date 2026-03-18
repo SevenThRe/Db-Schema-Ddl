@@ -130,11 +130,25 @@ export function listWorkbookTemplates(): WorkbookTemplateVariant[] {
   return TEMPLATE_VARIANTS.map((template) => ({ ...template }));
 }
 
+export function getWorkbookTemplateVariant(
+  templateId: WorkbookTemplateVariant["id"],
+): WorkbookTemplateVariant | undefined {
+  const template = TEMPLATE_VARIANTS.find((item) => item.id === templateId);
+  return template ? { ...template } : undefined;
+}
+
+export function validateWorkbookTemplateBuffer(
+  buffer: Buffer,
+  template: WorkbookTemplateVariant,
+): WorkbookTemplateValidation {
+  return validateTemplateWorkbookBuffer(buffer, template);
+}
+
 export async function createWorkbookFromTemplate(
   request: CreateWorkbookFromTemplateRequest,
   deps: WorkbookTemplateServiceDeps,
 ): Promise<CreateWorkbookFromTemplateResponse> {
-  const template = TEMPLATE_VARIANTS.find((item) => item.id === request.templateId);
+  const template = getWorkbookTemplateVariant(request.templateId);
   if (!template) {
     throw new WorkbookTemplateError(`Unknown template: ${request.templateId}`, "template_not_found");
   }

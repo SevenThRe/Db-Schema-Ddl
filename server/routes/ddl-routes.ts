@@ -9,6 +9,10 @@ import { DDL_RUNTIME_DEFAULTS, DDL_STREAM_QUERY_TRUE_VALUES } from "../constants
 import { HTTP_HEADER_NAMES, HTTP_HEADER_VALUES } from "../constants/http-headers";
 import { sendApiError } from "../lib/api-error";
 import { collectDdlGenerationWarnings, generateDDL, streamDDL, substituteFilenameSuffix } from "../lib/ddl";
+import { collectDdlImportIssues } from "../lib/ddl-import/issues";
+import { normalizeImportedDdl } from "../lib/ddl-import/normalize";
+import { exportWorkbookFromDdlCatalog, DdlWorkbookExportError } from "../lib/ddl-import/export-service";
+import { DdlImportParserError, parseMysqlDdlToRawDatabase } from "../lib/ddl-import/parser-adapter";
 import { DdlValidationError } from "../lib/ddl-validation";
 import { storage } from "../storage";
 
@@ -18,6 +22,7 @@ interface ResolvedReferenceTables {
 }
 
 interface DdlRouteDeps {
+  uploadsDir: string;
   resolveTablesByReference: (
     request: Pick<
       GenerateDdlByReferenceRequest,
@@ -264,6 +269,191 @@ function addTolerantErrorReport(
 }
 
 export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
+  app.post(api.ddl.previewImport.path, async (req, res) => {
+    try {
+      const request = api.ddl.previewImport.input.parse(req.body);
+      const settings = await storage.getSettings();
+      const sourceSql = request.sqlText.trim();
+
+      try {
+        const raw = parseMysqlDdlToRawDatabase(sourceSql);
+        const catalog = normalizeImportedDdl(raw);
+        const issueResult = collectDdlImportIssues({
+          sqlText: sourceSql,
+          catalog,
+        });
+
+        res.json({
+          sourceMode: request.sourceMode,
+          fileName: request.fileName,
+          sourceSql,
+          catalog,
+          issues: issueResult.issues,
+          issueSummary: issueResult.summary,
+          selectableTableNames: catalog.tables.map((table) => table.name),
+          rememberedTemplateId: settings.ddlImportTemplatePreference,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DdlImportParserError) {
+          const issueResult = collectDdlImportIssues({
+            sqlText: sourceSql,
+            catalog: {
+              dialect: "mysql",
+              databaseName: "ddl_import",
+              tables: [],
+            },
+            parserError: error.detail ?? error.message,
+          });
+
+          res.json({
+            sourceMode: request.sourceMode,
+            fileName: request.fileName,
+            sourceSql,
+            catalog: {
+              dialect: "mysql",
+              databaseName: "ddl_import",
+              tables: [],
+            },
+            issues: issueResult.issues,
+            issueSummary: issueResult.summary,
+            selectableTableNames: [],
+            rememberedTemplateId: settings.ddlImportTemplatePreference,
+          });
+          return;
+        }
+
+        throw error;
+      }
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: err.errors[0].message,
+        });
+      }
+
+      return sendApiError(res, {
+        status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: API_ERROR_CODES.requestFailed,
+        message: "Failed to preview DDL import",
+      });
+    }
+  });
+
+  app.post(api.ddl.exportWorkbook.path, async (req, res) => {
+    try {
+      const request = api.ddl.exportWorkbook.input.parse(req.body);
+      const settings = await storage.getSettings();
+      const sourceSql = request.sqlText.trim();
+
+      let catalog;
+      let issueResult;
+
+      try {
+        const raw = parseMysqlDdlToRawDatabase(sourceSql);
+        catalog = normalizeImportedDdl(raw);
+        issueResult = collectDdlImportIssues({
+          sqlText: sourceSql,
+          catalog,
+        });
+      } catch (error) {
+        if (error instanceof DdlImportParserError) {
+          const parserIssues = collectDdlImportIssues({
+            sqlText: sourceSql,
+            catalog: {
+              dialect: "mysql",
+              databaseName: "ddl_import",
+              tables: [],
+            },
+            parserError: error.detail ?? error.message,
+          });
+          return sendApiError(res, {
+            status: HTTP_STATUS.BAD_REQUEST,
+            code: API_ERROR_CODES.invalidRequest,
+            message: "Provided SQL could not be parsed as supported MySQL DDL.",
+            issues: parserIssues.issues,
+            params: parserIssues.summary,
+          });
+        }
+
+        throw error;
+      }
+
+      if (issueResult.summary.blockingCount > 0) {
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: "Blocking DDL import issues must be resolved before workbook export.",
+          issues: issueResult.issues,
+          params: issueResult.summary,
+        });
+      }
+
+      if (issueResult.summary.confirmCount > 0 && !request.allowLossyExport) {
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: "Lossy export requires explicit confirmation before continuing.",
+          issues: issueResult.issues,
+          params: issueResult.summary,
+        });
+      }
+
+      const exported = await exportWorkbookFromDdlCatalog(
+        {
+          catalog,
+          templateId: request.templateId,
+          selectedTableNames: request.selectedTableNames,
+          originalName: request.originalName,
+        },
+        {
+          storage,
+          uploadsDir: deps.uploadsDir,
+          settings,
+        },
+      );
+
+      try {
+        await storage.updateSettings({
+          ...settings,
+          ddlImportTemplatePreference: request.templateId,
+        });
+      } catch (settingsError) {
+        console.warn("Failed to persist DDL import template preference:", settingsError);
+      }
+
+      res.status(HTTP_STATUS.CREATED).json({
+        ...exported,
+        issueSummary: issueResult.summary,
+        rememberedTemplateId: request.templateId,
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: err.errors[0].message,
+        });
+      }
+
+      if (err instanceof DdlWorkbookExportError) {
+        return sendApiError(res, {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: API_ERROR_CODES.invalidRequest,
+          message: err.message,
+        });
+      }
+
+      return sendApiError(res, {
+        status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: API_ERROR_CODES.requestFailed,
+        message: "Failed to export workbook from DDL",
+      });
+    }
+  });
+
   app.post(api.ddl.generate.path, async (req, res) => {
     const streamQuery = String(req.query.stream ?? "").toLowerCase();
     const streamResponse = DDL_STREAM_QUERY_TRUE_VALUES.has(streamQuery);

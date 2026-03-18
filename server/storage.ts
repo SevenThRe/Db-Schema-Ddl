@@ -161,6 +161,15 @@ function toOptionalString(value: string | null | undefined): string | undefined 
   return value;
 }
 
+function toWorkbookTemplatePreference(
+  value: string | null | undefined,
+): "format-a-table-sheet" | "format-b-multi-table-sheet" | undefined {
+  if (value === "format-a-table-sheet" || value === "format-b-multi-table-sheet") {
+    return value;
+  }
+  return undefined;
+}
+
 function toMysqlDataTypeCase(value: string | null | undefined): "lower" | "upper" {
   return value === "upper" ? "upper" : "lower";
 }
@@ -1049,6 +1058,7 @@ export class DatabaseStorage implements IStorage {
       nameFixMaxBatchConcurrency: row.nameFixMaxBatchConcurrency ?? DEFAULT_NAME_FIX_MAX_BATCH_CONCURRENCY,
       allowOverwriteInElectron: row.allowOverwriteInElectron ?? DEFAULT_ALLOW_OVERWRITE_IN_ELECTRON,
       allowExternalPathWrite: row.allowExternalPathWrite ?? DEFAULT_ALLOW_EXTERNAL_PATH_WRITE,
+      ddlImportTemplatePreference: toWorkbookTemplatePreference(row.ddlImportTemplatePreference),
     };
   }
 
