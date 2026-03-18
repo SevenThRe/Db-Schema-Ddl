@@ -1,0 +1,83 @@
+﻿{
+    "artifactVersion":  "v1",
+    "runId":  "desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z",
+    "generatedAt":  "2026-03-18T15:18:08.2682402Z",
+    "environment":  "packaged-electron",
+    "runMode":  "packaged-nsis",
+    "installerArtifactPath":  "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\dist-electron\\DBSchemaExcel2DDL-Setup-1.1.4.exe",
+    "installDirectory":  "C:\\Program Files\\DBSchemaExcel2DDL",
+    "executablePath":  "C:\\Program Files\\DBSchemaExcel2DDL\\DBSchemaExcel2DDL.exe",
+    "semiManual":  true,
+    "timestamps":  {
+                       "startedAt":  "2026-03-18T15:18:08.2682402Z",
+                       "finishedAt":  "2026-03-18T15:18:08.3055033Z"
+                   },
+    "evidenceRefs":  [
+                         {
+                             "kind":  "installer",
+                             "path":  "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\dist-electron\\DBSchemaExcel2DDL-Setup-1.1.4.exe",
+                             "note":  "Resolved NSIS installer artifact."
+                         },
+                         {
+                             "kind":  "install-directory",
+                             "path":  "C:\\Program Files\\DBSchemaExcel2DDL",
+                             "note":  "Expected install directory. Existing NSIS config may reuse a sticky prior path."
+                         },
+                         {
+                             "kind":  "installed-executable",
+                             "path":  "C:\\Program Files\\DBSchemaExcel2DDL\\DBSchemaExcel2DDL.exe",
+                             "note":  "Expected installed app path for first-launch evidence."
+                         },
+                         {
+                             "kind":  "manual-step",
+                             "path":  "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z.md",
+                             "note":  "Semi-manual run: attach screenshots, log excerpts, and operator notes without changing the artifact/report structure."
+                         }
+                     ],
+    "manualEvidence":  [
+                           "Semi-manual on 2026-03-19: installer UI and first-launch steps require operator confirmation on this machine."
+                       ],
+    "blockerFindings":  [
+
+                        ],
+    "reviewPolicy":  {
+                         "blockers":  [
+                                          {
+                                              "code":  "STARTUP_FAILURE",
+                                              "reason":  "Packaged startup failure or first window never becomes interactive."
+                                          },
+                                          {
+                                              "code":  "NATIVE_MODULE_LOAD_FAILURE",
+                                              "reason":  "better-sqlite3 or another native module fails to load."
+                                          },
+                                          {
+                                              "code":  "MIGRATION_FAILURE",
+                                              "reason":  "SQLite init or migration fails during first launch."
+                                          },
+                                          {
+                                              "code":  "RAW_CLOSE_ERROR",
+                                              "reason":  "Close flow shows raw JavaScript error spam or exits uncleanly."
+                                          },
+                                          {
+                                              "code":  "CATALOG_FAILURE",
+                                              "reason":  "Extension catalog flow exposes raw transport or IPC errors to the user."
+                                          },
+                                          {
+                                              "code":  "DB_ENTRY_FAILURE",
+                                              "reason":  "DB 邂｡逅・main entry does not open."
+                                          }
+                                      ],
+                         "warnings":  [
+                                          {
+                                              "code":  "MYSQL_CHECK_SKIPPED",
+                                              "reason":  "A given packaged smoke run skipped the optional real MySQL read path."
+                                          },
+                                          {
+                                              "code":  "MANUAL_EVIDENCE_PENDING",
+                                              "reason":  "Semi-manual proof still needs screenshots or notes attached before review."
+                                          }
+                                      ]
+                     },
+    "artifactJsonPath":  "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z.json",
+    "artifactMarkdownPath":  "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z.md"
+}

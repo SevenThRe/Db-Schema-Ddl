@@ -1,0 +1,8 @@
+[2026-03-18T15:15:46.439Z] [checkpoint:server_bootstrap_started] {"startPort":5000}
+[2026-03-18T15:15:47.771Z] [checkpoint:server_bootstrap_ready] {"port":5000}
+[2026-03-18T15:15:47.772Z] [checkpoint:browser_window_creating]
+[2026-03-18T15:15:48.289Z] [checkpoint:browser_window_loaded] {"port":5000}
+[2026-03-18T15:15:48.743Z] [checkpoint:smoke_screenshot_written] {"path":"C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.png"}
+[2026-03-18T15:15:50.256Z] [checkpoint:smoke_auto_close_requested] {"delayMs":1500}
+[2026-03-18T15:15:50.256Z] [checkpoint:shutdown_requested] {"activeSocketCount":7}
+[2026-03-18T15:15:50.266Z] [checkpoint:server_shutdown_complete]

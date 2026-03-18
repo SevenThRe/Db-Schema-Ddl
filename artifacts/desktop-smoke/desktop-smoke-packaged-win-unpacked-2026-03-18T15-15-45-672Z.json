@@ -1,0 +1,76 @@
+{
+  "artifactVersion": "v1",
+  "runId": "desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z",
+  "generatedAt": "2026-03-18T15:15:45.672Z",
+  "appVersion": "packaged-smoke",
+  "environment": "packaged-electron",
+  "runMode": "packaged-win-unpacked",
+  "logPath": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.bootstrap.log",
+  "executablePath": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\dist-electron\\win-unpacked\\DBSchemaExcel2DDL.exe",
+  "screenshotPaths": [],
+  "logExcerpt": {
+    "path": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.bootstrap.log",
+    "excerpt": "[2026-03-18T15:15:46.439Z] [checkpoint:server_bootstrap_started] {\"startPort\":5000}\n[2026-03-18T15:15:47.771Z] [checkpoint:server_bootstrap_ready] {\"port\":5000}\n[2026-03-18T15:15:47.772Z] [checkpoint:browser_window_creating]\n[2026-03-18T15:15:48.289Z] [checkpoint:browser_window_loaded] {\"port\":5000}\n[2026-03-18T15:15:48.743Z] [checkpoint:smoke_screenshot_written] {\"path\":\"C:\\\\Users\\\\ISI202502\\\\Downloads\\\\Db-Schema-Ddl\\\\artifacts\\\\desktop-smoke\\\\desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.png\"}\n[2026-03-18T15:15:50.256Z] [checkpoint:smoke_auto_close_requested] {\"delayMs\":1500}\n[2026-03-18T15:15:50.256Z] [checkpoint:shutdown_requested] {\"activeSocketCount\":7}\n[2026-03-18T15:15:50.266Z] [checkpoint:server_shutdown_complete]",
+    "startLine": 1,
+    "endLine": 8
+  },
+  "blockerFindings": [
+    {
+      "code": "PACKAGED_READINESS_FAILED",
+      "blocker": true,
+      "severity": "critical",
+      "message": "Packaged readiness failed: Timed out waiting for checkpoints: server_bootstrap_ready, browser_window_loaded"
+    },
+    {
+      "code": "PACKAGED_SHUTDOWN_FAILED",
+      "blocker": true,
+      "severity": "critical",
+      "message": "Packaged shutdown failed: Timed out waiting for packaged app to exit after smoke-mode auto-close."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 2,
+    "warningCount": 0,
+    "skippedCount": 3,
+    "overallStatus": "failed"
+  },
+  "diagnostics": [],
+  "steps": [
+    {
+      "id": "startup",
+      "title": "应用启动",
+      "status": "failed",
+      "detail": "Packaged readiness failed: Timed out waiting for checkpoints: server_bootstrap_ready, browser_window_loaded",
+      "diagnosticIds": []
+    },
+    {
+      "id": "sqlite-init",
+      "title": "SQLite 初始化与迁移",
+      "status": "skipped",
+      "detail": "确认本地数据库初始化成功，兼容列和迁移能正常执行。",
+      "diagnosticIds": []
+    },
+    {
+      "id": "extension-entry",
+      "title": "扩展入口检查",
+      "status": "skipped",
+      "detail": "确认 DB 管理入口、catalog 检查和未发布提示表现正常。",
+      "diagnosticIds": []
+    },
+    {
+      "id": "db-management-mysql-read",
+      "title": "MySQL 读取链路",
+      "status": "skipped",
+      "detail": "确认至少一条真实 MySQL 连接、database 选择和 schema 读取链路可用。",
+      "diagnosticIds": []
+    },
+    {
+      "id": "shutdown",
+      "title": "应用关闭",
+      "status": "failed",
+      "detail": "Packaged shutdown failed: Timed out waiting for packaged app to exit after smoke-mode auto-close.",
+      "diagnosticIds": []
+    }
+  ]
+}

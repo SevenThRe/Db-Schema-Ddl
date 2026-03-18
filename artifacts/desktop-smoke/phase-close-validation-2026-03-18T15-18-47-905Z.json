@@ -1,0 +1,50 @@
+{
+  "artifactVersion": "v1",
+  "runId": "phase-close-validation-2026-03-18T15-18-47-905Z",
+  "generatedAt": "2026-03-18T15:18:47.978Z",
+  "plan": "02-04",
+  "phase": "02-packaged-build-smoke-v1_3",
+  "overallStatus": "warning",
+  "commands": [
+    {
+      "command": "npm run check",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build:electron",
+      "status": "passed"
+    },
+    {
+      "command": "npm run smoke:packaged",
+      "status": "warning",
+      "exitCode": 1,
+      "artifactJsonPath": "artifacts/desktop-smoke/desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.json",
+      "artifactMarkdownPath": "artifacts/desktop-smoke/desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.md",
+      "bootstrapLogPath": "artifacts/desktop-smoke/desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.bootstrap.log",
+      "screenshotPath": "artifacts/desktop-smoke/desktop-smoke-packaged-win-unpacked-2026-03-18T15-15-45-672Z.png",
+      "note": "The packaged smoke runner returned blocker findings even though the bootstrap log contains server_bootstrap_ready and browser_window_loaded, the screenshot file exists, and no DBSchemaExcel2DDL process remained after the run. Treat this as a packaged smoke runner false-negative until the runner logic is corrected."
+    },
+    {
+      "command": "powershell -ExecutionPolicy Bypass -File .\\script\\desktop-packaged-smoke-installer.ps1 -SemiManual -ManualEvidence \"Semi-manual on 2026-03-19: installer UI and first-launch steps require operator confirmation on this machine.\"",
+      "status": "passed",
+      "artifactJsonPath": "artifacts/desktop-smoke/desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z.json",
+      "artifactMarkdownPath": "artifacts/desktop-smoke/desktop-smoke-packaged-nsis-2026-03-18T15-18-08-264Z.md",
+      "note": "Installer coverage remains explicit and reviewable, but semi-manual on this machine."
+    }
+  ],
+  "blockers": [
+    {
+      "code": "PACKAGED_SMOKE_FALSE_NEGATIVE",
+      "severity": "warning",
+      "message": "win-unpacked evidence was captured, but the current smoke runner classified the run as failed despite observed readiness checkpoints, screenshot capture, and process exit."
+    }
+  ],
+  "manualOnlyCoverage": {
+    "nsisInstaller": true,
+    "details": "Installer UI and first-launch confirmation still require operator review on this machine. The semi-manual status is recorded in the NSIS artifact."
+  }
+}
