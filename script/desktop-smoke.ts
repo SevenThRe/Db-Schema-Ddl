@@ -2,11 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  desktopSmokeBlockerFindingSchema,
   desktopDiagnosticEntrySchema,
   desktopSmokeArtifactSchema,
+  desktopSmokeLogExcerptSchema,
   desktopSmokeStepSchema,
+  type DesktopSmokeBlockerFinding,
   type DesktopDiagnosticEntry,
   type DesktopSmokeArtifact,
+  type DesktopSmokeLogExcerpt,
+  type DesktopSmokeRunMode,
   type DesktopSmokeStep,
 } from "../shared/schema";
 
@@ -80,21 +85,37 @@ export function buildDesktopSmokeArtifact(input: {
   runId: string;
   generatedAt: string;
   appVersion: string;
-  environment: "dev-electron" | "packaged-electron";
+  environment?: "dev-electron" | "packaged-electron";
+  runMode?: DesktopSmokeRunMode;
   logPath: string;
+  executablePath?: string;
+  screenshotPaths?: string[];
+  logExcerpt?: DesktopSmokeLogExcerpt;
+  blockerFindings?: DesktopSmokeBlockerFinding[];
   diagnostics?: DesktopDiagnosticEntry[];
   steps: DesktopSmokeStep[];
 }): DesktopSmokeArtifact {
   const diagnostics = (input.diagnostics ?? []).map((entry) => desktopDiagnosticEntrySchema.parse(entry));
   const steps = input.steps.map((step) => desktopSmokeStepSchema.parse(step));
+  const runMode = resolveDesktopSmokeRunMode(input.environment, input.runMode);
+  const environment = input.environment ?? (runMode === "dev-electron" ? "dev-electron" : "packaged-electron");
+  const logExcerpt = input.logExcerpt ? desktopSmokeLogExcerptSchema.parse(input.logExcerpt) : undefined;
+  const blockerFindings = (input.blockerFindings ?? []).map((finding) =>
+    desktopSmokeBlockerFindingSchema.parse(finding),
+  );
 
   return desktopSmokeArtifactSchema.parse({
     artifactVersion: "v1",
     runId: input.runId,
     generatedAt: input.generatedAt,
     appVersion: input.appVersion,
-    environment: input.environment,
+    environment,
+    runMode,
     logPath: input.logPath,
+    executablePath: input.executablePath,
+    screenshotPaths: input.screenshotPaths ?? [],
+    logExcerpt,
+    blockerFindings,
     diagnostics,
     steps,
     summary: summarizeDesktopSmokeSteps(steps),
@@ -108,7 +129,9 @@ export function renderDesktopSmokeMarkdown(artifact: DesktopSmokeArtifact): stri
     `- Generated at: ${artifact.generatedAt}`,
     `- App version: ${artifact.appVersion}`,
     `- Environment: ${artifact.environment}`,
+    `- Run mode: ${artifact.runMode}`,
     `- Log path: ${artifact.logPath}`,
+    ...(artifact.executablePath ? [`- Executable path: ${artifact.executablePath}`] : []),
     `- Overall status: ${artifact.summary.overallStatus}`,
     "",
     "## Steps",
@@ -125,7 +148,39 @@ export function renderDesktopSmokeMarkdown(artifact: DesktopSmokeArtifact): stri
     }
   }
 
+  if (artifact.screenshotPaths.length > 0) {
+    lines.push("", "## Screenshots", "", ...artifact.screenshotPaths.map((screenshotPath) => `- ${screenshotPath}`));
+  }
+
+  if (artifact.logExcerpt) {
+    lines.push("", "## Log Excerpt", "", `- Source: ${artifact.logExcerpt.path}`);
+    if (artifact.logExcerpt.startLine || artifact.logExcerpt.endLine) {
+      const start = artifact.logExcerpt.startLine ?? "?";
+      const end = artifact.logExcerpt.endLine ?? "?";
+      lines.push(`- Lines: ${start}-${end}`);
+    }
+    lines.push("", "```text", artifact.logExcerpt.excerpt, "```");
+  }
+
+  if (artifact.blockerFindings.length > 0) {
+    lines.push("", "## Blocker Findings", "", "| Code | Blocker | Severity | Message |", "|------|---------|----------|---------|");
+    for (const finding of artifact.blockerFindings) {
+      lines.push(`| ${finding.code} | ${finding.blocker ? "yes" : "no"} | ${finding.severity} | ${finding.message} |`);
+    }
+  }
+
   return lines.join("\n");
+}
+
+function resolveDesktopSmokeRunMode(
+  environment: "dev-electron" | "packaged-electron" | undefined,
+  runMode: DesktopSmokeRunMode | undefined,
+): DesktopSmokeRunMode {
+  if (runMode) {
+    return runMode;
+  }
+
+  return environment === "packaged-electron" ? "packaged-win-unpacked" : "dev-electron";
 }
 
 function writeSmokeArtifacts(cwd: string) {

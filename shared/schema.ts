@@ -1159,6 +1159,27 @@ export const desktopSmokeStepSchema = z.object({
 });
 
 export const desktopSmokeEnvironmentSchema = z.enum(["dev-electron", "packaged-electron"]);
+export const desktopSmokeRunModeSchema = z.enum([
+  "dev-electron",
+  "packaged-win-unpacked",
+  "packaged-nsis",
+]);
+
+export const desktopSmokeLogExcerptSchema = z.object({
+  path: z.string().min(1),
+  excerpt: z.string().min(1),
+  startLine: z.number().int().min(1).optional(),
+  endLine: z.number().int().min(1).optional(),
+});
+
+export const desktopSmokeBlockerFindingSeveritySchema = z.enum(["warning", "error", "critical"]);
+
+export const desktopSmokeBlockerFindingSchema = z.object({
+  code: z.string().min(1),
+  blocker: z.boolean(),
+  severity: desktopSmokeBlockerFindingSeveritySchema,
+  message: z.string().min(1),
+});
 
 export const desktopSmokeArtifactSchema = z.object({
   artifactVersion: z.literal("v1").default("v1"),
@@ -1166,7 +1187,12 @@ export const desktopSmokeArtifactSchema = z.object({
   generatedAt: z.string().min(1),
   appVersion: z.string().min(1),
   environment: desktopSmokeEnvironmentSchema,
+  runMode: desktopSmokeRunModeSchema.default("dev-electron"),
   logPath: z.string().min(1),
+  executablePath: z.string().min(1).optional(),
+  screenshotPaths: z.array(z.string().min(1)).default([]),
+  logExcerpt: desktopSmokeLogExcerptSchema.optional(),
+  blockerFindings: z.array(desktopSmokeBlockerFindingSchema).default([]),
   summary: z.object({
     passedCount: z.number().int().min(0).default(0),
     failedCount: z.number().int().min(0).default(0),
@@ -1177,6 +1203,14 @@ export const desktopSmokeArtifactSchema = z.object({
   diagnostics: z.array(desktopDiagnosticEntrySchema).default([]),
   steps: z.array(desktopSmokeStepSchema).default([]),
 });
+
+export type DesktopDiagnosticEntry = z.infer<typeof desktopDiagnosticEntrySchema>;
+export type DesktopSmokeStep = z.infer<typeof desktopSmokeStepSchema>;
+export type DesktopSmokeEnvironment = z.infer<typeof desktopSmokeEnvironmentSchema>;
+export type DesktopSmokeRunMode = z.infer<typeof desktopSmokeRunModeSchema>;
+export type DesktopSmokeLogExcerpt = z.infer<typeof desktopSmokeLogExcerptSchema>;
+export type DesktopSmokeBlockerFinding = z.infer<typeof desktopSmokeBlockerFindingSchema>;
+export type DesktopSmokeArtifact = z.infer<typeof desktopSmokeArtifactSchema>;
 
 export const dbManagementViewModeSchema = z.enum([
   "diff",
