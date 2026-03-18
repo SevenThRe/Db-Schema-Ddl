@@ -13,7 +13,7 @@ This roadmap treats `v1.2` as the follow-on milestone to the delivered bidirecti
 | # | Phase | Goal | Requirements | Success Criteria | Status |
 |---|-------|------|--------------|------------------|--------|
 | 1 | Snapshot Compare and Reports | Compare arbitrary stored DB snapshots and export reviewable history reports | HIST-01, HIST-02, HIST-03 | 3 | Complete |
-| 2 | Live DB to XLSX Export | Turn live DB schema directly into parser-compatible `.xlsx` workbooks with the same trust model as other exports | DBXLSX-01, DBXLSX-02, DBXLSX-03 | 3 | Proposed |
+| 2 | Live DB to XLSX Export | Turn live DB schema directly into parser-compatible `.xlsx` workbooks with the same trust model as other exports | DBXLSX-01, DBXLSX-02, DBXLSX-03 | 3 | Planned |
 | 3 | Reverse Import Expansion | Expand reverse import to SQL bundles and first-cut Oracle DDL while keeping canonical review and trust gates | REV-01, REV-02, REV-03, REV-04 | 4 | Proposed |
 
 ## Phase Details
