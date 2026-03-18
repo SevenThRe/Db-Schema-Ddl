@@ -933,7 +933,113 @@ export const dbVsDbPreviewResponseSchema = z.object({
   blocked: z.boolean().default(false),
 });
 
-export const dbManagementViewModeSchema = z.enum(["diff", "db-vs-db", "history", "apply", "graph"]);
+export const dbSnapshotCompareLiveFreshnessSchema = z.enum(["latest_snapshot", "refresh_live"]);
+
+export const dbSnapshotCompareSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("live"),
+    connectionId: z.number().int().positive(),
+    databaseName: z.string().min(1),
+    freshness: dbSnapshotCompareLiveFreshnessSchema.default("latest_snapshot"),
+  }),
+  z.object({
+    kind: z.literal("snapshot"),
+    connectionId: z.number().int().positive(),
+    databaseName: z.string().min(1),
+    snapshotHash: z.string().min(8),
+  }),
+]);
+
+export const dbSnapshotCompareScopeSchema = z.enum(["database", "table"]);
+
+export const dbSnapshotCompareResolvedSourceSchema = z.object({
+  sourceKey: z.string().min(1),
+  label: z.string().min(1),
+  kind: z.enum(["live", "snapshot"]),
+  connectionId: z.number().int().positive(),
+  connectionName: z.string().min(1),
+  databaseName: z.string().min(1),
+  requestedSnapshotHash: z.string().min(8).optional(),
+  snapshotHash: z.string().min(8),
+  snapshotCapturedAt: z.string().optional(),
+  freshness: dbSnapshotCompareLiveFreshnessSchema.optional(),
+  usedFreshLiveScan: z.boolean().default(false),
+  cacheHit: z.boolean().default(false),
+});
+
+export const dbSnapshotCompareContextSchema = z.object({
+  artifactVersion: z.literal("v1").default("v1"),
+  compareKey: z.string().min(1),
+  scope: dbSnapshotCompareScopeSchema.default("database"),
+  tableName: z.string().min(1).optional(),
+  generatedAt: z.string().optional(),
+  left: dbSnapshotCompareResolvedSourceSchema,
+  right: dbSnapshotCompareResolvedSourceSchema,
+});
+
+export const dbSnapshotCompareWarningSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  side: z.enum(["left", "right", "compare"]).optional(),
+});
+
+export const dbSnapshotCompareArtifactSchema = z.object({
+  context: dbSnapshotCompareContextSchema,
+  summary: dbDiffSummarySchema,
+  tableChanges: z.array(dbDiffTableChangeSchema).default([]),
+  blockers: z.array(dbDiffBlockerSchema).default([]),
+  warnings: z.array(dbSnapshotCompareWarningSchema).default([]),
+});
+
+export const dbSnapshotCompareRequestSchema = z
+  .object({
+    left: dbSnapshotCompareSourceSchema,
+    right: dbSnapshotCompareSourceSchema,
+    scope: dbSnapshotCompareScopeSchema.default("database"),
+    tableName: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scope === "table" && !value.tableName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tableName"],
+        message: "tableName is required when scope=table",
+      });
+    }
+    if (value.left.kind === "live" && value.right.kind === "live") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["right"],
+        message: "Use DB vs DB Compare for live-to-live comparisons.",
+      });
+    }
+  });
+
+export const dbSnapshotCompareResponseSchema = dbSnapshotCompareArtifactSchema;
+
+export const dbSnapshotCompareReportFormatSchema = z.enum(["markdown", "json"]);
+
+export const dbSnapshotCompareReportRequestSchema = z.object({
+  format: dbSnapshotCompareReportFormatSchema.default("markdown"),
+  artifact: dbSnapshotCompareArtifactSchema,
+});
+
+export const dbSnapshotCompareReportResponseSchema = z.object({
+  format: dbSnapshotCompareReportFormatSchema,
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  content: z.string().min(1),
+  artifact: dbSnapshotCompareArtifactSchema,
+});
+
+export const dbSnapshotCompareWorkspaceStateSchema = z.object({
+  lastCompareInput: dbSnapshotCompareRequestSchema.nullable().default(null),
+  artifact: dbSnapshotCompareArtifactSchema.nullable().default(null),
+  selectedTableNames: z.array(z.string().min(1)).default([]),
+  lastReportFormat: dbSnapshotCompareReportFormatSchema.default("markdown"),
+});
+
+export const dbManagementViewModeSchema = z.enum(["diff", "db-vs-db", "snapshot-compare", "history", "apply", "graph"]);
 
 export const dbHistoryCompareSourceKindSchema = z.enum(["file", "live", "snapshot"]);
 
@@ -2184,6 +2290,19 @@ export type DbVsDbRenameReviewRequest = z.infer<typeof dbVsDbRenameReviewRequest
 export type DbVsDbPreviewRequest = z.infer<typeof dbVsDbPreviewRequestSchema>;
 export type DbVsDbPreviewResponse = z.infer<typeof dbVsDbPreviewResponseSchema>;
 export type DbManagementViewMode = z.infer<typeof dbManagementViewModeSchema>;
+export type DbSnapshotCompareLiveFreshness = z.infer<typeof dbSnapshotCompareLiveFreshnessSchema>;
+export type DbSnapshotCompareSource = z.infer<typeof dbSnapshotCompareSourceSchema>;
+export type DbSnapshotCompareScope = z.infer<typeof dbSnapshotCompareScopeSchema>;
+export type DbSnapshotCompareResolvedSource = z.infer<typeof dbSnapshotCompareResolvedSourceSchema>;
+export type DbSnapshotCompareContext = z.infer<typeof dbSnapshotCompareContextSchema>;
+export type DbSnapshotCompareWarning = z.infer<typeof dbSnapshotCompareWarningSchema>;
+export type DbSnapshotCompareArtifact = z.infer<typeof dbSnapshotCompareArtifactSchema>;
+export type DbSnapshotCompareRequest = z.infer<typeof dbSnapshotCompareRequestSchema>;
+export type DbSnapshotCompareResponse = z.infer<typeof dbSnapshotCompareResponseSchema>;
+export type DbSnapshotCompareReportFormat = z.infer<typeof dbSnapshotCompareReportFormatSchema>;
+export type DbSnapshotCompareReportRequest = z.infer<typeof dbSnapshotCompareReportRequestSchema>;
+export type DbSnapshotCompareReportResponse = z.infer<typeof dbSnapshotCompareReportResponseSchema>;
+export type DbSnapshotCompareWorkspaceState = z.infer<typeof dbSnapshotCompareWorkspaceStateSchema>;
 export type DbHistoryCompareSourceKind = z.infer<typeof dbHistoryCompareSourceKindSchema>;
 export type DbHistoryCompareSource = z.infer<typeof dbHistoryCompareSourceSchema>;
 export type DbHistoryCompareScope = z.infer<typeof dbHistoryCompareScopeSchema>;

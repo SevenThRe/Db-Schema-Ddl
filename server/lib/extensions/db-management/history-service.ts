@@ -23,6 +23,14 @@ import {
   type DbRenameDecisionItem,
   type DbSchemaCatalog,
   type DbSchemaSnapshot,
+  type DbSnapshotCompareArtifact,
+  type DbSnapshotCompareReportFormat,
+  type DbSnapshotCompareReportResponse,
+  type DbSnapshotCompareRequest,
+  type DbSnapshotCompareResolvedSource,
+  type DbSnapshotCompareResponse,
+  type DbSnapshotCompareSource,
+  type DbSnapshotCompareWarning,
   type DbVsDbCompareRequest,
   type DbVsDbCompareResponse,
   type DbVsDbRenameReviewRequest,
@@ -41,6 +49,13 @@ interface ResolvedHistoryCatalog {
   source: DbHistoryCompareSource;
   catalog: DbSchemaCatalog;
   snapshot?: DbSchemaSnapshot;
+}
+
+interface ResolvedSnapshotCompareCatalog {
+  requestedSource: DbSnapshotCompareSource;
+  resolvedSource: DbSnapshotCompareResolvedSource;
+  catalog: DbSchemaCatalog;
+  snapshot: DbSchemaSnapshot;
 }
 
 interface ResolvedLiveCompareCatalog {
@@ -98,6 +113,21 @@ function normalizeName(value?: string | null): string {
 
 function buildEntityKey(parts: Array<string | undefined>): string {
   return parts.map((part) => normalizeName(part)).join(":");
+}
+
+function buildSnapshotSourceKey(source: {
+  kind: "live" | "snapshot";
+  connectionId: number;
+  databaseName: string;
+  snapshotHash?: string;
+}): string {
+  return buildEntityKey([
+    "snapshot_source",
+    source.kind,
+    String(source.connectionId),
+    source.databaseName,
+    source.snapshotHash,
+  ]);
 }
 
 function fileColumnName(column: DbFileColumn): string {
@@ -292,40 +322,132 @@ async function resolveSnapshot(connectionId: number, databaseName: string, snaps
   return snapshot;
 }
 
-export async function resolveCompareSourceCatalog(
-  routeConnectionId: number,
+async function resolveAnyHistoryCatalog(
   source: DbHistoryCompareSource,
   options: { databaseName: string; refreshLiveSchema?: boolean },
 ): Promise<ResolvedHistoryCatalog> {
   if (source.kind === "file") {
     return { source, catalog: await loadFileCatalog(source, options.databaseName) };
   }
-  if (source.connectionId !== routeConnectionId) {
-    throw new Error("Cross-connection history comparison is not supported in this phase.");
-  }
   if (source.kind === "snapshot") {
-    const snapshot = await resolveSnapshot(routeConnectionId, source.databaseName, source.snapshotHash);
+    const snapshot = await resolveSnapshot(source.connectionId, source.databaseName, source.snapshotHash);
     return { source, snapshot, catalog: JSON.parse(snapshot.schemaJson) as DbSchemaCatalog };
   }
 
   if (source.snapshotHash) {
-    const snapshot = await resolveSnapshot(routeConnectionId, source.databaseName, source.snapshotHash);
+    const snapshot = await resolveSnapshot(source.connectionId, source.databaseName, source.snapshotHash);
     return { source, snapshot, catalog: JSON.parse(snapshot.schemaJson) as DbSchemaCatalog };
   }
 
   if (options.refreshLiveSchema) {
-    await getDbConnectionRecordOrThrow(routeConnectionId);
-    const rawSchema = await introspectMySqlDatabase(routeConnectionId, source.databaseName);
+    await getDbConnectionRecordOrThrow(source.connectionId);
+    const rawSchema = await introspectMySqlDatabase(source.connectionId, source.databaseName);
     const catalog = normalizeMySqlSchema(rawSchema);
-    const persisted = await persistDbSchemaSnapshot(routeConnectionId, catalog);
+    const persisted = await persistDbSchemaSnapshot(source.connectionId, catalog);
     return { source: { ...source, snapshotHash: persisted.snapshot.snapshotHash }, snapshot: persisted.snapshot, catalog };
   }
 
-  const latest = await storage.getLatestDbSchemaSnapshot(routeConnectionId, source.databaseName);
+  const latest = await storage.getLatestDbSchemaSnapshot(source.connectionId, source.databaseName);
   if (!latest) {
     throw new Error(`No schema snapshot exists for database "${source.databaseName}". Run scan first.`);
   }
   return { source: { ...source, snapshotHash: latest.snapshotHash }, snapshot: latest, catalog: JSON.parse(latest.schemaJson) as DbSchemaCatalog };
+}
+
+async function resolveSnapshotCompareCatalog(
+  source: DbSnapshotCompareSource,
+): Promise<ResolvedSnapshotCompareCatalog> {
+  const connection = await getDbConnectionRecordOrThrow(source.connectionId);
+
+  if (source.kind === "snapshot") {
+    const snapshot = await resolveSnapshot(source.connectionId, source.databaseName, source.snapshotHash);
+    return {
+      requestedSource: source,
+      resolvedSource: {
+        sourceKey: buildSnapshotSourceKey(source),
+        label: `${connection.name}/${source.databaseName}@${source.snapshotHash.slice(0, 12)}`,
+        kind: "snapshot",
+        connectionId: source.connectionId,
+        connectionName: connection.name,
+        databaseName: source.databaseName,
+        requestedSnapshotHash: source.snapshotHash,
+        snapshotHash: snapshot.snapshotHash,
+        snapshotCapturedAt: snapshot.capturedAt,
+        cacheHit: true,
+        usedFreshLiveScan: false,
+      },
+      snapshot,
+      catalog: JSON.parse(snapshot.schemaJson) as DbSchemaCatalog,
+    };
+  }
+
+  if (source.freshness === "refresh_live") {
+    const rawSchema = await introspectMySqlDatabase(source.connectionId, source.databaseName);
+    const catalog = normalizeMySqlSchema(rawSchema);
+    const persisted = await persistDbSchemaSnapshot(source.connectionId, catalog);
+    return {
+      requestedSource: source,
+      resolvedSource: {
+        sourceKey: buildSnapshotSourceKey({
+          kind: "live",
+          connectionId: source.connectionId,
+          databaseName: source.databaseName,
+          snapshotHash: persisted.snapshot.snapshotHash,
+        }),
+        label: `${connection.name}/${source.databaseName} (refreshed live)`,
+        kind: "live",
+        connectionId: source.connectionId,
+        connectionName: connection.name,
+        databaseName: source.databaseName,
+        snapshotHash: persisted.snapshot.snapshotHash,
+        snapshotCapturedAt: persisted.snapshot.capturedAt,
+        freshness: source.freshness,
+        usedFreshLiveScan: true,
+        cacheHit: persisted.cacheHit,
+      },
+      snapshot: persisted.snapshot,
+      catalog,
+    };
+  }
+
+  const latest = await storage.getLatestDbSchemaSnapshot(source.connectionId, source.databaseName);
+  if (!latest) {
+    throw new Error(`No schema snapshot exists for database "${source.databaseName}". Run scan first.`);
+  }
+  return {
+    requestedSource: source,
+    resolvedSource: {
+      sourceKey: buildSnapshotSourceKey({
+        kind: "live",
+        connectionId: source.connectionId,
+        databaseName: source.databaseName,
+        snapshotHash: latest.snapshotHash,
+      }),
+      label: `${connection.name}/${source.databaseName} (latest snapshot)`,
+      kind: "live",
+      connectionId: source.connectionId,
+      connectionName: connection.name,
+      databaseName: source.databaseName,
+      snapshotHash: latest.snapshotHash,
+      snapshotCapturedAt: latest.capturedAt,
+      freshness: source.freshness,
+      usedFreshLiveScan: false,
+      cacheHit: true,
+    },
+    snapshot: latest,
+    catalog: JSON.parse(latest.schemaJson) as DbSchemaCatalog,
+  };
+}
+
+export async function resolveCompareSourceCatalog(
+  routeConnectionId: number,
+  source: DbHistoryCompareSource,
+  options: { databaseName: string; refreshLiveSchema?: boolean },
+): Promise<ResolvedHistoryCatalog> {
+  if (source.kind !== "file" && source.connectionId !== routeConnectionId) {
+    throw new Error("Cross-connection history comparison is not supported in this phase.");
+  }
+  return resolveAnyHistoryCatalog(source, options);
 }
 
 async function resolveLiveCompareCatalog(
@@ -479,6 +601,173 @@ function compareCatalogs(args: {
     tableChanges: tableChanges.sort((left, right) => left.entityKey.localeCompare(right.entityKey)),
     blockers,
     canApply: blockers.length === 0,
+  };
+}
+
+function buildSnapshotCompareWarnings(
+  left: ResolvedSnapshotCompareCatalog,
+  right: ResolvedSnapshotCompareCatalog,
+): DbSnapshotCompareWarning[] {
+  const warnings: DbSnapshotCompareWarning[] = [];
+  if (left.requestedSource.kind === "live" && !left.resolvedSource.usedFreshLiveScan) {
+    warnings.push({
+      code: "using_latest_snapshot_left",
+      side: "left",
+      message: `${left.resolvedSource.label} 使用最近已保存的 snapshot，而不是即时刷新 live 结构。`,
+    });
+  }
+  if (right.requestedSource.kind === "live" && !right.resolvedSource.usedFreshLiveScan) {
+    warnings.push({
+      code: "using_latest_snapshot_right",
+      side: "right",
+      message: `${right.resolvedSource.label} 使用最近已保存的 snapshot，而不是即时刷新 live 结构。`,
+    });
+  }
+  return warnings;
+}
+
+function buildSnapshotCompareKey(
+  left: DbSnapshotCompareResolvedSource,
+  right: DbSnapshotCompareResolvedSource,
+  scope: DbSnapshotCompareRequest["scope"],
+  tableName?: string,
+): string {
+  return buildEntityKey([
+    "snapshot_compare",
+    left.sourceKey,
+    right.sourceKey,
+    scope,
+    tableName,
+  ]);
+}
+
+function renderSnapshotCompareMarkdown(artifact: DbSnapshotCompareArtifact): string {
+  const lines: string[] = [
+    "# Snapshot Compare Report",
+    "",
+    `- Generated: ${artifact.context.generatedAt ?? new Date().toISOString()}`,
+    `- Left: ${artifact.context.left.label}`,
+    `- Right: ${artifact.context.right.label}`,
+    `- Scope: ${artifact.context.scope}${artifact.context.tableName ? ` (${artifact.context.tableName})` : ""}`,
+    "",
+    "## Summary",
+    "",
+    `- Added tables: ${artifact.summary.addedTables}`,
+    `- Removed tables: ${artifact.summary.removedTables}`,
+    `- Changed tables: ${artifact.summary.changedTables}`,
+    `- Added columns: ${artifact.summary.addedColumns}`,
+    `- Removed columns: ${artifact.summary.removedColumns}`,
+    `- Changed columns: ${artifact.summary.changedColumns}`,
+    `- Blockers: ${artifact.summary.blockingCount}`,
+  ];
+
+  if (artifact.warnings.length > 0) {
+    lines.push("", "## Warnings", "");
+    for (const warning of artifact.warnings) {
+      lines.push(`- [${warning.code}] ${warning.message}`);
+    }
+  }
+
+  if (artifact.blockers.length > 0) {
+    lines.push("", "## Blockers", "");
+    for (const blocker of artifact.blockers) {
+      lines.push(`- [${blocker.code}] ${blocker.message}`);
+    }
+  }
+
+  lines.push("", "## Table Details", "");
+  if (artifact.tableChanges.length === 0) {
+    lines.push("- No table changes detected.");
+    return lines.join("\n");
+  }
+
+  for (const tableChange of artifact.tableChanges) {
+    const tableName = tableChange.fileTable?.physicalTableName ?? tableChange.dbTable?.name ?? tableChange.entityKey;
+    lines.push(`### ${tableName}`, "");
+    lines.push(`- Action: ${tableChange.action}`);
+    lines.push(`- Entity Key: ${tableChange.entityKey}`);
+    if (tableChange.changedFields.length > 0) {
+      lines.push(`- Changed fields: ${tableChange.changedFields.join(", ")}`);
+    }
+    if (tableChange.blockers.length > 0) {
+      lines.push(`- Table blockers: ${tableChange.blockers.map((blocker) => blocker.code).join(", ")}`);
+    }
+    if (tableChange.columnChanges.length > 0) {
+      lines.push("", "| Column | Action | Changed Fields | Blockers |", "| --- | --- | --- | --- |");
+      for (const columnChange of tableChange.columnChanges) {
+        const columnName =
+          columnChange.fileColumn?.physicalName ??
+          columnChange.dbColumn?.name ??
+          columnChange.entityKey;
+        lines.push(
+          `| ${columnName} | ${columnChange.action} | ${columnChange.changedFields.join(", ") || "-"} | ${columnChange.blockers.map((blocker) => blocker.code).join(", ") || "-"} |`,
+        );
+      }
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+export async function compareSnapshotSources(
+  input: DbSnapshotCompareRequest,
+): Promise<DbSnapshotCompareResponse> {
+  const [left, right] = await Promise.all([
+    resolveSnapshotCompareCatalog(input.left),
+    resolveSnapshotCompareCatalog(input.right),
+  ]);
+  const compared = compareCatalogs({
+    databaseName: left.resolvedSource.databaseName,
+    leftCatalog: left.catalog,
+    rightCatalog: right.catalog,
+    scope: input.scope,
+    tableName: input.tableName,
+  });
+
+  return {
+    context: {
+      artifactVersion: "v1",
+      compareKey: buildSnapshotCompareKey(left.resolvedSource, right.resolvedSource, input.scope, input.tableName),
+      scope: input.scope,
+      tableName: input.tableName,
+      generatedAt: new Date().toISOString(),
+      left: left.resolvedSource,
+      right: right.resolvedSource,
+    },
+    summary: compared.summary,
+    tableChanges: compared.tableChanges,
+    blockers: compared.blockers,
+    warnings: buildSnapshotCompareWarnings(left, right),
+  };
+}
+
+export function exportSnapshotCompareReport(
+  artifact: DbSnapshotCompareArtifact,
+  format: DbSnapshotCompareReportFormat,
+): DbSnapshotCompareReportResponse {
+  const baseFileName = [
+    "snapshot-compare",
+    artifact.context.left.databaseName,
+    "vs",
+    artifact.context.right.databaseName,
+    artifact.context.left.snapshotHash.slice(0, 8),
+    artifact.context.right.snapshotHash.slice(0, 8),
+  ]
+    .map((part) => normalizeName(part))
+    .join("-");
+
+  const content =
+    format === "markdown"
+      ? renderSnapshotCompareMarkdown(artifact)
+      : JSON.stringify(artifact, null, 2);
+
+  return {
+    format,
+    fileName: `${baseFileName}.${format === "markdown" ? "md" : "json"}`,
+    mimeType: format === "markdown" ? "text/markdown;charset=utf-8" : "application/json;charset=utf-8",
+    content,
+    artifact,
   };
 }
 

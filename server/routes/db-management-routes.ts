@@ -25,7 +25,9 @@ import {
 } from "../lib/extensions/db-management/apply-service";
 import {
   compareDbHistory,
+  compareSnapshotSources,
   compareLiveDatabases,
+  exportSnapshotCompareReport,
   getDbHistoryDetail,
   listDbHistory,
   reviewLiveDatabaseRenames,
@@ -485,6 +487,54 @@ export function registerDbManagementRoutes(app: Express): void {
     try {
       const result = await compareDbHistory(connectionId, payload.data);
       res.json(api.dbManagement.compareHistory.responses[200].parse(result));
+    } catch (error) {
+      handleRouteError(res, error);
+    }
+  });
+
+  app.post(api.dbManagement.snapshotCompare.path, async (req, res) => {
+    if (!requireElectronMode(res)) {
+      return;
+    }
+
+    const payload = api.dbManagement.snapshotCompare.input.safeParse(req.body);
+    if (!payload.success) {
+      sendApiError(res, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.invalidRequest,
+        message: "Invalid snapshot compare payload.",
+        issues: payload.error.issues,
+      });
+      return;
+    }
+
+    try {
+      const result = await compareSnapshotSources(payload.data);
+      res.json(api.dbManagement.snapshotCompare.responses[200].parse(result));
+    } catch (error) {
+      handleRouteError(res, error);
+    }
+  });
+
+  app.post(api.dbManagement.exportSnapshotCompareReport.path, async (req, res) => {
+    if (!requireElectronMode(res)) {
+      return;
+    }
+
+    const payload = api.dbManagement.exportSnapshotCompareReport.input.safeParse(req.body);
+    if (!payload.success) {
+      sendApiError(res, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.invalidRequest,
+        message: "Invalid snapshot compare report payload.",
+        issues: payload.error.issues,
+      });
+      return;
+    }
+
+    try {
+      const result = exportSnapshotCompareReport(payload.data.artifact, payload.data.format);
+      res.json(api.dbManagement.exportSnapshotCompareReport.responses[200].parse(result));
     } catch (error) {
       handleRouteError(res, error);
     }

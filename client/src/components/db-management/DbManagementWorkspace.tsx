@@ -20,6 +20,7 @@ import { DbApplyPanel } from "./DbApplyPanel";
 import { DbDiffWorkspace, type DbDiffWorkspaceStateSnapshot } from "./DbDiffWorkspace";
 import { DbHistoryPanel } from "./DbHistoryPanel";
 import { DbSchemaGraph } from "./DbSchemaGraph";
+import { DbSnapshotCompareWorkspace, type DbSnapshotCompareWorkspaceSeed } from "./DbSnapshotCompareWorkspace";
 import { DbVsDbWorkspace } from "./DbVsDbWorkspace";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,7 +42,7 @@ const DEFAULT_DIFF_STATE: DbDiffWorkspaceStateSnapshot = {
   dryRunResult: null,
 };
 
-const VIEW_MODES: readonly DbManagementViewMode[] = ["diff", "db-vs-db", "history", "apply", "graph"];
+const VIEW_MODES: readonly DbManagementViewMode[] = ["diff", "db-vs-db", "snapshot-compare", "history", "apply", "graph"];
 
 function readStoredViewMode(): DbManagementViewMode {
   if (typeof window === "undefined") {
@@ -63,6 +64,7 @@ export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, s
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<DbManagementViewMode>(() => readStoredViewMode());
   const [diffState, setDiffState] = useState<DbDiffWorkspaceStateSnapshot>(DEFAULT_DIFF_STATE);
+  const [snapshotCompareSeed, setSnapshotCompareSeed] = useState<DbSnapshotCompareWorkspaceSeed | null>(null);
 
   const selectedConnection = useMemo(
     () => connections.find((connection) => connection.id === selectedConnectionId) ?? null,
@@ -273,6 +275,10 @@ export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, s
                 <History className="h-4 w-4" />
                 历史
               </TabsTrigger>
+              <TabsTrigger value="snapshot-compare" className="gap-2 rounded-lg px-3 py-2">
+                <ArrowRightLeft className="h-4 w-4" />
+                Snapshot Compare
+              </TabsTrigger>
               <TabsTrigger value="apply" className="gap-2 rounded-lg px-3 py-2">
                 <ShieldCheck className="h-4 w-4" />
                 Apply
@@ -304,6 +310,17 @@ export function DbManagementWorkspace({ onBack, selectedFileId, selectedSheet, s
               selectedFileId={selectedFileId}
               selectedFileName={selectedFileName}
               selectedSheet={selectedSheet}
+              onOpenSnapshotCompare={(seed) => {
+                setSnapshotCompareSeed(seed);
+                setActiveView("snapshot-compare");
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="snapshot-compare" className="mt-0">
+            <DbSnapshotCompareWorkspace
+              seedConnection={selectedConnection}
+              initialSeed={snapshotCompareSeed}
             />
           </TabsContent>
 

@@ -1,44 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, History, Loader2, ScanSearch } from "lucide-react";
-import type { DbConnectionSummary, DbHistoryCompareRequest } from "@shared/schema";
-import { useCompareDbHistory, useDbHistory, useDbHistoryDetail } from "@/hooks/use-db-management";
-import { useToast } from "@/hooks/use-toast";
+import { ArrowRightLeft, History } from "lucide-react";
+import type { DbConnectionSummary } from "@shared/schema";
+import { useDbHistory, useDbHistoryDetail } from "@/hooks/use-db-management";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import type { DbSnapshotCompareWorkspaceSeed } from "./DbSnapshotCompareWorkspace";
 
 interface DbHistoryPanelProps {
   selectedConnection: DbConnectionSummary | null;
   selectedFileId: number | null;
   selectedFileName?: string | null;
   selectedSheet: string | null;
+  onOpenSnapshotCompare: (seed: DbSnapshotCompareWorkspaceSeed) => void;
 }
-
-type ComparePreset = "live_previous" | "live_snapshot" | "snapshot_snapshot" | "file_live";
 
 export function DbHistoryPanel({
   selectedConnection,
   selectedFileId,
   selectedFileName,
   selectedSheet,
+  onOpenSnapshotCompare,
 }: DbHistoryPanelProps) {
-  const { toast } = useToast();
   const databaseName = selectedConnection?.lastSelectedDatabase ?? null;
   const history = useDbHistory(
     selectedConnection?.id ?? null,
     databaseName ? { databaseName, changedOnly: true, limit: 50 } : null,
   );
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
-  const [preset, setPreset] = useState<ComparePreset>("live_previous");
-  const [leftSnapshotHash, setLeftSnapshotHash] = useState<string | null>(null);
-  const [rightSnapshotHash, setRightSnapshotHash] = useState<string | null>(null);
-  const selectedEvent = history.data?.entries.find((entry) => entry.scanEvent.id === selectedEventId) ?? null;
-  const historyDetail = useDbHistoryDetail(selectedConnection?.id ?? null, selectedEventId);
-  const compareHistory = useCompareDbHistory();
 
   useEffect(() => {
     if (!history.data?.entries.length) {
@@ -46,122 +37,66 @@ export function DbHistoryPanel({
       return;
     }
     setSelectedEventId((current) => current ?? history.data?.entries[0]?.scanEvent.id ?? null);
-    setLeftSnapshotHash((current) => current ?? history.data?.entries[0]?.snapshot?.snapshotHash ?? null);
-    setRightSnapshotHash((current) => current ?? history.data?.entries[1]?.snapshot?.snapshotHash ?? history.data?.entries[0]?.snapshot?.snapshotHash ?? null);
   }, [history.data?.entries]);
 
-  const latestEntry = history.data?.entries[0] ?? null;
-  const previousChangedEntry = history.data?.entries[1] ?? null;
-  const compareSummary = compareHistory.data?.summary;
-  const selectedSnapshotOptions = history.data?.entries
-    .map((entry) => entry.snapshot)
-    .filter((snapshot): snapshot is NonNullable<typeof snapshot> => Boolean(snapshot)) ?? [];
-
-  const comparisonInput = useMemo<DbHistoryCompareRequest | null>(() => {
-    if (!selectedConnection || !databaseName) {
+  const selectedEvent = history.data?.entries.find((entry) => entry.scanEvent.id === selectedEventId) ?? null;
+  const historyDetail = useDbHistoryDetail(selectedConnection?.id ?? null, selectedEventId);
+  const previousEntry = useMemo(() => {
+    if (!history.data?.entries.length || !selectedEventId) {
       return null;
     }
-    if (preset === "file_live") {
-      if (!selectedFileId || !selectedSheet) return null;
-      return {
-        left: {
-          kind: "file",
-          fileId: selectedFileId,
-          fileName: selectedFileName ?? `file-${selectedFileId}`,
-          sheetName: selectedSheet,
-        },
-        right: {
-          kind: "live",
-          connectionId: selectedConnection.id,
-          databaseName,
-        },
-        scope: "database",
-        refreshLiveSchema: false,
-      };
-    }
-    if (preset === "live_previous") {
-      if (!previousChangedEntry?.snapshot) return null;
-      return {
-        left: {
-          kind: "live",
-          connectionId: selectedConnection.id,
-          databaseName,
-        },
-        right: {
-          kind: "snapshot",
-          connectionId: selectedConnection.id,
-          databaseName,
-          snapshotHash: previousChangedEntry.snapshot.snapshotHash,
-        },
-        scope: "database",
-        refreshLiveSchema: false,
-      };
-    }
-    if (preset === "live_snapshot") {
-      if (!rightSnapshotHash) return null;
-      return {
-        left: {
-          kind: "live",
-          connectionId: selectedConnection.id,
-          databaseName,
-        },
-        right: {
-          kind: "snapshot",
-          connectionId: selectedConnection.id,
-          databaseName,
-          snapshotHash: rightSnapshotHash,
-        },
-        scope: "database",
-        refreshLiveSchema: false,
-      };
-    }
-    if (!leftSnapshotHash || !rightSnapshotHash) return null;
-    return {
-      left: {
-        kind: "snapshot",
-        connectionId: selectedConnection.id,
-        databaseName,
-        snapshotHash: leftSnapshotHash,
-      },
-      right: {
-        kind: "snapshot",
-        connectionId: selectedConnection.id,
-        databaseName,
-        snapshotHash: rightSnapshotHash,
-      },
-      scope: "database",
-      refreshLiveSchema: false,
-    };
-  }, [databaseName, leftSnapshotHash, preset, previousChangedEntry?.snapshot, rightSnapshotHash, selectedConnection, selectedFileId, selectedFileName, selectedSheet]);
+    const currentIndex = history.data.entries.findIndex((entry) => entry.scanEvent.id === selectedEventId);
+    return currentIndex >= 0 ? history.data.entries[currentIndex + 1] ?? null : null;
+  }, [history.data?.entries, selectedEventId]);
 
-  const runCompare = async () => {
-    if (!selectedConnection || !comparisonInput) {
-      toast({
-        title: "DB 历史",
-        description: "当前上下文不足，暂时无法执行历史比较。",
-        variant: "destructive",
-      });
+  const openLiveVsSnapshot = () => {
+    if (!selectedConnection || !databaseName || !selectedEvent?.snapshot) {
       return;
     }
-    try {
-      await compareHistory.mutateAsync({ connectionId: selectedConnection.id, input: comparisonInput });
-    } catch (error) {
-      toast({
-        title: "DB 历史",
-        description: error instanceof Error ? error.message : "历史比较失败。",
-        variant: "destructive",
-      });
+    onOpenSnapshotCompare({
+      left: {
+        connectionId: selectedConnection.id,
+        databaseName,
+        sourceKind: "live",
+        freshness: "latest_snapshot",
+      },
+      right: {
+        connectionId: selectedConnection.id,
+        databaseName,
+        sourceKind: "snapshot",
+        snapshotHash: selectedEvent.snapshot.snapshotHash,
+      },
+    });
+  };
+
+  const openSnapshotVsPrevious = () => {
+    if (!selectedConnection || !databaseName || !selectedEvent?.snapshot || !previousEntry?.snapshot) {
+      return;
     }
+    onOpenSnapshotCompare({
+      left: {
+        connectionId: selectedConnection.id,
+        databaseName,
+        sourceKind: "snapshot",
+        snapshotHash: selectedEvent.snapshot.snapshotHash,
+      },
+      right: {
+        connectionId: selectedConnection.id,
+        databaseName,
+        sourceKind: "snapshot",
+        snapshotHash: previousEntry.snapshot.snapshotHash,
+      },
+    });
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.15fr_1.1fr]">
+    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.15fr_0.9fr]">
       <Card className="border-border/70">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle className="text-sm">DB 版本历史</CardTitle>
-              <CardDescription>只展示真正发生结构变化的 snapshot。</CardDescription>
+              <CardDescription>这里只保留单库时间线和版本详情。</CardDescription>
             </div>
             <History className="h-4 w-4 text-muted-foreground" />
           </div>
@@ -190,9 +125,7 @@ export function DbHistoryPanel({
                     onClick={() => setSelectedEventId(entry.scanEvent.id)}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold">
-                        Scan #{history.data.entries.length - index}
-                      </span>
+                      <span className="text-sm font-semibold">Scan #{history.data.entries.length - index}</span>
                       <Badge variant={index === 0 ? "default" : "outline"}>
                         {index === 0 ? "最新" : "历史"}
                       </Badge>
@@ -213,144 +146,79 @@ export function DbHistoryPanel({
 
       <Card className="border-border/70">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-sm">历史比较</CardTitle>
-              <CardDescription>默认比较 live DB 与上一个有变化的 snapshot。</CardDescription>
-            </div>
-            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-          </div>
+          <CardTitle className="text-sm">版本详情</CardTitle>
+          <CardDescription>判断这次变化是 DB 漂移，还是文档版本推进。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-            <Select value={preset} onValueChange={(value: ComparePreset) => setPreset(value)}>
-              <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="live_previous">当前 live vs 上一个 snapshot</SelectItem>
-                <SelectItem value="live_snapshot">当前 live vs 任意 snapshot</SelectItem>
-                <SelectItem value="snapshot_snapshot">snapshot vs snapshot</SelectItem>
-                <SelectItem value="file_live">当前文件 vs live DB</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {(preset === "live_snapshot" || preset === "snapshot_snapshot") ? (
-              <Select value={rightSnapshotHash ?? ""} onValueChange={setRightSnapshotHash}>
-                <SelectTrigger className="bg-background"><SelectValue placeholder="选择右侧 snapshot" /></SelectTrigger>
-                <SelectContent>
-                  {selectedSnapshotOptions.map((snapshot) => (
-                    <SelectItem key={`right:${snapshot.snapshotHash}`} value={snapshot.snapshotHash}>
-                      {snapshot.snapshotHash.slice(0, 12)} · {snapshot.capturedAt ?? "unknown"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-
-            {preset === "snapshot_snapshot" ? (
-              <Select value={leftSnapshotHash ?? ""} onValueChange={setLeftSnapshotHash}>
-                <SelectTrigger className="bg-background"><SelectValue placeholder="选择左侧 snapshot" /></SelectTrigger>
-                <SelectContent>
-                  {selectedSnapshotOptions.map((snapshot) => (
-                    <SelectItem key={`left:${snapshot.snapshotHash}`} value={snapshot.snapshotHash}>
-                      {snapshot.snapshotHash.slice(0, 12)} · {snapshot.capturedAt ?? "unknown"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-
-            <Button onClick={runCompare} disabled={!comparisonInput || compareHistory.isPending}>
-              {compareHistory.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
-              执行历史比较
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">文件基准: {selectedFileName ?? "未选"}</Badge>
-            <Badge variant="outline">Sheet: {selectedSheet ?? "未选"}</Badge>
-          </div>
-
-          {compareSummary ? (
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">表新增 {compareSummary.addedTables}</Badge>
-              <Badge variant="secondary">表变更 {compareSummary.changedTables}</Badge>
-              <Badge variant="secondary">字段变更 {compareSummary.changedColumns}</Badge>
-              <Badge variant={compareSummary.blockingCount > 0 ? "destructive" : "outline"}>
-                阻断 {compareSummary.blockingCount}
-              </Badge>
-            </div>
-          ) : null}
-
-          <ScrollArea className="h-[320px] pr-3">
-            {!compareHistory.data ? (
-              <div className="text-sm text-muted-foreground">比较结果会显示在这里，默认建议先看 live 与上一个 snapshot 的差异。</div>
-            ) : (
-              <div className="space-y-3">
-                {compareHistory.data.tableChanges.map((change) => (
-                  <div key={change.entityKey} className="rounded-2xl border border-border/60 bg-background p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold">
-                        {change.fileTable?.physicalTableName ?? change.dbTable?.name ?? "unknown_table"}
-                      </div>
-                      <Badge variant={change.blockers.length > 0 ? "destructive" : "outline"}>
-                        {change.action}
-                      </Badge>
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      字段差异 {change.columnChanges.length}
-                    </div>
-                  </div>
-                ))}
+          {!selectedEvent ? (
+            <div className="text-sm text-muted-foreground">从左侧选一个 snapshot 历史节点查看细节。</div>
+          ) : (
+            <>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <div className="text-sm font-semibold">Snapshot</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {selectedEvent.snapshot?.snapshotHash ?? selectedEvent.scanEvent.snapshotHash}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {selectedEvent.scanEvent.createdAt ?? "unknown"}
+                </div>
               </div>
-            )}
-          </ScrollArea>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/60 bg-background p-4">
+                  <div className="text-sm font-semibold">上一版本</div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {selectedEvent.previousSnapshot?.snapshotHash ?? "无"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background p-4">
+                  <div className="text-sm font-semibold">表数量</div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {historyDetail.data?.entry.snapshot?.tableCount ?? selectedEvent.snapshot?.tableCount ?? 0} tables
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background p-4">
+                <div className="text-sm font-semibold">当前文件上下文</div>
+                <div className="mt-2 text-sm text-muted-foreground">{selectedFileName ?? "未选文件"}</div>
+                <div className="text-xs text-muted-foreground">{selectedSheet ?? "未选 sheet"}</div>
+                {selectedFileId ? (
+                  <div className="mt-1 text-xs text-muted-foreground">file #{selectedFileId}</div>
+                ) : null}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
       <Card className="border-border/70">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">选中详情</CardTitle>
-          <CardDescription>帮助判断是 DB 新，还是文档版本更新更快。</CardDescription>
+          <CardTitle className="text-sm">跳转比较</CardTitle>
+          <CardDescription>任意双源比较现在由 Snapshot Compare 负责。</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-            <div className="text-sm font-semibold">当前文件上下文</div>
-            <div className="mt-2 text-sm text-muted-foreground">{selectedFileName ?? "未选文件"}</div>
-            <div className="text-xs text-muted-foreground">{selectedSheet ?? "未选 sheet"}</div>
+        <CardContent className="space-y-3">
+          <Button
+            className="w-full justify-start"
+            variant="secondary"
+            onClick={openLiveVsSnapshot}
+            disabled={!selectedEvent?.snapshot || !selectedConnection || !databaseName}
+          >
+            <ArrowRightLeft className="mr-2 h-4 w-4" />
+            在 Snapshot Compare 打开
+          </Button>
+          <Button
+            className="w-full justify-start"
+            variant="outline"
+            onClick={openSnapshotVsPrevious}
+            disabled={!selectedEvent?.snapshot || !previousEntry?.snapshot || !selectedConnection || !databaseName}
+          >
+            <ArrowRightLeft className="mr-2 h-4 w-4" />
+            当前 snapshot vs 上一个 snapshot
+          </Button>
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+            History 现在只保留时间线和详情。任意双源比较、freshness 选择、Markdown / JSON 报告导出，都统一放到 Snapshot Compare。
           </div>
-
-          <Separator />
-
-          {!selectedEvent ? (
-            <div className="text-sm text-muted-foreground">从左侧选一个 snapshot 历史节点查看细节。</div>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm font-semibold">Snapshot</div>
-                <div className="text-xs text-muted-foreground">
-                  {selectedEvent.snapshot?.snapshotHash ?? selectedEvent.scanEvent.snapshotHash}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-semibold">创建时间</div>
-                <div className="text-xs text-muted-foreground">{selectedEvent.scanEvent.createdAt ?? "unknown"}</div>
-              </div>
-              <div>
-                <div className="text-sm font-semibold">上一版本</div>
-                <div className="text-xs text-muted-foreground">
-                  {selectedEvent.previousSnapshot?.snapshotHash ?? "无"}
-                </div>
-              </div>
-              {historyDetail.data?.entry.snapshot ? (
-                <div>
-                  <div className="text-sm font-semibold">表数量</div>
-                  <div className="text-xs text-muted-foreground">
-                    {historyDetail.data.entry.snapshot.tableCount} tables
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

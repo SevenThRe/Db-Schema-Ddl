@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: bidirectional-schema-workflow
+milestone: v1.2
+milestone_name: schema-provenance-and-reverse-expansion
 status: active
-last_updated: "2026-03-18T14:10:00+09:00"
+last_updated: "2026-03-18T15:05:00+09:00"
 progress:
   total_phases: 3
-  completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
 ---
 
 # Project State
@@ -17,44 +17,31 @@ progress:
 
 See: `.planning/PROJECT.md` (updated 2026-03-18)
 
-**Core value:** Users can compare DB environments directly and move between supported DDL and parser-compatible Excel schema documents without rebuilding workbook structure by hand.
-**Current focus:** `v1.1` audit is complete; milestone is ready for closeout or follow-on planning
+**Core value:** Users can compare historical DB states, reverse live DB structure into trusted Excel workbooks, and broaden reverse import beyond the current MySQL-first single-DDL flow.
+**Current focus:** `v1.2` Phase 1 is complete; Phase 2 can begin
 
 ## Current Status
 
 - `v1.0` is complete and audited at `.planning/v1.0-v1.0-MILESTONE-AUDIT.md`
-- `v1.1` has been opened as the active milestone
-- Requirements are now centered on `DB vs DB` compare, template-led authoring, and `MySQL DDL -> XLSX`
-- The accepted milestone proposal is recorded at `.planning/v1.1-MILESTONE-PROPOSAL.md`
-- Phase 1 context is captured at `.planning/phases/01-cross-database-compare-v1_1/01-CONTEXT.md`
-- Phase 1 research is captured at `.planning/phases/01-cross-database-compare-v1_1/01-RESEARCH.md`
-- Phase 1 validation strategy is captured at `.planning/phases/01-cross-database-compare-v1_1/01-VALIDATION.md`
-- Phase 1 execution plans were completed under `.planning/phases/01-cross-database-compare-v1_1/`
-- Phase 1 verification passed at `.planning/phases/01-cross-database-compare-v1_1/01-VERIFICATION.md`
-- Phase 2 context is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-CONTEXT.md`
-- Phase 2 research is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-RESEARCH.md`
-- Phase 2 validation strategy is captured at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-VALIDATION.md`
-- Phase 2 execution plans and summaries were completed under `.planning/phases/02-template-and-round-trip-authoring-v1_1/`
-- Phase 2 verification passed at `.planning/phases/02-template-and-round-trip-authoring-v1_1/02-VERIFICATION.md`
-- Phase 3 context is captured at `.planning/phases/03-ddl-import-and-xlsx-export-v1_1/03-CONTEXT.md`
-- Phase 3 research is captured at `.planning/phases/03-ddl-import-and-xlsx-export-v1_1/03-RESEARCH.md`
-- Phase 3 validation strategy is captured at `.planning/phases/03-ddl-import-and-xlsx-export-v1_1/03-VALIDATION.md`
-- Phase 3 execution plans and summaries were completed under `.planning/phases/03-ddl-import-and-xlsx-export-v1_1/`
-- Phase 3 verification passed at `.planning/phases/03-ddl-import-and-xlsx-export-v1_1/03-VERIFICATION.md`
-- All `v1.1` phases are now complete in the local worktree and ready for milestone audit
-- `v1.1` milestone audit is recorded at `.planning/v1.1-v1.1-MILESTONE-AUDIT.md`
+- `v1.1` is complete and audited at `.planning/v1.1-v1.1-MILESTONE-AUDIT.md`
+- `v1.2` is now the active milestone
+- Requirements are now centered on snapshot provenance, `live DB -> XLSX`, and broader reverse-import support
+- The new milestone builds on shipped `v1.0` and `v1.1` infrastructure rather than replacing it
+- Phase 1 context is captured at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-CONTEXT.md`
+- Phase 1 research is captured at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-RESEARCH.md`
+- Phase 1 validation strategy is captured at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-VALIDATION.md`
+- Phase 1 execution is complete and verified at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-VERIFICATION.md`
 
 ## Important Assumptions
 
-- `DB vs DB` stays preview-only in this milestone
-- Template-led authoring should ship before `DDL -> XLSX`
-- Reverse authoring starts MySQL-first and keeps Oracle import deferred
-- Phase 3 should prefer a parser-adapter architecture over direct SQL-to-workbook conversion
-- Existing `v1.0` DB-management flows remain the stable base
+- Cross-environment apply remains out of scope for this milestone
+- `live DB -> XLSX` should reuse the same trust and warning model as template and DDL export flows
+- Oracle reverse import should arrive only as a documented first-cut subset
+- Existing `v1.0` and `v1.1` flows remain the stable base
 
 ## Next Command
 
-- Close or extend `v1.1` based on `.planning/v1.1-v1.1-MILESTONE-AUDIT.md`
+- Discuss / plan Phase 2: live DB to XLSX export
 
 ---
-*Last updated: 2026-03-18 after auditing v1.1*
+*Last updated: 2026-03-18 after completing v1.2 Phase 1*

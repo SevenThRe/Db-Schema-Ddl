@@ -1,82 +1,79 @@
-# Roadmap: Bidirectional Schema Workflow Platform
+# Roadmap: Schema Provenance and Reverse Expansion
 
 **Created:** 2026-03-18
 **Granularity:** Coarse
-**Coverage:** 11 / 11 v1.1 requirements mapped
+**Coverage:** 10 / 10 v1.2 requirements mapped
 
 ## Summary
 
-This roadmap treats `v1.1` as the follow-on milestone to the shipped DB management extension. Instead of broadening apply risk, it focuses on two adjacent value paths: direct `DB vs DB` comparison and trusted reverse authoring back into Excel-based schema documents.
+This roadmap treats `v1.2` as the follow-on milestone to the delivered bidirectional workflow. Instead of broadening apply risk, it focuses on schema provenance and broader reverse authoring: comparing historical DB states, exporting live DB structure back to trusted workbook formats, and widening reverse import beyond the current MySQL-first pasted-DDL path.
 
 ## Phase Overview
 
 | # | Phase | Goal | Requirements | Success Criteria | Status |
 |---|-------|------|--------------|------------------|--------|
-| 1 | Cross-Database Compare | Compare two saved DB targets directly and inspect directional preview inside `DB 管理` | DBDB-01, DBDB-02, DBDB-03, DBDB-04 | 4 | Complete (2026-03-18) |
-| 2 | Template and Round-Trip Authoring | Provide built-in `.xlsx` templates and validate that outputs reopen cleanly | TPL-01, TPL-02, TPL-03 | 3 | Complete (2026-03-18) |
-| 3 | DDL Import and XLSX Export | Turn supported MySQL DDL into canonical schema and parser-compatible `.xlsx` output | DDLX-01, DDLX-02, DDLX-03, DDLX-04 | 4 | Complete (2026-03-18) |
+| 1 | Snapshot Compare and Reports | Compare arbitrary stored DB snapshots and export reviewable history reports | HIST-01, HIST-02, HIST-03 | 3 | Complete |
+| 2 | Live DB to XLSX Export | Turn live DB schema directly into parser-compatible `.xlsx` workbooks with the same trust model as other exports | DBXLSX-01, DBXLSX-02, DBXLSX-03 | 3 | Proposed |
+| 3 | Reverse Import Expansion | Expand reverse import to SQL bundles and first-cut Oracle DDL while keeping canonical review and trust gates | REV-01, REV-02, REV-03, REV-04 | 4 | Proposed |
 
 ## Phase Details
 
-### Phase 1: Cross-Database Compare
+### Phase 1: Snapshot Compare and Reports
 
-Goal: Users can compare one live DB environment against another inside `DB 管理` and review a directional preview without applying changes.
-
-Requirements:
-- DBDB-01
-- DBDB-02
-- DBDB-03
-- DBDB-04
-
-Success criteria:
-1. User can choose two saved connection/schema targets and run a direct compare without exporting an intermediate `.xlsx` or snapshot file manually.
-2. User can inspect added, removed, modified, and rename-candidate differences in the existing DB diff workspace with unambiguous source and target context.
-3. Ambiguous rename or equivalence cases block directional preview until the user resolves them.
-4. User can generate a non-applying preview that explains what would need to change in the target DB to converge toward the source DB.
-
-### Phase 2: Template and Round-Trip Authoring
-
-Goal: Users can start from supported `.xlsx` templates and trust generated workbooks because the app validates that they reopen correctly.
+Goal: Users can compare historical DB states directly, including arbitrary snapshot pairs and live-vs-snapshot, and can export those findings for review.
 
 Requirements:
-- TPL-01
-- TPL-02
-- TPL-03
+- HIST-01
+- HIST-02
+- HIST-03
 
 Success criteria:
-1. User can create a new workbook from first-party templates that already match the product's supported Japanese header and sheet-layout conventions.
-2. User can choose an authoring layout variant that matches either `multi-table per sheet` or `table per sheet` maintenance style.
-3. Generated or templated workbooks can be re-imported automatically and either pass round-trip validation or show actionable mismatch warnings before use.
+1. User can compare any two stored DB snapshots, including snapshots from different connection/database histories.
+2. User can compare current live DB state against any stored snapshot from the same DB history without rebuilding or rescanning unrelated sources by hand.
+3. User can export history/snapshot compare results with clear source/target version context for review and handoff.
 
-### Phase 3: DDL Import and XLSX Export
+### Phase 2: Live DB to XLSX Export
 
-Goal: Users can turn supported SQL table definitions into the product's Excel-based document format with explicit fidelity reporting.
+Goal: Users can export live DB schema directly into parser-compatible workbook templates without detouring through pasted DDL.
 
 Requirements:
-- DDLX-01
-- DDLX-02
-- DDLX-03
-- DDLX-04
+- DBXLSX-01
+- DBXLSX-02
+- DBXLSX-03
 
 Success criteria:
-1. User can paste or load supported MySQL table DDL and see the parsed tables in a reviewable canonical form before export.
-2. Unsupported or lossy syntax is surfaced explicitly instead of being silently discarded during conversion.
-3. User can export the reviewed result into an `.xlsx` workbook that opens through the normal parser flow and preserves the expected tables and columns.
-4. Oracle DDL import is kept explicitly out of the first reverse-authoring cut unless later added as a separate requirement expansion.
+1. User can export selected live DB tables or a whole database into one of the official workbook template families.
+2. Live DB export preserves the current trust model by surfacing lossy constructs and by round-tripping the generated workbook through the parser before it is trusted.
+3. User can control export scope with explicit whole-database or filtered-table selection.
+
+### Phase 3: Reverse Import Expansion
+
+Goal: Users can reverse-import broader SQL sources, including SQL bundles and a documented Oracle subset, through the same canonical review and workbook-export flow.
+
+Requirements:
+- REV-01
+- REV-02
+- REV-03
+- REV-04
+
+Success criteria:
+1. User can import multi-statement SQL files or bundles and review them through the same canonical model used by the current DDL import workspace.
+2. User can import a documented supported subset of Oracle DDL with explicit unsupported/lossy reporting.
+3. Oracle and SQL-bundle imports converge on the same review/export flow as the existing MySQL-first DDL import path.
+4. New reverse-import inputs continue to surface unsupported or lossy behavior explicitly instead of silently discarding it.
 
 ## Phase Dependencies
 
-- Phase 2 stands independently of Phase 3 and can ship earlier
-- Phase 3 benefits from Phase 2 because trusted templates and round-trip validation reduce export risk
+- Phase 1 stands on the shipped snapshot/history infrastructure from `v1.0`
+- Phase 2 benefits from Phase 1 because historical snapshot compare and canonical DB schemas make `live DB -> XLSX` easier to trust and debug
+- Phase 3 benefits from Phase 2 because broader reverse-import inputs should converge on the same export and round-trip gates
 
 ## Notes
 
-- Keep `DB vs DB` strictly compare-and-preview in `v1.1`
-- Keep reverse authoring inside a supported subset contract
-- Preserve the `v1.0` audit trail as historical evidence rather than trying to fold it into the new milestone docs
-- Phase 1 shipped with a dedicated `db-vs-db` workspace, directional preview, graph linkage, and settings-backed rename policy thresholds
-- Phase 2 shipped with first-party parser-backed workbook templates and create-from-template registration flow
-- Phase 3 shipped with a dedicated DDL import workspace, parser-backed issue review, and official-template export with round-trip validation
+- Keep cross-environment DB apply out of scope
+- Keep every reverse-authoring path behind explicit lossy reporting and parser-backed round-trip validation
+- Preserve the `v1.0` and `v1.1` audit trail as historical evidence rather than folding them into the new milestone docs
+- `v1.2` deliberately starts from deferred requirements and tech-debt-adjacent product gaps exposed by the `v1.1` audit
 
 ---
-*Last updated: 2026-03-18 after completing v1.1 Phase 3*
+*Last updated: 2026-03-18 after completing v1.2 Phase 1*

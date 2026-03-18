@@ -1,72 +1,64 @@
-# Requirements: Bidirectional Schema Workflow Platform
+# Requirements: Schema Provenance and Reverse Expansion
 
 **Defined:** 2026-03-18
-**Core Value:** Users can compare real database environments directly and move between supported DDL and parser-compatible Excel schema workbooks without rebuilding structure by hand.
+**Core Value:** Users can compare historical DB states, reverse live DB structure into trusted Excel workbooks, and broaden reverse import beyond the current MySQL-first single-DDL flow.
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-### DB-vs-DB Compare
+### Snapshot and History Compare
 
-- [x] **DBDB-01**: User can choose a source DB and a target DB from saved connections and compare their schemas directly
-- [x] **DBDB-02**: User can inspect `DB vs DB` differences in the `DB 管理` workspace with clear source/target labels, filters, and object drilldown
-- [x] **DBDB-03**: User can review ambiguous rename or equivalence candidates before directional preview proceeds
-- [x] **DBDB-04**: User can generate a non-applying directional preview that shows how the target DB would need to change to match the selected source DB
+- [x] **HIST-01**: User can compare any two stored DB schema snapshots, including snapshots from different connections or databases
+- [x] **HIST-02**: User can compare current live DB state against any stored snapshot from the same DB history without rescanning everything manually
+- [x] **HIST-03**: User can export snapshot/history compare results for review and handoff with enough context to identify compared endpoints and versions
 
-### XLSX Templates and Round-Trip Validation
+### Live DB to XLSX Export
 
-- [x] **TPL-01**: User can create a new schema-definition workbook from a built-in `.xlsx` template aligned to the supported Japanese header layout
-- [x] **TPL-02**: User can choose a template variant for `multi-table per sheet` versus `table per sheet` authoring
-- [x] **TPL-03**: App can round-trip validate generated or templated `.xlsx` outputs by reopening them through the parser and surfacing mismatches before the user trusts them
+- [ ] **DBXLSX-01**: User can export selected live DB tables into an official parser-compatible `.xlsx` workbook without first converting through pasted DDL
+- [ ] **DBXLSX-02**: Live DB exports reuse the same template family, lossy reporting, and parser-backed round-trip validation as other workbook creation flows
+- [ ] **DBXLSX-03**: User can choose whole-database or filtered-table export scopes before generating the workbook
 
-### DDL-to-XLSX Conversion
+### Reverse Import Expansion
 
-- [x] **DDLX-01**: User can paste or import supported MySQL `CREATE TABLE` DDL and parse it into the app's canonical schema model
-- [x] **DDLX-02**: App surfaces unsupported or lossy DDL constructs before workbook export so the user knows what requires manual cleanup
-- [x] **DDLX-03**: User can export parsed DDL into an `.xlsx` workbook that the existing Excel parser can open without format surgery
-- [x] **DDLX-04**: Oracle DDL import remains explicitly deferred until the MySQL-first reverse-authoring workflow is stable
+- [ ] **REV-01**: User can import multi-statement SQL files/bundles rather than only pasted single-statement text
+- [ ] **REV-02**: User can import a documented supported subset of Oracle DDL and review unsupported/lossy constructs explicitly before export
+- [ ] **REV-03**: Reverse-imported Oracle or SQL-bundle content still converges on the same canonical review and workbook-export flow
+- [ ] **REV-04**: Unsupported or lossy constructs remain explicit and reviewable across all new reverse-import entry modes
 
 ## Deferred / Future
 
-### Reverse Authoring Expansion
-
-- **DDLX-05**: Oracle DDL import supports a documented first-class subset once MySQL-first reverse authoring is stable
-- **DDLX-06**: Users can import generated SQL bundles rather than single pasted statements
-
-### DB Operations
-
-- **DBDB-05**: User can compare stored snapshots from two different DB environments without requiring both to be live at compare time
-- **DBDB-06**: User can export DB-vs-DB compare reports for review and handoff
+- **REV-05**: Oracle reverse import reaches broader parity with MySQL-first coverage once first-cut subset is stable
+- **DBXLSX-04**: User can reverse-export live DB objects beyond tables when canonical support expands
+- **HIST-04**: Users can diff exported compare reports or publish them through richer sharing channels
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Automatic `DB -> DB` sync/apply | Too risky for the compare-first milestone |
-| Arbitrary SQL parser | Breaks the “supported subset” contract and balloons scope |
-| Custom user-defined Excel formats | Conflicts with parser compatibility and trust goals |
-| First-cut Oracle reverse import | Better deferred than rushed into unstable support |
+| Automatic `DB -> DB` sync/apply | Still too risky for the provenance-oriented milestone |
+| Arbitrary SQL parser | Breaks the documented subset contract and balloons scope |
+| Custom user-defined Excel formats | Still conflicts with parser compatibility and trust goals |
+| Full Oracle parity on day one | Better deferred than rushed into unstable support |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DBDB-01 | Phase 1 | Complete |
-| DBDB-02 | Phase 1 | Complete |
-| DBDB-03 | Phase 1 | Complete |
-| DBDB-04 | Phase 1 | Complete |
-| TPL-01 | Phase 2 | Complete |
-| TPL-02 | Phase 2 | Complete |
-| TPL-03 | Phase 2 | Complete |
-| DDLX-01 | Phase 3 | Complete |
-| DDLX-02 | Phase 3 | Complete |
-| DDLX-03 | Phase 3 | Complete |
-| DDLX-04 | Phase 3 | Complete |
+| HIST-01 | Phase 1 | Complete |
+| HIST-02 | Phase 1 | Complete |
+| HIST-03 | Phase 1 | Complete |
+| DBXLSX-01 | Phase 2 | Pending |
+| DBXLSX-02 | Phase 2 | Pending |
+| DBXLSX-03 | Phase 2 | Pending |
+| REV-01 | Phase 3 | Pending |
+| REV-02 | Phase 3 | Pending |
+| REV-03 | Phase 3 | Pending |
+| REV-04 | Phase 3 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 11 total
-- Mapped to phases: 11
+- v1.2 requirements: 10 total
+- Mapped to phases: 10
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after completing v1.1 Phase 3*
+*Last updated: 2026-03-18 after completing v1.2 Phase 1*

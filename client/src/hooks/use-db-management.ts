@@ -16,6 +16,11 @@ import type {
   DbHistoryDetailResponse,
   DbHistoryCompareRequest,
   DbHistoryCompareResponse,
+  DbSnapshotCompareArtifact,
+  DbSnapshotCompareReportRequest,
+  DbSnapshotCompareReportResponse,
+  DbSnapshotCompareRequest,
+  DbSnapshotCompareResponse,
   DbApplyRequest,
   DbApplyResponse,
   DbDeployJobDetailResponse,
@@ -97,6 +102,7 @@ function dbVsDbGraphQueryKey(input?: DbVsDbGraphRequest | null) {
 export const DB_MANAGEMENT_VIEW_MODES: readonly DbManagementViewMode[] = [
   "diff",
   "db-vs-db",
+  "snapshot-compare",
   "history",
   "apply",
   "graph",
@@ -480,6 +486,47 @@ export function useCompareDbHistory() {
         },
       );
       return api.dbManagement.compareHistory.responses[200].parse(data);
+    },
+  });
+}
+
+export function usePreviewDbSnapshotCompare() {
+  return useMutation({
+    mutationFn: async (input: DbSnapshotCompareRequest) => {
+      const data = await fetchJson<DbSnapshotCompareResponse>(
+        api.dbManagement.snapshotCompare.path,
+        {
+          code: "REQUEST_FAILED",
+          message: "Failed to compare snapshot sources",
+        },
+        {
+          method: api.dbManagement.snapshotCompare.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      return api.dbManagement.snapshotCompare.responses[200].parse(data);
+    },
+  });
+}
+
+export function useExportDbSnapshotCompareReport() {
+  return useMutation({
+    mutationFn: async (input: DbSnapshotCompareReportRequest | DbSnapshotCompareArtifact) => {
+      const request = "artifact" in input ? input : { artifact: input, format: "markdown" as const };
+      const data = await fetchJson<DbSnapshotCompareReportResponse>(
+        api.dbManagement.exportSnapshotCompareReport.path,
+        {
+          code: "REQUEST_FAILED",
+          message: "Failed to export snapshot compare report",
+        },
+        {
+          method: api.dbManagement.exportSnapshotCompareReport.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+        },
+      );
+      return api.dbManagement.exportSnapshotCompareReport.responses[200].parse(data);
     },
   });
 }

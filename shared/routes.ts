@@ -38,6 +38,10 @@ import {
   dbHistoryDetailResponseSchema,
   dbHistoryCompareRequestSchema,
   dbHistoryCompareResponseSchema,
+  dbSnapshotCompareRequestSchema,
+  dbSnapshotCompareResponseSchema,
+  dbSnapshotCompareReportRequestSchema,
+  dbSnapshotCompareReportResponseSchema,
   dbApplyRequestSchema,
   dbApplyResponseSchema,
   dbDeployJobDetailResponseSchema,
@@ -509,6 +513,25 @@ export const api = {
         200: dbHistoryCompareResponseSchema,
         400: apiErrorSchema,
         404: apiErrorSchema,
+      },
+    },
+    snapshotCompare: {
+      method: "POST" as const,
+      path: "/api/db-management/snapshot-compare" as const,
+      input: dbSnapshotCompareRequestSchema,
+      responses: {
+        200: dbSnapshotCompareResponseSchema,
+        400: apiErrorSchema,
+        404: apiErrorSchema,
+      },
+    },
+    exportSnapshotCompareReport: {
+      method: "POST" as const,
+      path: "/api/db-management/snapshot-compare/report" as const,
+      input: dbSnapshotCompareReportRequestSchema,
+      responses: {
+        200: dbSnapshotCompareReportResponseSchema,
+        400: apiErrorSchema,
       },
     },
     applyChanges: {
