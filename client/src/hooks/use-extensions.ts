@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
+import { normalizeElectronBoundaryErrorMessage } from "@shared/desktop-runtime";
 import type {
   ExtensionCatalogRelease,
   ExtensionHostState,
@@ -46,6 +47,10 @@ function extensionQueryKey(extensionId?: ExtensionId) {
   return extensionId ? [api.extensions.get.path, extensionId] : [api.extensions.list.path];
 }
 
+function normalizeElectronExtensionError(error: unknown, fallbackMessage: string): Error {
+  return new Error(normalizeElectronBoundaryErrorMessage(error, fallbackMessage));
+}
+
 function shouldPollLifecycle(extension?: ExtensionHostState | null): boolean {
   return extension?.lifecycle ? ACTIVE_LIFECYCLE_STAGES.has(extension.lifecycle.stage) : false;
 }
@@ -57,7 +62,11 @@ async function callElectronExtension<T>(
   if (!window.electronAPI?.extensions) {
     throw new Error(fallbackMessage);
   }
-  return await action(window.electronAPI.extensions);
+  try {
+    return await action(window.electronAPI.extensions);
+  } catch (error) {
+    throw normalizeElectronExtensionError(error, fallbackMessage);
+  }
 }
 
 export function useExtensions() {

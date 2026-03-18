@@ -1111,6 +1111,73 @@ export const dbLiveExportExecuteResponseSchema = z.object({
   rememberedTemplateId: workbookTemplateVariantIdSchema.optional(),
 });
 
+export const desktopDiagnosticSeveritySchema = z.enum(["info", "warn", "error", "fatal"]);
+
+export const desktopDiagnosticSourceSchema = z.enum([
+  "electron-main",
+  "electron-preload",
+  "server-bootstrap",
+  "sqlite-migration",
+  "extension-delivery",
+  "desktop-preflight",
+  "desktop-smoke",
+]);
+
+export const desktopUserFacingErrorCategorySchema = z.enum([
+  "startup_failed",
+  "shutdown_failed",
+  "native_module_unavailable",
+  "migration_compatibility_failed",
+  "extension_catalog_unavailable",
+  "extension_install_failed",
+  "smoke_failed",
+  "runtime_failed",
+]);
+
+export const desktopDiagnosticEntrySchema = z.object({
+  id: z.string().min(1),
+  timestamp: z.string().min(1),
+  source: desktopDiagnosticSourceSchema,
+  severity: desktopDiagnosticSeveritySchema,
+  category: desktopUserFacingErrorCategorySchema,
+  code: z.string().min(1),
+  message: z.string().min(1),
+  detail: z.string().optional(),
+  entityKey: z.string().min(1).optional(),
+  logPath: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const desktopSmokeStepStatusSchema = z.enum(["passed", "failed", "warning", "skipped"]);
+
+export const desktopSmokeStepSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: desktopSmokeStepStatusSchema,
+  detail: z.string().optional(),
+  diagnosticIds: z.array(z.string().min(1)).default([]),
+});
+
+export const desktopSmokeEnvironmentSchema = z.enum(["dev-electron", "packaged-electron"]);
+
+export const desktopSmokeArtifactSchema = z.object({
+  artifactVersion: z.literal("v1").default("v1"),
+  runId: z.string().min(1),
+  generatedAt: z.string().min(1),
+  appVersion: z.string().min(1),
+  environment: desktopSmokeEnvironmentSchema,
+  logPath: z.string().min(1),
+  summary: z.object({
+    passedCount: z.number().int().min(0).default(0),
+    failedCount: z.number().int().min(0).default(0),
+    warningCount: z.number().int().min(0).default(0),
+    skippedCount: z.number().int().min(0).default(0),
+    overallStatus: z.enum(["passed", "failed", "warning"]),
+  }),
+  diagnostics: z.array(desktopDiagnosticEntrySchema).default([]),
+  steps: z.array(desktopSmokeStepSchema).default([]),
+});
+
 export const dbManagementViewModeSchema = z.enum([
   "diff",
   "db-vs-db",

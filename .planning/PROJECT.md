@@ -1,26 +1,22 @@
-# Schema Provenance and Reverse Expansion
+# Desktop Stability and Real-Env Smoke
 
 ## What This Is
 
-This milestone follows the delivered bidirectional workflow in `v1.1` and pushes the product into schema provenance and richer reverse-authoring. The goal is to help users compare historical DB states, turn live DB structure back into parser-compatible Excel workbooks, and expand reverse import beyond the current MySQL-first pasted-DDL flow.
+This milestone follows the delivered `v1.2` schema-provenance workflow and intentionally shifts away from feature breadth. The goal is to make the desktop runtime trustworthy in real use: startup, shutdown, native modules, extension delivery, SQLite compatibility, and one real DB-management smoke path should behave predictably before the next feature-expansion milestone begins.
 
-The target audience is existing DBSchemaExcel2DDL desktop users who already:
-
-- compare live DBs directly
-- create trusted workbook templates
-- convert supported MySQL DDL into parser-compatible `.xlsx`
-
-and now want stronger history/reporting plus more direct reverse-documentation paths.
+The target audience is the same existing DBSchemaExcel2DDL desktop user base, but the milestone is operational rather than product-breadth oriented.
 
 ## Core Value
 
-Users can move across schema time and source-of-truth boundaries:
+Users can trust that the desktop app:
 
-- `snapshot -> snapshot` for historical DB provenance
-- `live DB -> canonical schema -> XLSX` for direct reverse documentation
-- `Oracle/MySQL SQL bundles -> canonical schema -> XLSX` for broader reverse import coverage
+- starts reliably
+- shuts down cleanly
+- records actionable local diagnostics when something goes wrong
+- handles extension/download/runtime failures with understandable product messaging
+- survives a repeatable real-environment smoke pass
 
-without dropping the app's existing parser-trust and DB-oriented review model.
+without regressing the feature surface shipped in `v1.0` through `v1.2`.
 
 ## Requirements
 
@@ -28,49 +24,46 @@ without dropping the app's existing parser-trust and DB-oriented review model.
 
 - Existing users can upload Excel definition files and parse multiple table definitions from a workbook
 - Existing users can generate MySQL and Oracle DDL from structured table definitions
-- Existing users can install the official DB management extension, compare file vs DB, preview SQL, run safe apply, inspect history, and visualize schema graphs
-- Existing users can compare two live DB targets directly inside `DB 管理`
-- Existing users can create first-party parser-compatible templates and convert supported MySQL DDL into `.xlsx`
+- Existing users can install the official DB management extension, compare file vs DB, preview SQL, run safe apply, inspect history, visualize schema graphs, export live DB schema to workbook templates, and reverse-import supported DDL/bundles
 
 ### Active
 
-- [ ] Support `snapshot <=> snapshot` and `live DB <=> snapshot` compare across saved DB histories
-- [ ] Support exporting DB compare/snapshot reports for review and handoff
-- [ ] Support direct `live DB -> XLSX` export through the official workbook template family
-- [ ] Preserve the current round-trip validation and lossy-warning trust model for DB-originated workbook exports
-- [ ] Expand reverse import beyond pasted single statements into SQL bundle/file flows
-- [ ] Add first-cut Oracle DDL import with a documented supported subset
+- [ ] **STAB-01**: Electron startup and shutdown paths are hardened so fatal-path failures do not leak raw JS error spam to users
+- [ ] **STAB-02**: Desktop runtime failures write reliable persistent local diagnostics, including startup, shutdown, extension delivery, and migration issues
+- [ ] **STAB-03**: Native-module, migration-compatibility, and extension-catalog seams have targeted preflight/release guards
+- [ ] **STAB-04**: A repeatable real-environment smoke path exists for startup, shutdown, SQLite init/migration, extension entry flow, and one real MySQL DB-management path
 
 ### Out of Scope
 
-- Automatic cross-environment DB apply or sync
-- Arbitrary SQL parser coverage for every dialect feature
-- Custom user-defined workbook families outside the supported parser-backed templates
-- Turning the product into a general-purpose SQL IDE
+- New compare/export/import feature breadth
+- General-purpose Electron E2E infrastructure
+- Cross-environment DB sync/apply
+- Full CI expansion beyond targeted desktop/runtime guards
 
 ## Context
 
 - `v1.0` is complete and audited at `.planning/v1.0-v1.0-MILESTONE-AUDIT.md`
 - `v1.1` is complete and audited at `.planning/v1.1-v1.1-MILESTONE-AUDIT.md`
-- The app already has canonical DB snapshots, graph/diff infrastructure, built-in workbook templates, and MySQL-first DDL reverse authoring
-- The next value jump is better historical comparison plus more direct reverse-documentation from live DBs and broader SQL inputs
+- `v1.2` is complete and audited at `.planning/v1.2-v1.2-MILESTONE-AUDIT.md`
+- Recent real-world failures were concentrated in Electron/native-module/migration/extension seams rather than feature gaps
+- The next value jump is operational confidence, not feature expansion
 
 ## Constraints
 
-- **Compatibility**: Shipped `v1.0` and `v1.1` flows must remain stable while this milestone expands history and reverse authoring
-- **Trust**: Any DB- or SQL-originated workbook export must still pass parser-backed round-trip validation before it is trusted
-- **Scope**: Cross-environment apply remains out of scope; this milestone is still compare/export oriented
-- **Dialect strategy**: Oracle reverse import should be introduced only as a documented first-cut subset, not as full parity
-- **Reviewability**: New reverse-authoring inputs must keep explicit lossy and unsupported reporting
+- **Compatibility**: `v1.0` through `v1.2` user-facing flows must remain intact
+- **Windows-first**: native-module and packaging assumptions can stay Windows-first for this milestone
+- **Diagnostics**: user-visible errors should be calm and translated; technical detail should move into local logs
+- **Scope discipline**: this milestone should not drift into unrelated feature work
+- **AI/MCP-readiness**: smoke and diagnostic artifacts should remain structured enough for future automation
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Start `v1.2` with snapshot/history compare | Builds directly on shipped snapshot infrastructure and fulfills a deferred compare requirement | Accepted |
-| Put `live DB -> XLSX` before Oracle import | Highest user value with the least new parser risk because it reuses canonical DB schema and official templates | Accepted |
-| Expand SQL reverse import last | Bundle import and Oracle parsing widen risk and should follow once provenance/export seams are stable | Accepted |
-| Keep trust gates mandatory | Reverse-documentation remains useful only if generated workbooks still reopen cleanly | Accepted |
+| Start `v1.3` with runtime hardening | Recent regressions came from startup/shutdown/runtime seams | Accepted |
+| Prefer simple persistent logging over a new logging stack | Reliability and low complexity matter more than framework breadth | Accepted |
+| Use targeted release guards instead of broad CI expansion | Known desktop seams are narrow and already identifiable | Accepted |
+| Start smoke evidence with a checklist plus small scripts | Best value before building heavy Electron automation | Accepted |
 
 ---
-*Last updated: 2026-03-18 after opening v1.2*
+*Last updated: 2026-03-18 when opening v1.3*

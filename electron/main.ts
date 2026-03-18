@@ -5,6 +5,11 @@ import os from 'os';
 import path from 'path';
 import net from 'net';
 import { extensionIdSchema } from '@shared/schema';
+import {
+  formatDesktopCheckpoint,
+  normalizeUnknownError,
+  shouldPresentFatalDialog,
+} from '@shared/desktop-runtime';
 import { extensionService } from './extensions';
 import { initAutoUpdater } from './updater';
 import type { Server } from 'http';
@@ -14,14 +19,27 @@ let serverPort: number;
 let httpServer: Server | null = null;
 let isShuttingDown = false;
 let activeSockets = new Set<any>();
+let hasShownFatalErrorDialog = false;
 
-const bootstrapLogPath = path.join(os.tmpdir(), 'dbschemaexcel2ddl-bootstrap.log');
 const relaunchGuardEnv = 'DBSCHEMA_ELECTRON_RELAUNCH_ATTEMPTED';
+
+function getBootstrapLogPath() {
+  try {
+    const baseDir =
+      app && typeof app.getPath === "function"
+        ? path.join(app.getPath("userData"), "logs")
+        : os.tmpdir();
+    fs.mkdirSync(baseDir, { recursive: true });
+    return path.join(baseDir, "dbschemaexcel2ddl-bootstrap.log");
+  } catch {
+    return path.join(os.tmpdir(), "dbschemaexcel2ddl-bootstrap.log");
+  }
+}
 
 function writeBootstrapLog(message: string) {
   try {
     fs.appendFileSync(
-      bootstrapLogPath,
+      getBootstrapLogPath(),
       `[${new Date().toISOString()}] ${message}\n`,
       'utf8',
     );
@@ -30,11 +48,25 @@ function writeBootstrapLog(message: string) {
   }
 }
 
-function stringifyError(err: unknown) {
-  if (err instanceof Error) {
-    return err.stack ?? err.message;
+function reportMainProcessError(context: string, err: unknown, options?: { showDialog?: boolean }) {
+  const errorText = normalizeUnknownError(err);
+  const shouldShowDialog = shouldPresentFatalDialog({
+    requested: options?.showDialog,
+    shuttingDown: isShuttingDown,
+    hasShownDialog: hasShownFatalErrorDialog,
+  });
+
+  console.error(`[electron] ${context}:`, err);
+  writeBootstrapLog(`${context}: ${errorText}`);
+
+  if (shouldShowDialog) {
+    hasShownFatalErrorDialog = true;
+    try {
+      dialog.showErrorBox("Application error", errorText);
+    } catch {
+      // Ignore dialog failure during error reporting.
+    }
   }
-  return String(err);
 }
 
 function isTruthyEnv(value: unknown): boolean {
@@ -82,9 +114,21 @@ if (process.env.ELECTRON_RUN_AS_NODE) {
   writeBootstrapLog(
     `Detected ELECTRON_RUN_AS_NODE=${process.env.ELECTRON_RUN_AS_NODE} after Electron bootstrap. Clearing it for child processes.`,
   );
-  delete process.env.ELECTRON_RUN_AS_NODE;
+delete process.env.ELECTRON_RUN_AS_NODE;
 }
 delete process.env[relaunchGuardEnv];
+
+process.on("uncaughtException", (error) => {
+  reportMainProcessError("Uncaught exception in Electron main process", error, {
+    showDialog: true,
+  });
+});
+
+process.on("unhandledRejection", (reason) => {
+  reportMainProcessError("Unhandled promise rejection in Electron main process", reason, {
+    showDialog: false,
+  });
+});
 
 /**
  * 空きポートを検索
@@ -128,6 +172,8 @@ async function waitForServer(port: number, maxRetries: number = 30): Promise<boo
  * dist/index.cjs をロードして Express サーバーを内部起動
  */
 async function startExpressServer() {
+  writeBootstrapLog(formatDesktopCheckpoint("server_bootstrap_started", { startPort: 5000 }));
+
   // 空きポートを検索
   serverPort = await findAvailablePort(5000);
 
@@ -193,6 +239,7 @@ async function startExpressServer() {
     throw new Error('Failed to start Express server');
   }
 
+  writeBootstrapLog(formatDesktopCheckpoint("server_bootstrap_ready", { port: serverPort }));
   console.log(`Express server started on port ${serverPort}`);
 }
 
@@ -200,6 +247,7 @@ async function startExpressServer() {
  * BrowserWindow の作成
  */
 function createWindow() {
+  writeBootstrapLog(formatDesktopCheckpoint("browser_window_creating"));
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -219,6 +267,7 @@ function createWindow() {
 
   // Express サーバーにアクセス
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
+  writeBootstrapLog(formatDesktopCheckpoint("browser_window_loaded", { port: serverPort }));
 
   // 開発環境では DevTools を開く
   if (!app.isPackaged) {
@@ -264,14 +313,7 @@ app.whenReady().then(async () => {
       initAutoUpdater(mainWindow!);
     }
   } catch (err) {
-    const errorText = stringifyError(err);
-    console.error('Failed to initialize application:', err);
-    writeBootstrapLog(`Initialization failed: ${errorText}`);
-    try {
-      dialog.showErrorBox('Startup failed', errorText);
-    } catch {
-      // ignore dialog failure
-    }
+    reportMainProcessError("Initialization failed", err, { showDialog: true });
     app.quit();
   }
 
@@ -301,6 +343,7 @@ app.on('before-quit', async (event) => {
   if (httpServer && !isShuttingDown) {
     event.preventDefault(); // 終了を一時停止
     isShuttingDown = true;
+    writeBootstrapLog(formatDesktopCheckpoint("shutdown_requested", { activeSocketCount: activeSockets.size }));
 
     console.log('Shutting down Express server...');
 
@@ -312,7 +355,7 @@ app.on('before-quit', async (event) => {
         await serverModule.cleanup();
       }
     } catch (err) {
-      console.error('Error closing database:', err);
+      reportMainProcessError("Error closing database during shutdown", err, { showDialog: false });
     }
 
     // すべてのアクティブなソケット接続を強制終了
@@ -325,6 +368,7 @@ app.on('before-quit', async (event) => {
     // サーバーを閉じる
     httpServer.close(() => {
       console.log('Express server stopped');
+      writeBootstrapLog(formatDesktopCheckpoint("server_shutdown_complete"));
       httpServer = null;
       app.quit(); // サーバー停止後にアプリを終了
     });
@@ -333,6 +377,7 @@ app.on('before-quit', async (event) => {
     setTimeout(() => {
       if (httpServer) {
         console.warn('Server shutdown timeout, forcing quit');
+        writeBootstrapLog(formatDesktopCheckpoint("server_shutdown_timeout"));
         httpServer = null;
         app.quit();
       }

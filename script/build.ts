@@ -82,7 +82,8 @@ async function buildAll() {
     bundle: true,
     format: "cjs",
     outfile: "dist/electron/main.cjs",
-    external: ["electron"],
+    // Native modules such as better-sqlite3 must stay external so bindings resolve from node_modules.
+    external: ["electron", "better-sqlite3"],
     logLevel: "info",
   });
 

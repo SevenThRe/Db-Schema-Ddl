@@ -85,6 +85,31 @@ test("fetchOfficialExtensionCatalog resolves the manifest asset and current plat
   assert.equal(catalog.manifest.summary, "Adds GitHub delivery");
 });
 
+test("fetchOfficialExtensionCatalog returns a user-friendly message when no official manifest has been published yet", async () => {
+  const mockFetch: typeof fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/repos/SevenThRe/Db-Schema-Ddl/releases")) {
+      return new Response(
+        JSON.stringify([
+          {
+            tag_name: "v1.2.0",
+            html_url: "https://example.com/releases/v1.2.0",
+            assets: [],
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  await assert.rejects(
+    () => fetchOfficialExtensionCatalog(DB_MANAGEMENT_EXTENSION_ID, mockFetch),
+    /官方扩展暂未发布，当前还没有可下载的安装包。/,
+  );
+});
+
 test("downloadFileWithProgress writes the fetched asset to disk and reports progress", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "ext-download-test-"));
   const outputPath = path.join(tempDir, "extension.zip");

@@ -99,7 +99,7 @@ function pickRuntimePackage(
 async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const response = await fetchImpl(url, { headers: buildGithubHeaders() });
   if (!response.ok) {
-    throw new Error(`GitHub request failed (${response.status}) for ${url}`);
+    throw new Error("暂时无法获取 GitHub 官方发布信息，请稍后重试。");
   }
   return (await response.json()) as T;
 }
@@ -111,7 +111,7 @@ export async function fetchOfficialExtensionCatalog(
   const releases = await fetchJson<GithubReleaseResponse[]>(getGithubReleasesApiUrl(), fetchImpl);
   const manifestAsset = pickManifestAsset(releases);
   if (!manifestAsset) {
-    throw new Error("Official extension manifest asset was not found on GitHub releases.");
+    throw new Error("官方扩展暂未发布，当前还没有可下载的安装包。");
   }
 
   const manifestPayload = await fetchJson<unknown>(manifestAsset.browser_download_url, fetchImpl);

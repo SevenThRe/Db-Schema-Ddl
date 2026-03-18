@@ -325,4 +325,5 @@ export const DDL_SETTINGS_COMPAT_COLUMNS: DdlSettingsCompatColumn[] = [
   { name: "name_fix_max_batch_concurrency", sql: "ALTER TABLE ddl_settings ADD COLUMN name_fix_max_batch_concurrency INTEGER NOT NULL DEFAULT 4" },
   { name: "allow_overwrite_in_electron", sql: "ALTER TABLE ddl_settings ADD COLUMN allow_overwrite_in_electron INTEGER NOT NULL DEFAULT 1" },
   { name: "allow_external_path_write", sql: "ALTER TABLE ddl_settings ADD COLUMN allow_external_path_write INTEGER NOT NULL DEFAULT 0" },
+  { name: "ddl_import_template_preference", sql: "ALTER TABLE ddl_settings ADD COLUMN ddl_import_template_preference TEXT" },
 ];
