@@ -3,6 +3,17 @@ param(
   [string]$InstallerArtifactPath,
   [string]$InstallDirectory = (Join-Path ${env:ProgramFiles} "DBSchemaExcel2DDL"),
   [string]$OutputDirectory,
+  [string]$InstallerScreenshotPath,
+  [string]$FirstLaunchScreenshotPath,
+  [string]$PackagedLogPath,
+  [ValidateSet("pass", "fail", "pending")]
+  [string]$InstallStatus = "pending",
+  [ValidateSet("pass", "fail", "pending")]
+  [string]$FirstLaunchStatus = "pending",
+  [ValidateSet("pass", "fail", "pending")]
+  [string]$DbEntryStatus = "pending",
+  [ValidateSet("pass", "fail", "pending")]
+  [string]$CloseStatus = "pending",
   [string[]]$ManualEvidence = @(),
   [switch]$SemiManual
 )
@@ -38,6 +49,20 @@ function Resolve-InstallerArtifactPath {
   }
 
   return $candidate.FullName
+}
+
+function Resolve-OptionalArtifactPath {
+  param([string]$CandidatePath)
+
+  if (-not $CandidatePath) {
+    return $null
+  }
+
+  if (Test-Path $CandidatePath) {
+    return (Resolve-Path $CandidatePath).Path
+  }
+
+  return $CandidatePath
 }
 
 function New-RunId {
@@ -94,6 +119,56 @@ function Add-EvidenceRef {
   }) | Out-Null
 }
 
+function Add-ProofFinding {
+  param(
+    [System.Collections.Generic.List[object]]$Findings,
+    [string]$Code,
+    [string]$Message,
+    [ValidateSet("critical", "warning")]
+    [string]$Severity,
+    [bool]$IsBlocker
+  )
+
+  $Findings.Add((New-BlockerFinding -Code $Code -Message $Message -Severity $Severity -IsBlocker $IsBlocker)) | Out-Null
+}
+
+function Add-StepResultFinding {
+  param(
+    [System.Collections.Generic.List[object]]$Findings,
+    [string]$StepName,
+    [string]$StepStatus
+  )
+
+  switch ($StepStatus) {
+    "fail" {
+      $code = switch ($StepName) {
+        "install" { "INSTALL_STEP_FAILED" }
+        "first-launch" { "STARTUP_FAILURE" }
+        "db-entry" { "DB_ENTRY_FAILURE" }
+        "close" { "RAW_CLOSE_ERROR" }
+      }
+      Add-ProofFinding -Findings $Findings -Code $code -Message "Installer step '$StepName' failed." -Severity "critical" -IsBlocker $true
+    }
+    "pending" {
+      Add-ProofFinding -Findings $Findings -Code "STEP_RESULT_PENDING" -Message "Installer step '$StepName' is still awaiting operator confirmation." -Severity "warning" -IsBlocker $false
+    }
+  }
+}
+
+function Get-ProofStatus {
+  param([System.Collections.Generic.List[object]]$Findings)
+
+  if (@($Findings | Where-Object { $_.blocker }).Count -gt 0) {
+    return "failed"
+  }
+
+  if ($Findings.Count -gt 0) {
+    return "incomplete"
+  }
+
+  return "complete"
+}
+
 function ConvertTo-Markdown {
   param([hashtable]$Artifact)
 
@@ -104,10 +179,20 @@ function ConvertTo-Markdown {
   $lines.Add("- Installer artifact: $($Artifact.installerArtifactPath)")
   $lines.Add("- Install directory: $($Artifact.installDirectory)")
   $lines.Add("- Semi-manual: $($Artifact.semiManual)")
+  $lines.Add("- Proof status: $($Artifact.proofStatus)")
   $lines.Add("- Started at: $($Artifact.timestamps.startedAt)")
   $lines.Add("- Finished at: $($Artifact.timestamps.finishedAt)")
   $lines.Add("- artifactJsonPath: $($Artifact.artifactJsonPath)")
   $lines.Add("- artifactMarkdownPath: $($Artifact.artifactMarkdownPath)")
+  $lines.Add("")
+  $lines.Add("## Step Results")
+  $lines.Add("")
+
+  foreach ($stepName in $Artifact.stepResults.Keys) {
+    $step = $Artifact.stepResults[$stepName]
+    $requiredEvidence = ($step.requiredEvidenceKinds -join ", ")
+    $lines.Add("- ${stepName}: $($step.status) :: $($step.note) :: required evidence = $requiredEvidence")
+  }
   $lines.Add("")
   $lines.Add("## Evidence References")
   $lines.Add("")
@@ -156,6 +241,9 @@ $artifactJsonPath = Join-Path $script:DesktopSmokeOutputRoot "$runId.json"
 $artifactMarkdownPath = Join-Path $script:DesktopSmokeOutputRoot "$runId.md"
 $startedAt = (Get-Date).ToUniversalTime().ToString("o")
 $resolvedInstallerArtifactPath = Resolve-InstallerArtifactPath -ExplicitPath $InstallerArtifactPath
+$resolvedInstallerScreenshotPath = Resolve-OptionalArtifactPath -CandidatePath $InstallerScreenshotPath
+$resolvedFirstLaunchScreenshotPath = Resolve-OptionalArtifactPath -CandidatePath $FirstLaunchScreenshotPath
+$resolvedPackagedLogPath = Resolve-OptionalArtifactPath -CandidatePath $PackagedLogPath
 $reviewPolicy = New-ReviewPolicy
 $evidenceRefs = [System.Collections.Generic.List[object]]::new()
 $blockerFindings = [System.Collections.Generic.List[object]]::new()
@@ -179,10 +267,28 @@ $installedExecutablePath = Join-Path $InstallDirectory "DBSchemaExcel2DDL.exe"
 Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "install-directory" -Path $InstallDirectory -Note "Expected install directory. Existing NSIS config may reuse a sticky prior path."
 Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "installed-executable" -Path $installedExecutablePath -Note "Expected installed app path for first-launch evidence."
 
+if ($resolvedInstallerScreenshotPath) {
+  Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "installer-ui-screenshot" -Path $resolvedInstallerScreenshotPath -Note "Installer UI screenshot from the reviewed NSIS run."
+} else {
+  Add-ProofFinding -Findings $blockerFindings -Code "INSTALLER_UI_SCREENSHOT_MISSING" -Message "Installer UI screenshot evidence is missing for the NSIS run." -Severity "warning" -IsBlocker $false
+}
+
+if ($resolvedFirstLaunchScreenshotPath) {
+  Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "first-launch-screenshot" -Path $resolvedFirstLaunchScreenshotPath -Note "First-launch screenshot after the packaged main window became interactive."
+} else {
+  Add-ProofFinding -Findings $blockerFindings -Code "FIRST_LAUNCH_SCREENSHOT_MISSING" -Message "First-launch screenshot evidence is missing for the NSIS run." -Severity "warning" -IsBlocker $false
+}
+
+if ($resolvedPackagedLogPath) {
+  Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "packaged-log" -Path $resolvedPackagedLogPath -Note "Packaged log excerpt or path captured from the same installer run."
+} else {
+  Add-ProofFinding -Findings $blockerFindings -Code "PACKAGED_LOG_MISSING" -Message "Packaged log excerpt evidence is missing for the NSIS run." -Severity "warning" -IsBlocker $false
+}
+
 if ($SemiManual.IsPresent) {
   Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "manual-step" -Path $artifactMarkdownPath -Note "Semi-manual run: attach screenshots, log excerpts, and operator notes without changing the artifact/report structure."
   if ($manualEvidenceList.Count -eq 0) {
-    $manualEvidenceList.Add("Attach installer UI screenshot, first-launch screenshot, and packaged log excerpt before review.") | Out-Null
+    $manualEvidenceList.Add("Attach installer UI screenshot, first-launch screenshot, packaged log excerpt, and explicit install -> first launch -> DB 管理 -> close outcomes before review.") | Out-Null
   }
 } elseif ($resolvedInstallerArtifactPath) {
   try {
@@ -197,6 +303,34 @@ if (-not $SemiManual.IsPresent -and -not (Test-Path $installedExecutablePath)) {
   $blockerFindings.Add((New-BlockerFinding -Code "INSTALLED_APP_NOT_FOUND" -Message "Installed executable was not found at $installedExecutablePath after the installer hand-off.")) | Out-Null
 }
 
+$stepResults = [ordered]@{
+  install = [ordered]@{
+    status = $InstallStatus
+    note = "Installer UI reached the expected completion state."
+    requiredEvidenceKinds = @("installer", "installer-ui-screenshot")
+  }
+  "first-launch" = [ordered]@{
+    status = $FirstLaunchStatus
+    note = "Installed executable launched and the main window became interactive."
+    requiredEvidenceKinds = @("installed-executable", "first-launch-screenshot")
+  }
+  "db-entry" = [ordered]@{
+    status = $DbEntryStatus
+    note = "The installed app entered `DB 管理` during the reviewed run."
+    requiredEvidenceKinds = @("first-launch-screenshot", "packaged-log")
+  }
+  close = [ordered]@{
+    status = $CloseStatus
+    note = "The installed app closed cleanly without raw JS error spam."
+    requiredEvidenceKinds = @("packaged-log")
+  }
+}
+
+foreach ($stepName in $stepResults.Keys) {
+  Add-StepResultFinding -Findings $blockerFindings -StepName $stepName -StepStatus $stepResults[$stepName].status
+}
+
+$proofStatus = Get-ProofStatus -Findings $blockerFindings
 $finishedAt = (Get-Date).ToUniversalTime().ToString("o")
 
 $artifact = [ordered]@{
@@ -209,10 +343,12 @@ $artifact = [ordered]@{
   installDirectory = $InstallDirectory
   executablePath = $installedExecutablePath
   semiManual = $SemiManual.IsPresent
+  proofStatus = $proofStatus
   timestamps = [ordered]@{
     startedAt = $startedAt
     finishedAt = $finishedAt
   }
+  stepResults = $stepResults
   evidenceRefs = @($evidenceRefs)
   manualEvidence = @($manualEvidenceList)
   blockerFindings = @($blockerFindings)

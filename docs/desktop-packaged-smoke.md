@@ -33,10 +33,20 @@ npm run smoke:packaged
    - Run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\script\desktop-packaged-smoke-installer.ps1 -SemiManual
+powershell -ExecutionPolicy Bypass -File .\script\desktop-packaged-smoke-installer.ps1 `
+  -SemiManual `
+  -InstallerScreenshotPath "C:\evidence\nsis-installer-ui.png" `
+  -FirstLaunchScreenshotPath "C:\evidence\nsis-first-launch.png" `
+  -PackagedLogPath "C:\Users\<you>\AppData\Roaming\DBSchemaExcel2DDL\logs\main.log" `
+  -InstallStatus pending `
+  -FirstLaunchStatus pending `
+  -DbEntryStatus pending `
+  -CloseStatus pending `
+  -ManualEvidence "Waiting for operator confirmation of install -> first launch -> `DB 管理` -> close."
 ```
 
 Add `-InstallerArtifactPath` or `-InstallDirectory` when the defaults are not correct.
+Re-run the helper with `pass` or `fail` for each step after the real install path is observed so the artifact does not imply a successful run without proof.
 
 All packaged smoke review artifacts are expected under `artifacts/desktop-smoke/`.
 
@@ -52,7 +62,9 @@ The artifact must capture:
 - installer path
 - install directory
 - started/finished timestamps
-- evidence refs for installer UI, installed executable, screenshots, and notes
+- evidence refs for installer UI screenshot, first-launch screenshot, packaged log excerpt, installed executable, and notes
+- explicit step results for install, first launch, `DB 管理`, and close
+- `proofStatus` showing whether the installer evidence is `complete`, `incomplete`, or `failed`
 - blocker findings and warning policy
 
 If the run is semi-manual, attach at least:
@@ -68,6 +80,8 @@ For the `win-unpacked` run, keep at least:
 - the generated Markdown summary
 - screenshots written by the packaged smoke runner
 - log excerpts showing readiness checkpoints and close behavior
+
+If any screenshot, packaged log excerpt, or step outcome is missing, the helper must leave a warning or blocker finding in the artifact instead of producing blank success metadata.
 
 ## Release Blocker Policy
 
@@ -98,6 +112,6 @@ These are still warnings when the primary packaged flow is otherwise healthy:
 2. Run `npm run smoke:packaged` for fast `win-unpacked` feedback.
 3. Run the `NSIS installer` helper.
 4. Complete any semi-manual installer UI steps if Windows elevation or local policy blocks full automation.
-5. Attach screenshots and log excerpts to the generated artifact in `artifacts/desktop-smoke/`.
+5. Re-run the helper with the installer UI screenshot, first-launch screenshot, packaged log excerpt path, and explicit `install` / `first launch` / `DB 管理` / `close` statuses.
 6. Mark any manual-only installer gap explicitly in the generated artifact instead of leaving it implied.
 7. Review blocker findings before calling the packaged build release-ready.
