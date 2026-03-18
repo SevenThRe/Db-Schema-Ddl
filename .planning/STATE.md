@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: schema-provenance-and-reverse-expansion
 status: active
-last_updated: "2026-03-18T15:05:00+09:00"
+last_updated: "2026-03-18T16:25:00+09:00"
 progress:
   total_phases: 3
   completed_phases: 1
@@ -18,7 +18,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 **Core value:** Users can compare historical DB states, reverse live DB structure into trusted Excel workbooks, and broaden reverse import beyond the current MySQL-first single-DDL flow.
-**Current focus:** `v1.2` Phase 1 is complete; Phase 2 can begin
+**Current focus:** `v1.2` Phase 2 UI-SPEC is approved; planning can begin
 
 ## Current Status
 
@@ -31,6 +31,8 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 - Phase 1 research is captured at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-RESEARCH.md`
 - Phase 1 validation strategy is captured at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-VALIDATION.md`
 - Phase 1 execution is complete and verified at `.planning/phases/01-snapshot-compare-and-reports-v1_2/01-VERIFICATION.md`
+- Phase 2 context is captured at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-CONTEXT.md`
+- Phase 2 UI contract is approved at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-UI-SPEC.md`
 
 ## Important Assumptions
 
@@ -41,7 +43,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 ## Next Command
 
-- Discuss / plan Phase 2: live DB to XLSX export
+- Plan Phase 2: live DB to XLSX export
 
 ---
-*Last updated: 2026-03-18 after completing v1.2 Phase 1*
+*Last updated: 2026-03-18 after approving v1.2 Phase 2 UI-SPEC*
