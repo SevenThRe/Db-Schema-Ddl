@@ -22,6 +22,11 @@
 1. `win-unpacked`
    - Use for fast iteration.
    - Reuse the packaged smoke runner from plan `02-02`.
+   - Run:
+
+```powershell
+npm run smoke:packaged
+```
 
 2. `NSIS installer`
    - Use for install -> first launch -> close proof.
@@ -32,6 +37,8 @@ powershell -ExecutionPolicy Bypass -File .\script\desktop-packaged-smoke-install
 ```
 
 Add `-InstallerArtifactPath` or `-InstallDirectory` when the defaults are not correct.
+
+All packaged smoke review artifacts are expected under `artifacts/desktop-smoke/`.
 
 ## Required Evidence
 
@@ -52,8 +59,15 @@ If the run is semi-manual, attach at least:
 
 - installer UI screenshot
 - first-launch screenshot
-- packaged log excerpt or path
+- packaged log excerpts or a written note explaining why the excerpt could not be captured
 - operator note describing what was manually confirmed
+
+For the `win-unpacked` run, keep at least:
+
+- the generated JSON artifact
+- the generated Markdown summary
+- screenshots written by the packaged smoke runner
+- log excerpts showing readiness checkpoints and close behavior
 
 ## Release Blocker Policy
 
@@ -80,9 +94,10 @@ These are still warnings when the primary packaged flow is otherwise healthy:
 
 ## Review Steps
 
-1. Build the packaged app and installer.
-2. Run the `win-unpacked` smoke flow for fast feedback.
+1. Run `npm run check`, `npm test`, and `npm run build:electron`.
+2. Run `npm run smoke:packaged` for fast `win-unpacked` feedback.
 3. Run the `NSIS installer` helper.
 4. Complete any semi-manual installer UI steps if Windows elevation or local policy blocks full automation.
-5. Attach screenshots and log evidence to the generated artifact.
-6. Review blocker findings before calling the packaged build release-ready.
+5. Attach screenshots and log excerpts to the generated artifact in `artifacts/desktop-smoke/`.
+6. Mark any manual-only installer gap explicitly in the generated artifact instead of leaving it implied.
+7. Review blocker findings before calling the packaged build release-ready.
