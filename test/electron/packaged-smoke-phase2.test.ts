@@ -226,6 +226,23 @@ test("installer smoke helper records installer path, install directory, timestam
   assert.match(installerScript, /blocker/i);
 });
 
+test("installer smoke helper accepts explicit screenshot and log evidence plus per-step outcomes", () => {
+  const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
+  const installerScript = fs.readFileSync(installerScriptPath, "utf8");
+
+  assert.match(installerScript, /\$InstallerScreenshotPath/);
+  assert.match(installerScript, /\$FirstLaunchScreenshotPath/);
+  assert.match(installerScript, /\$PackagedLogPath/);
+  assert.match(installerScript, /installer-ui-screenshot/);
+  assert.match(installerScript, /first-launch-screenshot/);
+  assert.match(installerScript, /packaged-log/);
+  assert.match(installerScript, /stepResults/);
+  assert.match(installerScript, /install/);
+  assert.match(installerScript, /first-launch/);
+  assert.match(installerScript, /db-entry/);
+  assert.match(installerScript, /close/);
+});
+
 test("packaged smoke docs classify installer release blockers explicitly", () => {
   const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
   const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
@@ -241,6 +258,16 @@ test("packaged smoke docs classify installer release blockers explicitly", () =>
   assert.match(packagedSmokeDoc, /DB 管理/);
 });
 
+test("installer smoke docs require screenshot and packaged log attachments for NSIS review", () => {
+  const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
+  const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
+
+  assert.match(packagedSmokeDoc, /installer UI screenshot/i);
+  assert.match(packagedSmokeDoc, /first-launch screenshot/i);
+  assert.match(packagedSmokeDoc, /packaged log excerpt/i);
+  assert.match(packagedSmokeDoc, /install -> first launch -> `DB 管理` -> close/i);
+});
+
 test("installer packaged smoke stays structured even when the run is semi-manual", () => {
   const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
   const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
@@ -254,4 +281,15 @@ test("installer packaged smoke stays structured even when the run is semi-manual
   assert.match(packagedSmokeDoc, /semi-manual/i);
   assert.match(packagedSmokeDoc, /JSON artifact/i);
   assert.match(packagedSmokeDoc, /Markdown summary/i);
+});
+
+test("installer packaged smoke keeps incomplete proof explicit instead of implying success", () => {
+  const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
+  const installerScript = fs.readFileSync(installerScriptPath, "utf8");
+
+  assert.match(installerScript, /proofStatus/);
+  assert.match(installerScript, /INSTALLER_UI_SCREENSHOT_MISSING/);
+  assert.match(installerScript, /FIRST_LAUNCH_SCREENSHOT_MISSING/);
+  assert.match(installerScript, /PACKAGED_LOG_MISSING/);
+  assert.match(installerScript, /STEP_RESULT_PENDING/);
 });
