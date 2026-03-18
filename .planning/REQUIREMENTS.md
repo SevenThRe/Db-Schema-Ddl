@@ -18,10 +18,14 @@
 
 - [x] **STAB-04**: A repeatable smoke path exists for startup, shutdown, SQLite init/migration, extension entry flow, and at least one real MySQL DB-management path
 
+### Packaged Deliverable Confidence
+
+- [x] **STAB-05**: Packaged Windows builds (`win-unpacked` first, NSIS installer second) have a repeatable smoke path covering startup, SQLite init/migration, extension entry, `DB 管理` access, and clean shutdown
+- [x] **STAB-06**: Packaged-build smoke leaves structured review evidence (`Markdown` + task-friendly `JSON`) plus screenshots/log excerpts, and defines explicit release blockers for packaged runtime failures
+
 ## Deferred / Future
 
-- **STAB-05**: Expand smoke automation beyond the initial checklist/small-script seam once runtime hardening is stable
-- **STAB-06**: Add deeper packaged-build smoke coverage if Windows installer issues become a repeating source of regressions
+- **STAB-07**: Expand smoke automation beyond the initial checklist/small-script seam once packaged confidence is stable
 - **UX-01**: Broader polish work for desktop UX once operational confidence is restored
 
 ## Out of Scope
@@ -41,12 +45,14 @@
 | STAB-02 | Phase 1 | Complete |
 | STAB-03 | Phase 1 | Complete |
 | STAB-04 | Phase 1 | Complete |
+| STAB-05 | Phase 2 | Complete |
+| STAB-06 | Phase 2 | Complete |
 
 **Coverage:**
-- v1.3 requirements: 4 total
-- Mapped to phases: 4
+- v1.3 requirements: 6 total
+- Mapped to phases: 6
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after completing v1.3 / Phase 1*
+*Last updated: 2026-03-18 after executing v1.3 / Phase 2 Plan 03*

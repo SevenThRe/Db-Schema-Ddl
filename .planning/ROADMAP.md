@@ -55,7 +55,8 @@ Success criteria:
 Current execution status:
 - Plan `02-01` extended the smoke artifact model for packaged evidence.
 - Plan `02-02` added the `win-unpacked` runner, checkpoint-based readiness seam, screenshot/log capture, and packaged ABI guardrails.
-- Installer-path proof and broader packaged release review remain for later Phase 2 plans.
+- Plan `02-03` added the NSIS installer smoke helper, semi-manual artifact seam, and explicit packaged blocker policy.
+- Final validation coverage and evidence capture remain for Plan `02-04`.
 
 ## Notes
 
@@ -67,4 +68,4 @@ Current execution status:
 - Real MySQL access is useful but should remain optional during packaged smoke unless a packaging-specific DB regression demands it
 
 ---
-*Last updated: 2026-03-18 after executing v1.3 / Phase 2 Plan 02*
+*Last updated: 2026-03-18 after executing v1.3 / Phase 2 Plan 03*
