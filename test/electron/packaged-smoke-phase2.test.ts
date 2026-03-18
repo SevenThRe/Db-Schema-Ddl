@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildDesktopSmokeArtifact, renderDesktopSmokeMarkdown } from "../../script/desktop-smoke";
+import {
+  buildPackagedSmokeFailureFinding,
+  resolvePackagedExecutablePath,
+  waitForPackagedCheckpointEvidence,
+} from "../../script/desktop-packaged-smoke";
 
 test("packaged smoke artifact exposes structured packaged evidence", () => {
   const artifact = buildDesktopSmokeArtifact({
@@ -120,4 +125,70 @@ test("packaged markdown and json evidence derive from the same artifact", () => 
   assert.match(markdown, /C:\/Program Files\/DBSchemaExcel2DDL\/DBSchemaExcel2DDL\.exe/);
   assert.match(markdown, /C:\/artifacts\/desktop-smoke\/nsis-main-window\.png/);
   assert.match(markdown, /PACKAGED_STARTUP_READY/);
+});
+
+test("packaged smoke resolves the win-unpacked executable path", () => {
+  const executablePath = resolvePackagedExecutablePath("C:/workspace/db-schema-ddl");
+
+  assert.equal(
+    executablePath,
+    "C:/workspace/db-schema-ddl/dist-electron/win-unpacked/DBSchemaExcel2DDL.exe",
+  );
+});
+
+test("packaged smoke waits for readiness checkpoints instead of fixed sleep alone", async () => {
+  const sleeps: number[] = [];
+  let readCount = 0;
+
+  const result = await waitForPackagedCheckpointEvidence({
+    logPath: "C:/logs/dbschemaexcel2ddl-bootstrap.log",
+    timeoutMs: 2000,
+    pollIntervalMs: 25,
+    existsSync: () => true,
+    readFile: async () => {
+      readCount += 1;
+      if (readCount === 1) {
+        return '[checkpoint:server_bootstrap_ready] {"port":5000}\n';
+      }
+
+      return [
+        '[checkpoint:server_bootstrap_ready] {"port":5000}',
+        '[checkpoint:browser_window_loaded] {"port":5000}',
+      ].join("\n");
+    },
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
+  });
+
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.missingCheckpoints, []);
+  assert.deepEqual(result.observedCheckpoints, [
+    "server_bootstrap_ready",
+    "browser_window_loaded",
+  ]);
+  assert.equal(sleeps.length, 1);
+  assert.equal(readCount, 2);
+});
+
+test("packaged smoke emits blocker findings for launch, readiness, and shutdown failures", () => {
+  const launchFinding = buildPackagedSmokeFailureFinding("launch", new Error("spawn EACCES"));
+  const readinessFinding = buildPackagedSmokeFailureFinding("readiness", "checkpoint timeout");
+  const shutdownFinding = buildPackagedSmokeFailureFinding("shutdown", new Error("window still alive"));
+
+  assert.deepEqual(
+    [launchFinding, readinessFinding, shutdownFinding].map((finding) => ({
+      code: finding.code,
+      blocker: finding.blocker,
+      severity: finding.severity,
+    })),
+    [
+      { code: "PACKAGED_LAUNCH_FAILED", blocker: true, severity: "critical" },
+      { code: "PACKAGED_READINESS_FAILED", blocker: true, severity: "critical" },
+      { code: "PACKAGED_SHUTDOWN_FAILED", blocker: true, severity: "critical" },
+    ],
+  );
+  assert.match(launchFinding.message, /spawn EACCES/);
+  assert.match(readinessFinding.message, /checkpoint timeout/);
+  assert.match(shutdownFinding.message, /window still alive/);
 });
