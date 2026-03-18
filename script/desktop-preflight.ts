@@ -6,6 +6,7 @@ import { DDL_SETTINGS_COMPAT_COLUMNS } from "../server/constants/db-init";
 const REQUIRED_DESKTOP_EXTERNALS = ["electron", "better-sqlite3"] as const;
 const REQUIRED_PACKAGE_SCRIPTS = ["start:electron", "build:electron", "release"] as const;
 const FRIENDLY_CATALOG_FALLBACK = "官方扩展暂未发布，当前还没有可下载的安装包。";
+const PACKAGED_SMOKE_SCRIPT = "smoke:packaged";
 
 export interface DesktopPreflightCheck {
   id: string;
@@ -36,6 +37,17 @@ export function packageScriptRunsDesktopPreflight(scriptValue: string | undefine
 
 export function packageScriptRunsNodeNativeRebuild(scriptValue: string | undefined): boolean {
   return typeof scriptValue === "string" && scriptValue.includes("rebuild:native:node");
+}
+
+export function packageScriptRunsElectronNativeBuild(scriptValue: string | undefined): boolean {
+  return (
+    typeof scriptValue === "string" &&
+    (scriptValue.includes("build:electron") || scriptValue.includes("rebuild:native:electron"))
+  );
+}
+
+export function packagedSmokeScriptPreservesElectronNativeAbi(scriptValue: string | undefined): boolean {
+  return packageScriptRunsElectronNativeBuild(scriptValue) && !packageScriptRunsNodeNativeRebuild(scriptValue);
 }
 
 export function githubReleaseHasFriendlyCatalogFallback(source: string): boolean {
@@ -87,6 +99,17 @@ export function runDesktopPreflight(cwd = process.cwd()): DesktopPreflightResult
     detail: packageScriptRunsNodeNativeRebuild(pkg.scripts?.test)
       ? undefined
       : "Add rebuild:native:node to the npm test pipeline.",
+  });
+
+  const packagedSmokeScript = pkg.scripts?.[PACKAGED_SMOKE_SCRIPT];
+  checks.push({
+    id: "packaged-smoke-keeps-electron-native-abi",
+    ok: packagedSmokeScriptPreservesElectronNativeAbi(packagedSmokeScript),
+    message: "Packaged smoke must reuse the Electron-native build path and avoid the Node ABI rebuild path.",
+    detail:
+      typeof packagedSmokeScript === "string"
+        ? `Current script must include build:electron or rebuild:native:electron and must not include rebuild:native:node.`
+        : `Add ${PACKAGED_SMOKE_SCRIPT} and route it through build:electron or rebuild:native:electron.`,
   });
 
   checks.push({
