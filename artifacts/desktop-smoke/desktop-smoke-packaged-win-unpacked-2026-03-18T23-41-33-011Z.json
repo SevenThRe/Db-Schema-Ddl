@@ -1,0 +1,72 @@
+{
+  "artifactVersion": "v1",
+  "runId": "desktop-smoke-packaged-win-unpacked-2026-03-18T23-41-33-011Z",
+  "generatedAt": "2026-03-18T23:41:33.011Z",
+  "appVersion": "packaged-smoke",
+  "environment": "packaged-electron",
+  "runMode": "packaged-win-unpacked",
+  "logPath": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T23-41-33-011Z.bootstrap.log",
+  "executablePath": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\dist-electron\\win-unpacked\\DBSchemaExcel2DDL.exe",
+  "screenshotPaths": [
+    "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T23-41-33-011Z.png"
+  ],
+  "logExcerpt": {
+    "path": "C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T23-41-33-011Z.bootstrap.log",
+    "excerpt": "[2026-03-18T23:41:33.843Z] [checkpoint:server_bootstrap_started] {\"startPort\":5000}\n[2026-03-18T23:41:35.226Z] [checkpoint:server_bootstrap_ready] {\"port\":5000}\n[2026-03-18T23:41:35.227Z] [checkpoint:smoke_sqlite_init_ready] {\"port\":5000,\"dbPath\":\"C:\\\\Users\\\\ISI202502\\\\AppData\\\\Roaming\\\\db-schema-excel-2-ddl\\\\data\"}\n[2026-03-18T23:41:35.227Z] [checkpoint:browser_window_creating]\n[2026-03-18T23:41:35.744Z] [checkpoint:browser_window_loaded] {\"port\":5000}\n[2026-03-18T23:41:35.960Z] [checkpoint:smoke_db_management_entry_requested]\n[2026-03-18T23:41:35.974Z] [checkpoint:smoke_db_management_blocked] {\"reason\":\"not-installed\"}\n[2026-03-18T23:41:36.220Z] [checkpoint:smoke_screenshot_written] {\"path\":\"C:\\\\Users\\\\ISI202502\\\\Downloads\\\\Db-Schema-Ddl\\\\artifacts\\\\desktop-smoke\\\\desktop-smoke-packaged-win-unpacked-2026-03-18T23-41-33-011Z.png\"}\n[2026-03-18T23:41:37.482Z] [checkpoint:smoke_auto_close_requested] {\"delayMs\":1500,\"reason\":\"not-installed\"}\n[2026-03-18T23:41:37.483Z] [checkpoint:shutdown_requested] {\"activeSocketCount\":4}\n[2026-03-18T23:41:37.486Z] [checkpoint:server_shutdown_complete]",
+    "startLine": 1,
+    "endLine": 11
+  },
+  "blockerFindings": [
+    {
+      "code": "PACKAGED_EXTENSION_ENTRY_FAILED",
+      "blocker": true,
+      "severity": "critical",
+      "message": "Packaged DB 管理 entry was blocked during the smoke-only real entry flow."
+    }
+  ],
+  "summary": {
+    "passedCount": 3,
+    "failedCount": 1,
+    "warningCount": 1,
+    "skippedCount": 0,
+    "overallStatus": "failed"
+  },
+  "diagnostics": [],
+  "steps": [
+    {
+      "id": "startup",
+      "title": "应用启动",
+      "status": "passed",
+      "detail": "Observed checkpoints: server_bootstrap_started, server_bootstrap_ready, smoke_sqlite_init_ready, browser_window_creating, browser_window_loaded, smoke_db_management_entry_requested, smoke_db_management_blocked",
+      "diagnosticIds": []
+    },
+    {
+      "id": "sqlite-init",
+      "title": "SQLite 初始化与迁移",
+      "status": "passed",
+      "detail": "Observed packaged SQLite initialization and migration readiness checkpoint.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "extension-entry",
+      "title": "扩展入口检查",
+      "status": "failed",
+      "detail": "Packaged DB 管理 entry was blocked during the smoke-only real entry flow.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "db-management-mysql-read",
+      "title": "MySQL 读取链路",
+      "status": "warning",
+      "detail": "Live MySQL proof remains optional for packaged smoke and was not required in this run.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "shutdown",
+      "title": "应用关闭",
+      "status": "passed",
+      "detail": "Packaged app exited cleanly after the smoke-mode DB 管理 proof path.",
+      "diagnosticIds": []
+    }
+  ]
+}

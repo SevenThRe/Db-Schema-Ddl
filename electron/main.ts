@@ -256,6 +256,14 @@ async function startExpressServer() {
   }
 
   writeBootstrapLog(formatDesktopCheckpoint("server_bootstrap_ready", { port: serverPort }));
+  if (getSmokeModeConfig().enabled) {
+    writeBootstrapLog(
+      formatDesktopCheckpoint("smoke_sqlite_init_ready", {
+        port: serverPort,
+        dbPath: process.env.DB_PATH,
+      }),
+    );
+  }
   console.log(`Express server started on port ${serverPort}`);
 }
 
@@ -263,6 +271,68 @@ async function startExpressServer() {
  * BrowserWindow の作成
  */
 function createWindow() {
+  const smokeMode = getSmokeModeConfig();
+  const smokeAutoCloseDelayMs = smokeMode.autoCloseDelayMs ?? 1500;
+  const smokeFallbackDelayMs = Math.max(smokeAutoCloseDelayMs * 6, 10_000);
+  let smokeAutoCloseTimer: NodeJS.Timeout | null = null;
+  let smokeFallbackTimer: NodeJS.Timeout | null = null;
+
+  const clearSmokeCloseTimers = () => {
+    if (smokeAutoCloseTimer) {
+      clearTimeout(smokeAutoCloseTimer);
+      smokeAutoCloseTimer = null;
+    }
+    if (smokeFallbackTimer) {
+      clearTimeout(smokeFallbackTimer);
+      smokeFallbackTimer = null;
+    }
+  };
+
+  const requestSmokeAutoClose = (reason: string, metadata?: Record<string, unknown>) => {
+    if (!smokeMode.enabled || smokeAutoCloseTimer) {
+      return;
+    }
+
+    smokeAutoCloseTimer = setTimeout(() => {
+      writeBootstrapLog(
+        formatDesktopCheckpoint("smoke_auto_close_requested", {
+          delayMs: smokeAutoCloseDelayMs,
+          reason,
+          ...metadata,
+        }),
+      );
+      app.quit();
+    }, smokeAutoCloseDelayMs);
+  };
+
+  const relaySmokeRendererSignal = (message: string) => {
+    if (!smokeMode.enabled || !message.startsWith("[desktop-smoke]")) {
+      return;
+    }
+
+    const payload = message.slice("[desktop-smoke]".length).trim();
+    if (payload === "db-management-entry-requested") {
+      writeBootstrapLog(formatDesktopCheckpoint("smoke_db_management_entry_requested"));
+      return;
+    }
+
+    if (payload === "db-management-ready") {
+      writeBootstrapLog(formatDesktopCheckpoint("smoke_db_management_ready"));
+      requestSmokeAutoClose("db-management-ready");
+      return;
+    }
+
+    if (payload.startsWith("db-management-blocked:")) {
+      const reason = payload.slice("db-management-blocked:".length) || "unknown";
+      writeBootstrapLog(
+        formatDesktopCheckpoint("smoke_db_management_blocked", {
+          reason,
+        }),
+      );
+      requestSmokeAutoClose("db-management-blocked", { reason });
+    }
+  };
+
   writeBootstrapLog(formatDesktopCheckpoint("browser_window_creating"));
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -282,17 +352,24 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
 
   // Express サーバーにアクセス
-  mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
+  const windowUrl = new URL(`http://127.0.0.1:${serverPort}`);
+  if (smokeMode.enabled) {
+    windowUrl.searchParams.set("desktop-smoke", "1");
+  }
+  mainWindow.loadURL(windowUrl.toString());
 
   // 開発環境では DevTools を開く
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
 
+  mainWindow.webContents.on("console-message", (_event, _level, message) => {
+    relaySmokeRendererSignal(message);
+  });
+
   mainWindow.webContents.once('did-finish-load', async () => {
     writeBootstrapLog(formatDesktopCheckpoint("browser_window_loaded", { port: serverPort }));
 
-    const smokeMode = getSmokeModeConfig();
     if (!smokeMode.enabled) {
       return;
     }
@@ -314,16 +391,14 @@ function createWindow() {
       }
     }
 
-    if (typeof smokeMode.autoCloseDelayMs === 'number') {
-      setTimeout(() => {
-        writeBootstrapLog(
-          formatDesktopCheckpoint("smoke_auto_close_requested", {
-            delayMs: smokeMode.autoCloseDelayMs,
-          }),
-        );
-        app.quit();
-      }, smokeMode.autoCloseDelayMs);
-    }
+    smokeFallbackTimer = setTimeout(() => {
+      writeBootstrapLog(
+        formatDesktopCheckpoint("smoke_auto_close_fallback", {
+          timeoutMs: smokeFallbackDelayMs,
+        }),
+      );
+      requestSmokeAutoClose("fallback-timeout", { timeoutMs: smokeFallbackDelayMs });
+    }, smokeFallbackDelayMs);
   });
 
   // F12 キーで DevTools を開く（プロダクション環境でもデバッグ可能）
@@ -345,6 +420,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    clearSmokeCloseTimers();
     mainWindow = null;
   });
 }

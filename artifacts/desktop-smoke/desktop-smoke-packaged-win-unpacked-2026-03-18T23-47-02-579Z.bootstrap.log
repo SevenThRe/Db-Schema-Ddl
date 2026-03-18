@@ -1,0 +1,11 @@
+[2026-03-18T23:47:03.203Z] [checkpoint:server_bootstrap_started] {"startPort":5000}
+[2026-03-18T23:47:04.401Z] [checkpoint:server_bootstrap_ready] {"port":5000}
+[2026-03-18T23:47:04.402Z] [checkpoint:smoke_sqlite_init_ready] {"port":5000,"dbPath":"C:\\Users\\ISI202502\\AppData\\Roaming\\db-schema-excel-2-ddl\\data"}
+[2026-03-18T23:47:04.402Z] [checkpoint:browser_window_creating]
+[2026-03-18T23:47:04.793Z] [checkpoint:browser_window_loaded] {"port":5000}
+[2026-03-18T23:47:04.930Z] [checkpoint:smoke_db_management_entry_requested]
+[2026-03-18T23:47:04.954Z] [checkpoint:smoke_db_management_ready]
+[2026-03-18T23:47:05.085Z] [checkpoint:smoke_screenshot_written] {"path":"C:\\Users\\ISI202502\\Downloads\\Db-Schema-Ddl\\artifacts\\desktop-smoke\\desktop-smoke-packaged-win-unpacked-2026-03-18T23-47-02-579Z.png"}
+[2026-03-18T23:47:06.457Z] [checkpoint:smoke_auto_close_requested] {"delayMs":1500,"reason":"db-management-ready"}
+[2026-03-18T23:47:06.457Z] [checkpoint:shutdown_requested] {"activeSocketCount":7}
+[2026-03-18T23:47:06.459Z] [checkpoint:server_shutdown_complete]

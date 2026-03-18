@@ -124,8 +124,20 @@ function getSheetName(sheet: unknown): string | null {
 }
 
 export default function Dashboard() {
+  const [isDesktopSmokeMode] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return new URLSearchParams(window.location.search).get("desktop-smoke") === "1";
+  });
   const [initialFileSelection] = useState<StoredFileSelection | null>(() => readStoredFileSelection());
   const initialFileSelectionRef = useRef<StoredFileSelection | null>(initialFileSelection);
+  const desktopSmokeAttemptedRef = useRef(false);
+  const desktopSmokeSignalRef = useRef({
+    requested: false,
+    ready: false,
+    blocked: false,
+  });
   const [selectedFileId, setSelectedFileId] = useState<number | null>(() => {
     const fileId = initialFileSelectionRef.current?.fileId;
     return typeof fileId === "number" ? fileId : null;
@@ -155,7 +167,9 @@ export default function Dashboard() {
 
   const { data: files } = useFiles();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
-  const { data: dbManagementExtension } = useExtension(DB_MANAGEMENT_EXTENSION_ID);
+  const { data: dbManagementExtension, isLoading: isDbManagementExtensionLoading } = useExtension(
+    DB_MANAGEMENT_EXTENSION_ID,
+  );
   const { mutateAsync: enableExtension, isPending: isEnableMutationPending } = useEnableExtension();
   const { mutateAsync: disableExtension, isPending: isDisableMutationPending } = useDisableExtension();
   const { mutateAsync: refreshExtensionCatalog, isPending: isRefreshCatalogPending } = useRefreshExtensionCatalog();
@@ -164,6 +178,15 @@ export default function Dashboard() {
   const { toast } = useToast();
   const [appVersion, setAppVersion] = useState<string>("");
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+
+  const emitDesktopSmokeSignal = useCallback(
+    (message: string) => {
+      if (isDesktopSmokeMode) {
+        console.info(`[desktop-smoke] ${message}`);
+      }
+    },
+    [isDesktopSmokeMode],
+  );
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
     setCurrentTable(table);
@@ -379,10 +402,13 @@ export default function Dashboard() {
     if (activeModule !== "db-management") {
       return;
     }
+    if (isDesktopSmokeMode) {
+      return;
+    }
     if (dbManagementExtension?.status !== "enabled") {
       setActiveModule("workspace");
     }
-  }, [activeModule, dbManagementExtension]);
+  }, [activeModule, dbManagementExtension, isDesktopSmokeMode]);
 
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
@@ -553,6 +579,10 @@ export default function Dashboard() {
 
     const extension = dbManagementExtension;
     if (!extension || extension.status === "not_installed") {
+      if (isDesktopSmokeMode) {
+        setActiveModule("db-management");
+        return;
+      }
       setInstallDialogOpen(true);
       return;
     }
@@ -563,12 +593,60 @@ export default function Dashboard() {
       extension.updateAvailable ||
       extension.lifecycle?.stage === "failed"
     ) {
+      if (isDesktopSmokeMode) {
+        setActiveModule("db-management");
+        return;
+      }
       setStatusDialogOpen(true);
       return;
     }
 
     setActiveModule("db-management");
-  }, [dbManagementExtension, refreshOfficialExtensionCatalog]);
+  }, [dbManagementExtension, isDesktopSmokeMode, refreshOfficialExtensionCatalog]);
+
+  useEffect(() => {
+    if (!isDesktopSmokeMode || isDbManagementExtensionLoading || desktopSmokeAttemptedRef.current) {
+      return;
+    }
+
+    desktopSmokeAttemptedRef.current = true;
+    if (!desktopSmokeSignalRef.current.requested) {
+      desktopSmokeSignalRef.current.requested = true;
+      emitDesktopSmokeSignal("db-management-entry-requested");
+    }
+    handleDbManagementEntryClick();
+  }, [
+    emitDesktopSmokeSignal,
+    handleDbManagementEntryClick,
+    isDbManagementExtensionLoading,
+    isDesktopSmokeMode,
+  ]);
+
+  useEffect(() => {
+    if (!isDesktopSmokeMode || desktopSmokeSignalRef.current.ready || activeModule !== "db-management") {
+      return;
+    }
+
+    desktopSmokeSignalRef.current.ready = true;
+    emitDesktopSmokeSignal("db-management-ready");
+  }, [activeModule, emitDesktopSmokeSignal, isDesktopSmokeMode]);
+
+  useEffect(() => {
+    if (!isDesktopSmokeMode || desktopSmokeSignalRef.current.blocked) {
+      return;
+    }
+
+    if (installDialogOpen) {
+      desktopSmokeSignalRef.current.blocked = true;
+      emitDesktopSmokeSignal("db-management-blocked:not-installed");
+      return;
+    }
+
+    if (statusDialogOpen) {
+      desktopSmokeSignalRef.current.blocked = true;
+      emitDesktopSmokeSignal("db-management-blocked:status-dialog");
+    }
+  }, [emitDesktopSmokeSignal, installDialogOpen, isDesktopSmokeMode, statusDialogOpen]);
 
   const handleEnableAndActivateExtension = useCallback(async () => {
     try {
@@ -771,7 +849,8 @@ export default function Dashboard() {
         <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
           {activeModule === "ddl-import" ? (
             renderDdlImportWorkspace()
-          ) : activeModule === "db-management" && dbManagementExtension?.status === "enabled" ? (
+          ) : activeModule === "db-management" &&
+            (dbManagementExtension?.status === "enabled" || isDesktopSmokeMode) ? (
             renderDbManagementWorkspace()
           ) : isCompactLayout ? (
             <>

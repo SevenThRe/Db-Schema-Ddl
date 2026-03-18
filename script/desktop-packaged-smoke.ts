@@ -7,6 +7,7 @@ import {
   buildDesktopSmokeArtifact,
   createDesktopSmokeChecklist,
   renderDesktopSmokeMarkdown,
+  summarizeDesktopSmokeSteps,
   DESKTOP_SMOKE_STEP_IDS,
 } from "./desktop-smoke";
 import { normalizeUnknownError } from "../shared/desktop-runtime";
@@ -174,6 +175,60 @@ function readLogExcerpt(logPath: string, maxLines = 40): DesktopSmokeLogExcerpt 
   };
 }
 
+function extractPackagedCheckpointMetadata(
+  logContents: string,
+  checkpointName: string,
+): Record<string, unknown>[] {
+  const checkpointToken = `[checkpoint:${checkpointName}]`;
+  const metadata: Record<string, unknown>[] = [];
+
+  for (const line of logContents.split(/\r?\n/)) {
+    const checkpointIndex = line.indexOf(checkpointToken);
+    if (checkpointIndex === -1) {
+      continue;
+    }
+
+    const rawPayload = line.slice(checkpointIndex + checkpointToken.length).trim();
+    if (!rawPayload.startsWith("{")) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(rawPayload);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        metadata.push(parsed as Record<string, unknown>);
+      }
+    } catch {
+      // Ignore malformed checkpoint metadata and continue collecting the rest of the log.
+    }
+  }
+
+  return metadata;
+}
+
+function extractPackagedScreenshotPaths(logContents: string): string[] {
+  const screenshotPaths = new Set<string>();
+
+  for (const metadata of extractPackagedCheckpointMetadata(logContents, "smoke_screenshot_written")) {
+    const screenshotPath = typeof metadata.path === "string" ? metadata.path.trim() : "";
+    if (screenshotPath) {
+      screenshotPaths.add(screenshotPath);
+    }
+  }
+
+  return [...screenshotPaths];
+}
+
+function appendPackagedBlockerFinding(
+  blockerFindings: DesktopSmokeBlockerFinding[],
+  finding: DesktopSmokeBlockerFinding,
+) {
+  if (blockerFindings.some((existingFinding) => existingFinding.code === finding.code)) {
+    return;
+  }
+  blockerFindings.push(finding);
+}
+
 function updateSmokeStep(
   artifact: DesktopSmokeArtifact,
   stepId: string,
@@ -187,6 +242,110 @@ function updateSmokeStep(
 
   step.status = status;
   step.detail = detail;
+}
+
+function classifyPackagedSmokeSteps(
+  artifact: DesktopSmokeArtifact,
+  blockerFindings: DesktopSmokeBlockerFinding[],
+  observedCheckpoints: Set<string>,
+  exitResult:
+    | { timedOut: false; code: number | null; signal: NodeJS.Signals | null }
+    | { timedOut: true; code: null; signal: null }
+    | undefined,
+) {
+  if (observedCheckpoints.has("smoke_sqlite_init_ready")) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.sqliteInit,
+      "passed",
+      "Observed packaged SQLite initialization and migration readiness checkpoint.",
+    );
+  } else {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.sqliteInit,
+      "failed",
+      "Missing packaged SQLite initialization readiness checkpoint.",
+    );
+    appendPackagedBlockerFinding(blockerFindings, {
+      code: "PACKAGED_SQLITE_INIT_FAILED",
+      blocker: true,
+      severity: "critical",
+      message: "Packaged SQLite initialization/migration readiness was not confirmed.",
+    });
+  }
+
+  if (observedCheckpoints.has("smoke_db_management_ready")) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.extensionEntry,
+      "passed",
+      "Observed the packaged DB 管理 entry flow reaching the real workspace path.",
+    );
+  } else {
+    const blockedDetail = observedCheckpoints.has("smoke_db_management_blocked")
+      ? "Packaged DB 管理 entry was blocked during the smoke-only real entry flow."
+      : "Missing packaged DB 管理 entry checkpoint from the smoke-only real entry flow.";
+    updateSmokeStep(artifact, DESKTOP_SMOKE_STEP_IDS.extensionEntry, "failed", blockedDetail);
+    appendPackagedBlockerFinding(blockerFindings, {
+      code: "PACKAGED_EXTENSION_ENTRY_FAILED",
+      blocker: true,
+      severity: "critical",
+      message: blockedDetail,
+    });
+  }
+
+  if (exitResult?.timedOut) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.shutdown,
+      "failed",
+      "Timed out waiting for the packaged app to exit after smoke-mode auto-close.",
+    );
+    return;
+  }
+
+  if (exitResult && exitResult.code !== 0) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.shutdown,
+      "failed",
+      `Packaged app exited with code ${String(exitResult.code)}.`,
+    );
+    return;
+  }
+
+  if (exitResult && !observedCheckpoints.has("server_shutdown_complete")) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.shutdown,
+      "failed",
+      "Packaged app exited without the server_shutdown_complete checkpoint.",
+    );
+    appendPackagedBlockerFinding(blockerFindings, {
+      code: "PACKAGED_SHUTDOWN_CHECKPOINT_MISSING",
+      blocker: true,
+      severity: "critical",
+      message: "Packaged shutdown exited without the server_shutdown_complete checkpoint.",
+    });
+    return;
+  }
+
+  if (exitResult) {
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.shutdown,
+      "passed",
+      "Packaged app exited cleanly after the smoke-mode DB 管理 proof path.",
+    );
+  }
+
+  updateSmokeStep(
+    artifact,
+    DESKTOP_SMOKE_STEP_IDS.dbManagementMysqlRead,
+    "warning",
+    "Live MySQL proof remains optional for packaged smoke and was not required in this run.",
+  );
 }
 
 async function spawnPackagedExecutable(executablePath: string, env: NodeJS.ProcessEnv) {
@@ -245,9 +404,21 @@ export async function runPackagedSmoke(cwd = process.cwd()): Promise<PackagedSmo
     updateSmokeStep(artifact, DESKTOP_SMOKE_STEP_IDS.startup, "failed", blockerFindings[0].message);
     updateSmokeStep(
       artifact,
+      DESKTOP_SMOKE_STEP_IDS.sqliteInit,
+      "failed",
+      "Packaged app never launched, so SQLite initialization could not be observed.",
+    );
+    updateSmokeStep(
+      artifact,
+      DESKTOP_SMOKE_STEP_IDS.extensionEntry,
+      "failed",
+      "Packaged app never launched, so DB 管理 entry could not be observed.",
+    );
+    updateSmokeStep(
+      artifact,
       DESKTOP_SMOKE_STEP_IDS.shutdown,
-      "skipped",
-      "Packaged app never launched, so shutdown could not be observed.",
+      "failed",
+      "Packaged app never launched, so clean shutdown could not be observed.",
     );
   } else {
     let child: ChildProcess | undefined;
@@ -271,9 +442,21 @@ export async function runPackagedSmoke(cwd = process.cwd()): Promise<PackagedSmo
       updateSmokeStep(artifact, DESKTOP_SMOKE_STEP_IDS.startup, "failed", blockerFindings[0].message);
       updateSmokeStep(
         artifact,
+        DESKTOP_SMOKE_STEP_IDS.sqliteInit,
+        "failed",
+        "Packaged app failed to launch, so SQLite initialization could not be observed.",
+      );
+      updateSmokeStep(
+        artifact,
+        DESKTOP_SMOKE_STEP_IDS.extensionEntry,
+        "failed",
+        "Packaged app failed to launch, so DB 管理 entry could not be observed.",
+      );
+      updateSmokeStep(
+        artifact,
         DESKTOP_SMOKE_STEP_IDS.shutdown,
-        "skipped",
-        "Packaged app never launched, so shutdown could not be observed.",
+        "failed",
+        "Packaged app failed to launch, so clean shutdown could not be observed.",
       );
     }
 
@@ -327,25 +510,21 @@ export async function runPackagedSmoke(cwd = process.cwd()): Promise<PackagedSmo
           "Packaged app exited cleanly after smoke-mode auto-close.",
         );
       }
+
+      const finalLogContents = fs.existsSync(logPath)
+        ? await fs.promises.readFile(logPath, "utf8")
+        : "";
+      const observedCheckpointSet = new Set(extractPackagedCheckpointNames(finalLogContents));
+      artifact.screenshotPaths = [
+        ...new Set([...artifact.screenshotPaths, ...extractPackagedScreenshotPaths(finalLogContents)]),
+      ];
+      classifyPackagedSmokeSteps(artifact, blockerFindings, observedCheckpointSet, exitResult);
     }
   }
 
   artifact.logExcerpt = readLogExcerpt(logPath);
   artifact.blockerFindings = blockerFindings;
-  artifact.summary = {
-    ...artifact.summary,
-    ...{
-      passedCount: artifact.steps.filter((step) => step.status === "passed").length,
-      failedCount: artifact.steps.filter((step) => step.status === "failed").length,
-      warningCount: artifact.steps.filter((step) => step.status === "warning").length,
-      skippedCount: artifact.steps.filter((step) => step.status === "skipped").length,
-      overallStatus: artifact.steps.some((step) => step.status === "failed")
-        ? "failed"
-        : artifact.steps.some((step) => step.status === "warning" || step.status === "skipped")
-          ? "warning"
-          : "passed",
-    },
-  };
+  artifact.summary = summarizeDesktopSmokeSteps(artifact.steps);
 
   fs.writeFileSync(artifactJsonPath, JSON.stringify(artifact, null, 2), "utf8");
   fs.writeFileSync(artifactMarkdownPath, renderDesktopSmokeMarkdown(artifact), "utf8");
