@@ -3,8 +3,10 @@ import type {
   DbLiveExportIssueSummary,
   DbSchemaCatalog,
   DdlImportCatalog,
+  DdlImportDialect,
   DdlImportIssue,
   DdlImportIssueSummary,
+  DdlImportSourceMode,
 } from "@shared/schema";
 
 interface IssueCollectionResult {
@@ -66,17 +68,22 @@ export function summarizeDbLiveExportIssues(issues: DbLiveExportIssue[]): DbLive
 export function collectDdlImportIssues(args: {
   sqlText: string;
   catalog: DdlImportCatalog;
+  sourceMode: DdlImportSourceMode;
+  dialect: DdlImportDialect;
   parserError?: string;
 }): IssueCollectionResult {
   const issues: DdlImportIssue[] = [];
   const normalizedSql = args.sqlText;
+  const isOracle = args.dialect === "oracle";
 
   if (args.parserError) {
     pushIssue(issues, {
       severity: "blocking",
       kind: "parser_error",
       entityKey: "source:sql",
-      message: "Failed to parse the provided MySQL DDL.",
+      message: isOracle
+        ? "Failed to parse the provided Oracle subset DDL."
+        : "Failed to parse the provided MySQL DDL.",
       detail: args.parserError,
     });
   }
@@ -93,7 +100,7 @@ export function collectDdlImportIssues(args: {
       severity: "blocking",
       kind: "parser_unsupported",
       entityKey: "source:create-temporary-table",
-      message: "CREATE TEMPORARY TABLE is outside the supported MySQL-first import subset.",
+      message: "CREATE TEMPORARY TABLE is outside the supported reverse-import subset.",
     },
     {
       pattern: /\bcreate\s+table\b[\s\S]+?\bas\s+select\b/i,
@@ -103,11 +110,20 @@ export function collectDdlImportIssues(args: {
       message: "CREATE TABLE AS SELECT is not supported in the first reverse-authoring cut.",
     },
     {
-      pattern: /\bcreate\s+view\b|\bcreate\s+trigger\b|\bprocedure\b|\bfunction\b/i,
+      pattern: /\balter\s+table\b|\binsert\s+into\b|\bupdate\b|\bdelete\s+from\b|\bdrop\s+(table|view|index|trigger|procedure|function)\b/i,
+      severity: "blocking",
+      kind: "parser_unsupported",
+      entityKey: "source:bundle-unsupported",
+      message: "ALTER TABLE, DML, and DROP statements are out of scope for structure-oriented reverse import.",
+    },
+    {
+      pattern: /\bcreate\s+view\b|\bcreate\s+trigger\b|\bprocedure\b|\bfunction\b|\bpackage\b|\bgrant\b/i,
       severity: "blocking",
       kind: "parser_unsupported",
       entityKey: "source:non-table-ddl",
-      message: "Only MySQL CREATE TABLE schema definitions are supported in this phase.",
+      message: isOracle
+        ? "Only the documented Oracle CREATE TABLE subset is supported in this phase."
+        : "Only MySQL CREATE TABLE schema definitions are supported in this phase.",
     },
     {
       pattern: /\bgenerated\s+always\b|\bas\s*\(/i,
@@ -129,6 +145,34 @@ export function collectDdlImportIssues(args: {
       kind: "workbook_inexpressible",
       entityKey: "source:partition",
       message: "Partitioning clauses are not supported by the current workbook export contract.",
+    },
+    {
+      pattern: /\btablespace\b|\bstorage\s*\(/i,
+      severity: "blocking",
+      kind: "parser_unsupported",
+      entityKey: "source:oracle-storage",
+      message: "Oracle tablespace and storage attributes are outside the documented first-cut subset.",
+    },
+    {
+      pattern: /\bvirtual\b/i,
+      severity: "blocking",
+      kind: "workbook_inexpressible",
+      entityKey: "source:oracle-virtual-column",
+      message: "Oracle virtual columns cannot be represented safely in the official workbook contract.",
+    },
+    {
+      pattern: /\bidentity\b/i,
+      severity: "confirm",
+      kind: "workbook_lossy",
+      entityKey: "source:oracle-identity",
+      message: "Oracle identity metadata may not round-trip faithfully through the workbook format.",
+    },
+    {
+      pattern: /\busing\s+index\b/i,
+      severity: "confirm",
+      kind: "workbook_lossy",
+      entityKey: "source:oracle-index-options",
+      message: "Advanced Oracle index options are reviewable but may not survive workbook export.",
     },
     {
       pattern: /\bfulltext\b|\bspatial\b/i,
@@ -162,7 +206,9 @@ export function collectDdlImportIssues(args: {
       severity: "blocking",
       kind: "parser_unsupported",
       entityKey: "source:no-create-table",
-      message: "No supported CREATE TABLE definitions were found in the provided SQL.",
+      message: isOracle
+        ? "No supported Oracle CREATE TABLE definitions were found in the provided SQL."
+        : "No supported CREATE TABLE definitions were found in the provided SQL.",
     });
   }
 

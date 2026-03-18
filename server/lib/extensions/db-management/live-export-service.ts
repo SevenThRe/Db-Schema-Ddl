@@ -198,7 +198,11 @@ function toDefaultValue(value: string | null | undefined): DdlImportDefaultValue
   return { type: "expression", value: trimmed };
 }
 
-function toDdlImportColumn(column: DbSchemaCatalog["tables"][number]["columns"][number], primaryKeyColumns: string[]): DdlImportColumn {
+function toDdlImportColumn(
+  tableName: string,
+  column: DbSchemaCatalog["tables"][number]["columns"][number],
+  primaryKeyColumns: string[],
+): DdlImportColumn {
   const numericSize =
     column.numericPrecision != null
       ? column.numericScale != null
@@ -210,6 +214,7 @@ function toDdlImportColumn(column: DbSchemaCatalog["tables"][number]["columns"][
     : numericSize;
 
   return {
+    entityKey: `column:${tableName}.${column.name}`,
     name: column.name,
     dataType: column.dataType.toUpperCase(),
     dataTypeArgs,
@@ -225,16 +230,19 @@ function toDdlImportColumn(column: DbSchemaCatalog["tables"][number]["columns"][
 
 function toDdlImportCatalog(catalog: DbSchemaCatalog): DdlImportCatalog {
   return {
+    sourceMode: "mysql-file",
     dialect: "mysql",
     databaseName: catalog.databaseName,
     tables: catalog.tables.map((table) => {
       const primaryKeyColumns = table.primaryKey?.columns ?? [];
       return {
+        entityKey: `table:${table.name}`,
         name: table.name,
         comment: table.comment,
         engine: table.engine,
-        columns: table.columns.map((column) => toDdlImportColumn(column, primaryKeyColumns)),
+        columns: table.columns.map((column) => toDdlImportColumn(table.name, column, primaryKeyColumns)),
         indexes: table.indexes.map((index) => ({
+          entityKey: `index:${table.name}.${index.name}`,
           name: index.name,
           unique: index.unique,
           primary: index.primary,
@@ -248,6 +256,7 @@ function toDdlImportCatalog(catalog: DbSchemaCatalog): DdlImportCatalog {
           })),
         })),
         foreignKeys: table.foreignKeys.map((foreignKey) => ({
+          entityKey: `fk:${table.name}.${foreignKey.name}`,
           name: foreignKey.name,
           referencedTableName: foreignKey.referencedTableName,
           referencedTableSchema: foreignKey.referencedTableSchema,

@@ -15,33 +15,37 @@ async function read(relativePath: string): Promise<string> {
 
 test("DDL import preview contracts support pasted SQL and uploaded file source modes", () => {
   const pasted = ddlImportPreviewRequestSchema.parse({
-    sourceMode: "paste",
+    sourceMode: "mysql-paste",
     sqlText: "CREATE TABLE users (id BIGINT PRIMARY KEY);",
   });
 
   const uploaded = ddlImportPreviewRequestSchema.parse({
-    sourceMode: "upload",
+    sourceMode: "mysql-file",
     fileName: "schema.sql",
     sqlText: "CREATE TABLE orgs (id BIGINT PRIMARY KEY);",
   });
 
-  assert.equal(pasted.sourceMode, "paste");
-  assert.equal(uploaded.sourceMode, "upload");
+  assert.equal(pasted.sourceMode, "mysql-paste");
+  assert.equal(uploaded.sourceMode, "mysql-file");
   assert.equal(uploaded.fileName, "schema.sql");
 });
 
 test("DDL import preview response distinguishes blocking and confirmable lossy issues", () => {
   const preview = ddlImportPreviewResponseSchema.parse({
-    sourceMode: "paste",
+    sourceMode: "mysql-paste",
+    dialect: "mysql",
     sourceSql: "CREATE TABLE users (id BIGINT PRIMARY KEY);",
     catalog: {
+      sourceMode: "mysql-paste",
       dialect: "mysql",
       databaseName: "ddl_import",
       tables: [
         {
+          entityKey: "table:users",
           name: "users",
           columns: [
             {
+              entityKey: "column:users.id",
               name: "id",
               dataType: "BIGINT",
               columnType: "BIGINT",
@@ -114,7 +118,10 @@ test("MySQL DDL preview parser normalizes supported CREATE TABLE structures", ()
     ) COMMENT='users table';
   `);
 
-  const catalog = normalizeImportedDdl(raw);
+  const catalog = normalizeImportedDdl(raw, {
+    sourceMode: "mysql-paste",
+    dialect: "mysql",
+  });
 
   assert.equal(catalog.tables.length, 1);
   assert.equal(catalog.tables[0]?.name, "users");
@@ -135,9 +142,14 @@ test("issue classification surfaces blocking parser gaps and confirmable workboo
       CONSTRAINT fk_users_org FOREIGN KEY (org_id) REFERENCES orgs(id)
     );
   `);
-  const catalog = normalizeImportedDdl(raw);
+  const catalog = normalizeImportedDdl(raw, {
+    sourceMode: "mysql-paste",
+    dialect: "mysql",
+  });
   const result = collectDdlImportIssues({
     sqlText: "CREATE TABLE users (...); CREATE VIEW user_view AS SELECT 1;",
+    sourceMode: "mysql-paste",
+    dialect: "mysql",
     catalog,
   });
 

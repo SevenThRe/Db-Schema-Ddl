@@ -4,14 +4,17 @@ import {
   ArrowLeft,
   CheckCircle2,
   Database,
+  Files,
   FileCode2,
   FileSpreadsheet,
   RefreshCw,
   Upload,
 } from "lucide-react";
 import type {
+  DdlImportDialect,
   DdlImportIssue,
   DdlImportPreviewResponse,
+  DdlImportSourceMode,
   WorkbookTemplateVariantId,
 } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -32,16 +35,60 @@ interface DdlImportWorkspaceProps {
   onActivateFile?: (fileId: number) => void;
 }
 
-type SourceMode = "paste" | "upload";
-
 const ISSUE_STYLES: Record<DdlImportIssue["severity"], string> = {
   blocking: "border-red-500/40 bg-red-500/10 text-red-100",
   confirm: "border-amber-500/40 bg-amber-500/10 text-amber-100",
   info: "border-sky-500/40 bg-sky-500/10 text-sky-100",
 };
 
+const SOURCE_OPTIONS: Array<{
+  mode: DdlImportSourceMode;
+  label: string;
+  description: string;
+  dialect: DdlImportDialect;
+  upload: boolean;
+  bundle?: boolean;
+}> = [
+  {
+    mode: "mysql-paste",
+    label: "粘贴 SQL",
+    description: "主入口，适合直接粘贴 MySQL CREATE TABLE DDL。",
+    dialect: "mysql",
+    upload: false,
+  },
+  {
+    mode: "mysql-file",
+    label: "上传 SQL 文件",
+    description: "读取单个 MySQL .sql / .ddl 文件。",
+    dialect: "mysql",
+    upload: true,
+  },
+  {
+    mode: "mysql-bundle",
+    label: "上传 SQL bundle",
+    description: "结构导向的多语句 bundle，不是任意 SQL 执行器。",
+    dialect: "mysql",
+    upload: true,
+    bundle: true,
+  },
+  {
+    mode: "oracle-paste",
+    label: "Oracle subset 粘贴",
+    description: "只支持 documented first-cut subset，不追 full parity。",
+    dialect: "oracle",
+    upload: false,
+  },
+  {
+    mode: "oracle-file",
+    label: "Oracle subset 文件",
+    description: "上传 Oracle subset DDL 文件，继续走同一条审阅/导出链路。",
+    dialect: "oracle",
+    upload: true,
+  },
+];
+
 function buildPreviewRequest(args: {
-  sourceMode: SourceMode;
+  sourceMode: DdlImportSourceMode;
   sqlText: string;
   fileName?: string;
 }) {
@@ -62,7 +109,7 @@ export function DdlImportWorkspace({
   const previewMutation = usePreviewDdlImport();
   const exportMutation = useExportWorkbookFromDdl();
 
-  const [sourceMode, setSourceMode] = useState<SourceMode>("paste");
+  const [sourceMode, setSourceMode] = useState<DdlImportSourceMode>("mysql-paste");
   const [sqlText, setSqlText] = useState("");
   const [sourceFileName, setSourceFileName] = useState<string | undefined>(undefined);
   const [previewResult, setPreviewResult] = useState<DdlImportPreviewResponse | null>(null);
@@ -76,6 +123,7 @@ export function DdlImportWorkspace({
   );
 
   const selectableTables = previewResult?.catalog.tables ?? [];
+  const sourceConfig = SOURCE_OPTIONS.find((option) => option.mode === sourceMode) ?? SOURCE_OPTIONS[0]!;
   const summary = previewResult?.issueSummary ?? {
     blockingCount: 0,
     confirmCount: 0,
@@ -83,6 +131,16 @@ export function DdlImportWorkspace({
   };
   const hasBlockingIssues = summary.blockingCount > 0;
   const needsLossyConfirmation = summary.confirmCount > 0;
+
+  const sourcePlaceholder = useMemo(() => {
+    if (sourceMode === "oracle-paste") {
+      return `CREATE TABLE users (\n  id NUMBER(19) NOT NULL,\n  name VARCHAR2(255) NOT NULL,\n  CONSTRAINT pk_users PRIMARY KEY (id)\n);\nCOMMENT ON TABLE users IS 'user master';`;
+    }
+    if (sourceMode === "mysql-bundle") {
+      return `CREATE TABLE orgs (\n  id BIGINT NOT NULL,\n  PRIMARY KEY (id)\n);\n\nCREATE TABLE users (\n  id BIGINT NOT NULL AUTO_INCREMENT,\n  org_id BIGINT,\n  name VARCHAR(255) NOT NULL,\n  PRIMARY KEY (id),\n  KEY idx_users_org (org_id),\n  CONSTRAINT fk_users_org FOREIGN KEY (org_id) REFERENCES orgs(id)\n);`;
+    }
+    return `CREATE TABLE users (\n  id BIGINT NOT NULL AUTO_INCREMENT,\n  name VARCHAR(255) NOT NULL,\n  PRIMARY KEY (id)\n);`;
+  }, [sourceMode]);
 
   useEffect(() => {
     if (!previewResult) {
@@ -107,7 +165,6 @@ export function DdlImportWorkspace({
 
     try {
       const text = await file.text();
-      setSourceMode("upload");
       setSourceFileName(file.name);
       setSqlText(text);
       setPreviewResult(null);
@@ -123,12 +180,21 @@ export function DdlImportWorkspace({
     }
   };
 
+  const handleOpenUploadPicker = (nextMode?: DdlImportSourceMode) => {
+    if (nextMode) {
+      setSourceMode(nextMode);
+    } else if (!sourceConfig.upload) {
+      setSourceMode("mysql-file");
+    }
+    fileInputRef.current?.click();
+  };
+
   const handlePreview = async () => {
     const trimmedSql = sqlText.trim();
     if (!trimmedSql) {
       toast({
         title: "DDL Import",
-        description: "请先粘贴 MySQL DDL，或者上传一个 .sql / .ddl 文件。",
+        description: "请先提供 SQL 内容，再根据当前来源模式预览导入。",
         variant: "destructive",
       });
       return;
@@ -139,13 +205,13 @@ export function DdlImportWorkspace({
         buildPreviewRequest({
           sourceMode,
           sqlText: trimmedSql,
-          fileName: sourceMode === "upload" ? sourceFileName : undefined,
+          fileName: sourceConfig.upload ? sourceFileName : undefined,
         }),
       );
       setPreviewResult(result);
       toast({
         title: "DDL Import",
-        description: `已解析 ${result.catalog.tables.length} 张表，右侧可以审阅风险并导出 XLSX。`,
+        description: `已按 ${result.dialect.toUpperCase()} ${result.sourceMode} 解析 ${result.catalog.tables.length} 张表。`,
       });
     } catch (error) {
       toast({
@@ -250,7 +316,7 @@ export function DdlImportWorkspace({
             </div>
             <h2 className="mt-2 text-base font-semibold">DDL Import to XLSX</h2>
             <p className="text-xs text-muted-foreground">
-              左侧输入 MySQL DDL，中间审阅 canonical 结构，右侧确认有损/阻断项后导出官方模板。
+              把 MySQL DDL、SQL bundle 或 Oracle subset 导入到同一条 canonical 审阅与官方模板导出工作流。
             </p>
           </div>
 
@@ -259,7 +325,7 @@ export function DdlImportWorkspace({
               variant="outline"
               size="sm"
               className="h-8"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => handleOpenUploadPicker()}
             >
               <Upload className="mr-1.5 h-3.5 w-3.5" />
               上传 .sql / .ddl
@@ -290,27 +356,39 @@ export function DdlImportWorkspace({
           <div className="border-b border-border/60 px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">Source SQL</h3>
-                <p className="text-xs text-muted-foreground">粘贴是主入口，上传文件是辅助入口。</p>
+                <h3 className="text-sm font-semibold">导入来源</h3>
+                <p className="text-xs text-muted-foreground">同一工作区支持粘贴 SQL、上传 SQL 文件和结构导向 SQL bundle。</p>
               </div>
-              <div className="flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 p-1">
-                <Button
-                  variant={sourceMode === "paste" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 text-[11px]"
-                  onClick={() => setSourceMode("paste")}
+              <Badge variant="outline" className="text-[10px] uppercase">
+                {sourceConfig.dialect}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {SOURCE_OPTIONS.map((option) => (
+                <button
+                  key={option.mode}
+                  type="button"
+                  className={`rounded-xl border px-3 py-2 text-left transition ${
+                    sourceMode === option.mode
+                      ? "border-primary/60 bg-primary/10"
+                      : "border-border/70 bg-muted/10 hover:bg-muted/20"
+                  }`}
+                  onClick={() => {
+                    setSourceMode(option.mode);
+                    setPreviewResult(null);
+                    setSelectedTableNames(new Set());
+                    if (!option.upload) {
+                      setSourceFileName(undefined);
+                    }
+                  }}
                 >
-                  粘贴
-                </Button>
-                <Button
-                  variant={sourceMode === "upload" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 text-[11px]"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  上传
-                </Button>
-              </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{option.label}</span>
+                    {option.bundle ? <Files className="h-3.5 w-3.5 text-muted-foreground" /> : null}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{option.description}</p>
+                </button>
+              ))}
             </div>
             {sourceFileName ? (
               <div className="mt-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
@@ -324,11 +402,11 @@ export function DdlImportWorkspace({
               value={sqlText}
               onChange={(event) => {
                 setSqlText(event.target.value);
-                if (sourceMode === "paste") {
+                if (!sourceConfig.upload) {
                   setSourceFileName(undefined);
                 }
               }}
-              placeholder={`CREATE TABLE users (\n  id BIGINT NOT NULL AUTO_INCREMENT,\n  name VARCHAR(255) NOT NULL,\n  PRIMARY KEY (id)\n);`}
+              placeholder={sourcePlaceholder}
               className="h-full min-h-[360px] resize-none font-mono text-xs leading-6"
             />
           </div>
@@ -338,12 +416,12 @@ export function DdlImportWorkspace({
           <div className="border-b border-border/60 px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">Canonical Review</h3>
+                <h3 className="text-sm font-semibold">结构审阅</h3>
                 <p className="text-xs text-muted-foreground">默认全选所有解析出的表，导出前可以缩小范围。</p>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Database className="h-3.5 w-3.5" />
-                {previewResult ? `${previewResult.catalog.tables.length} tables` : "等待预览"}
+                {previewResult ? `${previewResult.catalog.tables.length} tables / ${previewResult.dialect}` : "等待预览"}
               </div>
             </div>
           </div>
@@ -396,9 +474,9 @@ export function DdlImportWorkspace({
                             </Badge>
                           ) : null}
                           {table.indexes.length > 0 ? (
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                              IDX {table.indexes.length}
-                            </Badge>
+                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                            IDX {table.indexes.length}
+                          </Badge>
                           ) : null}
                         </div>
                         {table.comment ? (
@@ -442,8 +520,8 @@ export function DdlImportWorkspace({
           <div className="border-b border-slate-800/80 px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">Warnings + Export</h3>
-                <p className="text-xs text-slate-400">阻断项会直接拦截导出，有损项需要明确确认。</p>
+                <h3 className="text-sm font-semibold">问题与导出</h3>
+                <p className="text-xs text-slate-400">不受支持项会直接拦截导出，有损项需要明确确认。</p>
               </div>
               <FileSpreadsheet className="h-4 w-4 text-slate-400" />
             </div>
@@ -499,6 +577,16 @@ export function DdlImportWorkspace({
                     当前没有检测到阻断项或有损项，可以直接导出官方模板。
                   </div>
                 )}
+                {previewResult?.dialect === "oracle" ? (
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-xs text-slate-300">
+                    Oracle support is subset-based. 高级 identity、tablespace/storage、virtual column、partition 等结构会显式标记为不受支持或有损项。
+                  </div>
+                ) : null}
+                {previewResult?.sourceMode === "mysql-bundle" ? (
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-xs text-slate-300">
+                    SQL bundle 只用于结构导向 reverse import，不会把任意 SQL 当作可执行迁移脚本处理。
+                  </div>
+                ) : null}
               </div>
             </ScrollArea>
 
@@ -507,9 +595,9 @@ export function DdlImportWorkspace({
                 <div>
                   <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-400">Template</div>
                   <Select
-                    value={selectedTemplateId}
-                    onValueChange={(value) => setSelectedTemplateId(value as WorkbookTemplateVariantId)}
-                  >
+                  value={selectedTemplateId}
+                  onValueChange={(value) => setSelectedTemplateId(value as WorkbookTemplateVariantId)}
+                >
                     <SelectTrigger className="border-slate-700 bg-slate-900 text-slate-100">
                       <SelectValue placeholder="选择官方模板" />
                     </SelectTrigger>

@@ -35,7 +35,7 @@ function createStorageStub() {
 
 test("DDL export contracts remain MySQL-first and require explicit selected tables", () => {
   const request = ddlImportExportRequestSchema.parse({
-    sourceMode: "paste",
+    sourceMode: "mysql-paste",
     sqlText: "CREATE TABLE users (id BIGINT PRIMARY KEY);",
     templateId: "format-b-multi-table-sheet",
     selectedTableNames: ["users"],
@@ -74,6 +74,8 @@ test("DDL export response carries parser-backed workbook validation and remember
       checkedSheetName: "テーブル定義",
       reasons: [],
     },
+    sourceMode: "mysql-paste",
+    dialect: "mysql",
     selectedTableNames: ["users"],
     issueSummary: {
       blockingCount: 0,
@@ -95,14 +97,17 @@ test("reviewed DDL can export a selected subset into official workbook templates
   const exported = await exportWorkbookFromDdlCatalog(
     {
       catalog: {
+        sourceMode: "mysql-paste",
         dialect: "mysql",
         databaseName: "ddl_import",
         tables: [
           {
+            entityKey: "table:users",
             name: "users",
             comment: "user master",
             columns: [
               {
+                entityKey: "column:users.id",
                 name: "id",
                 dataType: "BIGINT",
                 columnType: "BIGINT",
@@ -111,6 +116,7 @@ test("reviewed DDL can export a selected subset into official workbook templates
                 autoIncrement: true,
               },
               {
+                entityKey: "column:users.name",
                 name: "name",
                 dataType: "VARCHAR",
                 dataTypeArgs: "255",
@@ -122,9 +128,11 @@ test("reviewed DDL can export a selected subset into official workbook templates
             foreignKeys: [],
           },
           {
+            entityKey: "table:audit_logs",
             name: "audit_logs",
             columns: [
               {
+                entityKey: "column:audit_logs.id",
                 name: "id",
                 dataType: "BIGINT",
                 columnType: "BIGINT",

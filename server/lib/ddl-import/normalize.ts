@@ -1,8 +1,10 @@
 import type {
   DdlImportCatalog,
   DdlImportColumn,
+  DdlImportDialect,
   DdlImportForeignKey,
   DdlImportIndex,
+  DdlImportSourceMode,
   DdlImportTable,
 } from "@shared/schema";
 import type { RawDdlImportDatabase } from "./parser-adapter";
@@ -20,10 +22,30 @@ function parseColumnType(typeName: string): { dataType: string; dataTypeArgs?: s
   };
 }
 
-function normalizeColumn(raw: RawDdlImportDatabase["tables"][number]["fields"][number]): DdlImportColumn {
+function tableEntityKey(tableName: string): string {
+  return `table:${tableName}`;
+}
+
+function columnEntityKey(tableName: string, columnName: string): string {
+  return `column:${tableName}.${columnName}`;
+}
+
+function indexEntityKey(tableName: string, indexName: string): string {
+  return `index:${tableName}.${indexName}`;
+}
+
+function foreignKeyEntityKey(tableName: string, fkName: string): string {
+  return `fk:${tableName}.${fkName}`;
+}
+
+function normalizeColumn(
+  tableName: string,
+  raw: RawDdlImportDatabase["tables"][number]["fields"][number],
+): DdlImportColumn {
   const { dataType, dataTypeArgs } = parseColumnType(raw.type.type_name);
 
   return {
+    entityKey: columnEntityKey(tableName, raw.name),
     name: raw.name,
     dataType,
     dataTypeArgs,
@@ -47,9 +69,14 @@ function normalizeColumn(raw: RawDdlImportDatabase["tables"][number]["fields"][n
   };
 }
 
-function normalizeIndex(raw: RawDdlImportDatabase["tables"][number]["indexes"][number]): DdlImportIndex {
+function normalizeIndex(
+  tableName: string,
+  raw: RawDdlImportDatabase["tables"][number]["indexes"][number],
+): DdlImportIndex {
+  const name = raw.name ?? "unnamed_index";
   return {
-    name: raw.name ?? "unnamed_index",
+    entityKey: indexEntityKey(tableName, name),
+    name,
     unique: Boolean(raw.unique),
     primary: Boolean(raw.pk),
     indexType: raw.type ?? undefined,
@@ -65,28 +92,30 @@ function normalizeForeignKeys(
   refs: RawDdlImportDatabase["refs"],
 ): DdlImportForeignKey[] {
   return refs.reduce<DdlImportForeignKey[]>((acc, ref) => {
-      const referencing = ref.endpoints.find((endpoint) => endpoint.tableName === tableName && endpoint.relation === "*")
-        ?? ref.endpoints.find((endpoint) => endpoint.tableName === tableName);
-      const referenced = ref.endpoints.find((endpoint) => endpoint !== referencing);
+    const referencing = ref.endpoints.find((endpoint) => endpoint.tableName === tableName && endpoint.relation === "*")
+      ?? ref.endpoints.find((endpoint) => endpoint.tableName === tableName);
+    const referenced = ref.endpoints.find((endpoint) => endpoint !== referencing);
 
-      if (!referencing || !referenced) {
-        return acc;
-      }
-
-      acc.push({
-        name: ref.name ?? `${tableName}_${referencing.fieldNames.join("_")}_fk`,
-        referencedTableName: referenced.tableName,
-        referencedTableSchema: referenced.schemaName ?? undefined,
-        onDelete: ref.onDelete ?? undefined,
-        onUpdate: ref.onUpdate ?? undefined,
-        columns: referencing.fieldNames.map((columnName, index) => ({
-          columnName,
-            referencedColumnName: referenced.fieldNames[index] ?? referenced.fieldNames[0] ?? columnName,
-          })),
-      });
-
+    if (!referencing || !referenced) {
       return acc;
-    }, []);
+    }
+
+    const name = ref.name ?? `${tableName}_${referencing.fieldNames.join("_")}_fk`;
+    acc.push({
+      entityKey: foreignKeyEntityKey(tableName, name),
+      name,
+      referencedTableName: referenced.tableName,
+      referencedTableSchema: referenced.schemaName ?? undefined,
+      onDelete: ref.onDelete ?? undefined,
+      onUpdate: ref.onUpdate ?? undefined,
+      columns: referencing.fieldNames.map((columnName, index) => ({
+        columnName,
+        referencedColumnName: referenced.fieldNames[index] ?? referenced.fieldNames[0] ?? columnName,
+      })),
+    });
+
+    return acc;
+  }, []);
 }
 
 function normalizeTable(
@@ -94,17 +123,25 @@ function normalizeTable(
   refs: RawDdlImportDatabase["refs"],
 ): DdlImportTable {
   return {
+    entityKey: tableEntityKey(raw.name),
     name: raw.name,
     comment: raw.note?.value,
-    columns: raw.fields.map(normalizeColumn),
-    indexes: raw.indexes.map(normalizeIndex),
+    columns: raw.fields.map((column) => normalizeColumn(raw.name, column)),
+    indexes: raw.indexes.map((index) => normalizeIndex(raw.name, index)),
     foreignKeys: normalizeForeignKeys(raw.name, refs),
   };
 }
 
-export function normalizeImportedDdl(raw: RawDdlImportDatabase): DdlImportCatalog {
+export function normalizeImportedDdl(
+  raw: RawDdlImportDatabase,
+  options: {
+    sourceMode: DdlImportSourceMode;
+    dialect: DdlImportDialect;
+  },
+): DdlImportCatalog {
   return {
-    dialect: "mysql",
+    sourceMode: options.sourceMode,
+    dialect: options.dialect,
     databaseName: "ddl_import",
     tables: raw.tables.map((table) => normalizeTable(table, raw.refs)),
   };

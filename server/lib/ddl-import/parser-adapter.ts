@@ -1,4 +1,5 @@
 import { Parser } from "@dbml/core";
+import type { DdlImportDialect, DdlImportSourceMode } from "@shared/schema";
 import { z } from "zod";
 
 const rawFieldSchema = z.object({
@@ -58,6 +59,12 @@ const rawDatabaseSchema = z.object({
 
 export type RawDdlImportDatabase = z.infer<typeof rawDatabaseSchema>;
 
+export interface ParsedDdlImportSource {
+  sourceMode: DdlImportSourceMode;
+  dialect: DdlImportDialect;
+  raw: RawDdlImportDatabase;
+}
+
 export class DdlImportParserError extends Error {
   constructor(
     message: string,
@@ -68,9 +75,13 @@ export class DdlImportParserError extends Error {
   }
 }
 
-export function parseMysqlDdlToRawDatabase(sqlText: string): RawDdlImportDatabase {
+function parseRawDatabase(
+  sqlText: string,
+  parser: () => unknown,
+  errorLabel: string,
+): RawDdlImportDatabase {
   try {
-    const parsed = Parser.parseMySQLToJSONv2(sqlText);
+    const parsed = parser();
     return rawDatabaseSchema.parse(parsed);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -78,6 +89,54 @@ export function parseMysqlDdlToRawDatabase(sqlText: string): RawDdlImportDatabas
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    throw new DdlImportParserError("Failed to parse MySQL DDL.", message);
+    throw new DdlImportParserError(`Failed to parse ${errorLabel}.`, message);
+  }
+}
+
+export function parseMysqlDdlToRawDatabase(sqlText: string): RawDdlImportDatabase {
+  return parseRawDatabase(sqlText, () => Parser.parseMySQLToJSONv2(sqlText), "MySQL DDL");
+}
+
+export function parseMysqlBundleToRawDatabase(sqlText: string): RawDdlImportDatabase {
+  return parseRawDatabase(sqlText, () => Parser.parseMySQLToJSONv2(sqlText), "MySQL SQL bundle");
+}
+
+export function parseOracleDdlToRawDatabase(sqlText: string): RawDdlImportDatabase {
+  return parseRawDatabase(sqlText, () => Parser.parseOracleToJSON(sqlText), "Oracle DDL subset");
+}
+
+export function resolveDdlImportDialect(sourceMode: DdlImportSourceMode): DdlImportDialect {
+  return sourceMode.startsWith("oracle-") ? "oracle" : "mysql";
+}
+
+export function parseDdlImportSource(
+  sourceMode: DdlImportSourceMode,
+  sqlText: string,
+): ParsedDdlImportSource {
+  switch (sourceMode) {
+    case "mysql-paste":
+    case "mysql-file":
+      return {
+        sourceMode,
+        dialect: "mysql",
+        raw: parseMysqlDdlToRawDatabase(sqlText),
+      };
+    case "mysql-bundle":
+      return {
+        sourceMode,
+        dialect: "mysql",
+        raw: parseMysqlBundleToRawDatabase(sqlText),
+      };
+    case "oracle-paste":
+    case "oracle-file":
+      return {
+        sourceMode,
+        dialect: "oracle",
+        raw: parseOracleDdlToRawDatabase(sqlText),
+      };
+    default: {
+      const neverMode: never = sourceMode;
+      throw new DdlImportParserError(`Unsupported DDL import source mode: ${neverMode}`);
+    }
   }
 }

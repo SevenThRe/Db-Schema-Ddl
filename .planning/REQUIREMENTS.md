@@ -19,10 +19,10 @@
 
 ### Reverse Import Expansion
 
-- [ ] **REV-01**: User can import multi-statement SQL files/bundles rather than only pasted single-statement text
-- [ ] **REV-02**: User can import a documented supported subset of Oracle DDL and review unsupported/lossy constructs explicitly before export
-- [ ] **REV-03**: Reverse-imported Oracle or SQL-bundle content still converges on the same canonical review and workbook-export flow
-- [ ] **REV-04**: Unsupported or lossy constructs remain explicit and reviewable across all new reverse-import entry modes
+- [x] **REV-01**: User can import multi-statement SQL files/bundles rather than only pasted single-statement text
+- [x] **REV-02**: User can import a documented supported subset of Oracle DDL and review unsupported/lossy constructs explicitly before export
+- [x] **REV-03**: Reverse-imported Oracle or SQL-bundle content still converges on the same canonical review and workbook-export flow
+- [x] **REV-04**: Unsupported or lossy constructs remain explicit and reviewable across all new reverse-import entry modes
 
 ## Deferred / Future
 
@@ -49,10 +49,10 @@
 | DBXLSX-01 | Phase 2 | Complete |
 | DBXLSX-02 | Phase 2 | Complete |
 | DBXLSX-03 | Phase 2 | Complete |
-| REV-01 | Phase 3 | Pending |
-| REV-02 | Phase 3 | Pending |
-| REV-03 | Phase 3 | Pending |
-| REV-04 | Phase 3 | Pending |
+| REV-01 | Phase 3 | Complete |
+| REV-02 | Phase 3 | Complete |
+| REV-03 | Phase 3 | Complete |
+| REV-04 | Phase 3 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 10 total
@@ -61,4 +61,4 @@
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after completing v1.2 Phase 2*
+*Last updated: 2026-03-18 after completing v1.2 Phase 3*

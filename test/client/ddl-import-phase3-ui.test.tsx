@@ -24,9 +24,9 @@ test("Phase 3 workspace ships as a dedicated three-column DDL import flow", asyn
   const generator = await read("client/src/components/DdlGenerator.tsx");
 
   assert.match(workspace, /DDL Import to XLSX/);
-  assert.match(workspace, /Source SQL/);
-  assert.match(workspace, /Canonical Review/);
-  assert.match(workspace, /Warnings \+ Export/);
+  assert.match(workspace, /导入来源/);
+  assert.match(workspace, /结构审阅/);
+  assert.match(workspace, /问题与导出/);
   assert.match(workspace, /usePreviewDdlImport/);
   assert.match(workspace, /useExportWorkbookFromDdl/);
   assert.match(workspace, /button-export-ddl-workbook/);

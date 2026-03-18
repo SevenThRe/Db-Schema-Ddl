@@ -1510,7 +1510,14 @@ export const exportZipByReferenceRequestSchema = generateDdlByReferenceRequestSc
   includeErrorReport: z.boolean().default(true),
 });
 
-export const ddlImportSourceModeSchema = z.enum(["paste", "upload"]);
+export const ddlImportDialectSchema = z.enum(["mysql", "oracle"]);
+export const ddlImportSourceModeSchema = z.enum([
+  "mysql-paste",
+  "mysql-file",
+  "mysql-bundle",
+  "oracle-paste",
+  "oracle-file",
+]);
 export const ddlImportIssueSeveritySchema = z.enum(["blocking", "confirm", "info"]);
 export const ddlImportIssueKindSchema = z.enum([
   "parser_error",
@@ -1526,6 +1533,7 @@ export const ddlImportDefaultValueSchema = z.object({
 });
 
 export const ddlImportColumnSchema = z.object({
+  entityKey: z.string().min(1),
   name: z.string().min(1),
   dataType: z.string().min(1),
   dataTypeArgs: z.string().optional(),
@@ -1545,6 +1553,7 @@ export const ddlImportIndexColumnSchema = z.object({
 });
 
 export const ddlImportIndexSchema = z.object({
+  entityKey: z.string().min(1),
   name: z.string().min(1),
   unique: z.boolean().default(false),
   primary: z.boolean().default(false),
@@ -1559,6 +1568,7 @@ export const ddlImportForeignKeyColumnSchema = z.object({
 });
 
 export const ddlImportForeignKeySchema = z.object({
+  entityKey: z.string().min(1),
   name: z.string().min(1),
   referencedTableName: z.string().min(1),
   referencedTableSchema: z.string().optional(),
@@ -1568,6 +1578,7 @@ export const ddlImportForeignKeySchema = z.object({
 });
 
 export const ddlImportTableSchema = z.object({
+  entityKey: z.string().min(1),
   name: z.string().min(1),
   comment: z.string().optional(),
   engine: z.string().optional(),
@@ -1577,7 +1588,8 @@ export const ddlImportTableSchema = z.object({
 });
 
 export const ddlImportCatalogSchema = z.object({
-  dialect: z.literal("mysql"),
+  sourceMode: ddlImportSourceModeSchema,
+  dialect: ddlImportDialectSchema,
   databaseName: z.string().min(1).default("ddl_import"),
   tables: z.array(ddlImportTableSchema).default([]),
 });
@@ -1601,7 +1613,7 @@ export const ddlImportIssueSummarySchema = z.object({
 
 export const ddlImportPreviewRequestSchema = z
   .object({
-    sourceMode: ddlImportSourceModeSchema.default("paste"),
+    sourceMode: ddlImportSourceModeSchema.default("mysql-paste"),
     sqlText: z.string().min(1),
     fileName: z.string().min(1).max(255).optional(),
   })
@@ -1617,6 +1629,7 @@ export const ddlImportPreviewRequestSchema = z
 
 export const ddlImportPreviewResponseSchema = z.object({
   sourceMode: ddlImportSourceModeSchema,
+  dialect: ddlImportDialectSchema,
   fileName: z.string().optional(),
   sourceSql: z.string().min(1),
   catalog: ddlImportCatalogSchema,
@@ -1628,7 +1641,7 @@ export const ddlImportPreviewResponseSchema = z.object({
 
 export const ddlImportExportRequestSchema = z
   .object({
-    sourceMode: ddlImportSourceModeSchema.default("paste"),
+    sourceMode: ddlImportSourceModeSchema.default("mysql-paste"),
     sqlText: z.string().min(1),
     fileName: z.string().min(1).max(255).optional(),
     templateId: workbookTemplateVariantIdSchema,
@@ -1650,6 +1663,8 @@ export const ddlImportExportResponseSchema = z.object({
   file: uploadedFileRecordSchema,
   template: workbookTemplateVariantSchema,
   validation: workbookTemplateValidationSchema,
+  sourceMode: ddlImportSourceModeSchema,
+  dialect: ddlImportDialectSchema,
   selectedTableNames: z.array(z.string().min(1)).default([]),
   issueSummary: ddlImportIssueSummarySchema,
   rememberedTemplateId: workbookTemplateVariantIdSchema.optional(),
@@ -1867,6 +1882,8 @@ export type DdlImportPreviewRequest = z.infer<typeof ddlImportPreviewRequestSche
 export type DdlImportPreviewResponse = z.infer<typeof ddlImportPreviewResponseSchema>;
 export type DdlImportExportRequest = z.infer<typeof ddlImportExportRequestSchema>;
 export type DdlImportExportResponse = z.infer<typeof ddlImportExportResponseSchema>;
+export type DdlImportSourceMode = z.infer<typeof ddlImportSourceModeSchema>;
+export type DdlImportDialect = z.infer<typeof ddlImportDialectSchema>;
 export type DdlImportCatalog = z.infer<typeof ddlImportCatalogSchema>;
 export type DdlImportIssue = z.infer<typeof ddlImportIssueSchema>;
 export type DdlImportIssueSummary = z.infer<typeof ddlImportIssueSummarySchema>;

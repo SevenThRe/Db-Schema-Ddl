@@ -3,7 +3,13 @@ import archiver from "archiver";
 import { once } from "events";
 import { z } from "zod";
 import { api } from "@shared/routes";
-import type { DdlSettings, GenerateDdlByReferenceRequest, TableInfo } from "@shared/schema";
+import type {
+  DdlImportCatalog,
+  DdlImportSourceMode,
+  DdlSettings,
+  GenerateDdlByReferenceRequest,
+  TableInfo,
+} from "@shared/schema";
 import { API_ERROR_CODES, API_RESPONSE_MESSAGES, HTTP_STATUS } from "../constants/api-response";
 import { DDL_RUNTIME_DEFAULTS, DDL_STREAM_QUERY_TRUE_VALUES } from "../constants/ddl-runtime";
 import { HTTP_HEADER_NAMES, HTTP_HEADER_VALUES } from "../constants/http-headers";
@@ -12,7 +18,11 @@ import { collectDdlGenerationWarnings, generateDDL, streamDDL, substituteFilenam
 import { collectDdlImportIssues } from "../lib/ddl-import/issues";
 import { normalizeImportedDdl } from "../lib/ddl-import/normalize";
 import { exportWorkbookFromDdlCatalog, DdlWorkbookExportError } from "../lib/ddl-import/export-service";
-import { DdlImportParserError, parseMysqlDdlToRawDatabase } from "../lib/ddl-import/parser-adapter";
+import {
+  DdlImportParserError,
+  parseDdlImportSource,
+  resolveDdlImportDialect,
+} from "../lib/ddl-import/parser-adapter";
 import { DdlValidationError } from "../lib/ddl-validation";
 import { storage } from "../storage";
 
@@ -30,6 +40,39 @@ interface DdlRouteDeps {
     >,
   ) => Promise<ResolvedReferenceTables>;
   handleReferenceRequestError: (err: unknown, res: Response) => boolean;
+}
+
+function createEmptyDdlImportCatalog(request: { sourceMode: DdlImportSourceMode }): DdlImportCatalog {
+  const dialect = resolveDdlImportDialect(request.sourceMode);
+  return {
+    sourceMode: request.sourceMode,
+    dialect,
+    databaseName: "ddl_import",
+    tables: [],
+  };
+}
+
+function buildDdlImportArtifact(request: {
+  sourceMode: DdlImportSourceMode;
+  sqlText: string;
+}) {
+  const parsed = parseDdlImportSource(request.sourceMode, request.sqlText);
+  const catalog = normalizeImportedDdl(parsed.raw, {
+    sourceMode: parsed.sourceMode,
+    dialect: parsed.dialect,
+  });
+  const issueResult = collectDdlImportIssues({
+    sqlText: request.sqlText,
+    sourceMode: parsed.sourceMode,
+    dialect: parsed.dialect,
+    catalog,
+  });
+
+  return {
+    dialect: parsed.dialect,
+    catalog,
+    issueResult,
+  };
 }
 
 function formatZipTimestamp(date: Date = new Date()): string {
@@ -276,15 +319,14 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
       const sourceSql = request.sqlText.trim();
 
       try {
-        const raw = parseMysqlDdlToRawDatabase(sourceSql);
-        const catalog = normalizeImportedDdl(raw);
-        const issueResult = collectDdlImportIssues({
+        const { dialect, catalog, issueResult } = buildDdlImportArtifact({
+          sourceMode: request.sourceMode,
           sqlText: sourceSql,
-          catalog,
         });
 
         res.json({
           sourceMode: request.sourceMode,
+          dialect,
           fileName: request.fileName,
           sourceSql,
           catalog,
@@ -296,25 +338,21 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
         return;
       } catch (error) {
         if (error instanceof DdlImportParserError) {
+          const emptyCatalog = createEmptyDdlImportCatalog(request);
           const issueResult = collectDdlImportIssues({
             sqlText: sourceSql,
-            catalog: {
-              dialect: "mysql",
-              databaseName: "ddl_import",
-              tables: [],
-            },
+            sourceMode: request.sourceMode,
+            dialect: emptyCatalog.dialect,
+            catalog: emptyCatalog,
             parserError: error.detail ?? error.message,
           });
 
           res.json({
             sourceMode: request.sourceMode,
+            dialect: emptyCatalog.dialect,
             fileName: request.fileName,
             sourceSql,
-            catalog: {
-              dialect: "mysql",
-              databaseName: "ddl_import",
-              tables: [],
-            },
+            catalog: emptyCatalog,
             issues: issueResult.issues,
             issueSummary: issueResult.summary,
             selectableTableNames: [],
@@ -350,29 +388,29 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
 
       let catalog;
       let issueResult;
+      let dialect;
 
       try {
-        const raw = parseMysqlDdlToRawDatabase(sourceSql);
-        catalog = normalizeImportedDdl(raw);
-        issueResult = collectDdlImportIssues({
+        ({ dialect, catalog, issueResult } = buildDdlImportArtifact({
+          sourceMode: request.sourceMode,
           sqlText: sourceSql,
-          catalog,
-        });
+        }));
       } catch (error) {
         if (error instanceof DdlImportParserError) {
+          const emptyCatalog = createEmptyDdlImportCatalog(request);
           const parserIssues = collectDdlImportIssues({
             sqlText: sourceSql,
-            catalog: {
-              dialect: "mysql",
-              databaseName: "ddl_import",
-              tables: [],
-            },
+            sourceMode: request.sourceMode,
+            dialect: emptyCatalog.dialect,
+            catalog: emptyCatalog,
             parserError: error.detail ?? error.message,
           });
           return sendApiError(res, {
             status: HTTP_STATUS.BAD_REQUEST,
             code: API_ERROR_CODES.invalidRequest,
-            message: "Provided SQL could not be parsed as supported MySQL DDL.",
+            message: emptyCatalog.dialect === "oracle"
+              ? "Provided SQL could not be parsed as supported Oracle subset DDL."
+              : "Provided SQL could not be parsed as supported MySQL DDL.",
             issues: parserIssues.issues,
             params: parserIssues.summary,
           });
@@ -426,6 +464,8 @@ export function registerDdlRoutes(app: Express, deps: DdlRouteDeps): void {
 
       res.status(HTTP_STATUS.CREATED).json({
         ...exported,
+        sourceMode: request.sourceMode,
+        dialect,
         issueSummary: issueResult.summary,
         rememberedTemplateId: request.templateId,
       });

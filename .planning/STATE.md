@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: schema-provenance-and-reverse-expansion
 status: active
-last_updated: "2026-03-18T16:55:00+09:00"
+last_updated: "2026-03-18T19:30:00+09:00"
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 3
+  total_plans: 12
+  completed_plans: 12
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 **Core value:** Users can compare historical DB states, reverse live DB structure into trusted Excel workbooks, and broaden reverse import beyond the current MySQL-first single-DDL flow.
-**Current focus:** `v1.2` Phase 3 is the next planned phase
+**Current focus:** `v1.2` milestone is audited and ready for local commit or next-milestone planning
 
 ## Current Status
 
@@ -34,6 +34,12 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 - Phase 2 context is captured at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-CONTEXT.md`
 - Phase 2 UI contract is approved at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-UI-SPEC.md`
 - Phase 2 execution is complete and verified at `.planning/phases/02-live-db-to-xlsx-export-v1_2/02-VERIFICATION.md`
+- Phase 3 context is captured at `.planning/phases/03-reverse-import-expansion-v1_2/03-CONTEXT.md`
+- Phase 3 research is captured at `.planning/phases/03-reverse-import-expansion-v1_2/03-RESEARCH.md`
+- Phase 3 UI contract is captured at `.planning/phases/03-reverse-import-expansion-v1_2/03-UI-SPEC.md`
+- Phase 3 validation strategy is captured at `.planning/phases/03-reverse-import-expansion-v1_2/03-VALIDATION.md`
+- Phase 3 execution is complete and verified at `.planning/phases/03-reverse-import-expansion-v1_2/03-VERIFICATION.md`
+- `v1.2` is audited at `.planning/v1.2-v1.2-MILESTONE-AUDIT.md`
 
 ## Important Assumptions
 
@@ -44,7 +50,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-18)
 
 ## Next Command
 
-- Discuss / plan Phase 3: reverse import expansion
+- Create a local milestone commit or open the next milestone
 
 ---
-*Last updated: 2026-03-18 after completing v1.2 Phase 2*
+*Last updated: 2026-03-18 after auditing v1.2*
