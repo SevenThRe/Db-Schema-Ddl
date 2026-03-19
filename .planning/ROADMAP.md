@@ -13,7 +13,7 @@ This roadmap treats `v1.3` as a stabilization milestone. Instead of growing feat
 | # | Phase | Goal | Requirements | Success Criteria | Status |
 |---|-------|------|--------------|------------------|--------|
 | 1 | Electron Stability and Real-Env Smoke | Make startup, shutdown, diagnostics, release guards, and a real-environment smoke path reliable | STAB-01, STAB-02, STAB-03, STAB-04 | 4 | Complete |
-| 2 | Packaged Build Smoke | Prove `win-unpacked` and installer builds survive packaged startup, shutdown, migration, extension entry, and DB-management access with structured evidence | STAB-05, STAB-06 | 4 | In Progress |
+| 2 | Packaged Build Smoke | Prove `win-unpacked` and installer builds survive packaged startup, shutdown, migration, extension entry, and DB-management access with structured evidence | STAB-05, STAB-06 | 4 | Complete |
 
 ## Phase Details
 
@@ -58,6 +58,7 @@ Current execution status:
 - Plan `02-03` added the NSIS installer smoke helper, semi-manual artifact seam, and explicit packaged blocker policy.
 - Plan `02-04` captured fresh `win-unpacked` and `NSIS` artifacts, updated the phase-close validation contract, and documented the current `win-unpacked` false-negative blocker in the packaged smoke runner.
 - Plan `02-05` closed the timestamp-prefixed parser false-negative, added packaged sqlite and `DB 管理` smoke checkpoints, and regenerated trustworthy `win-unpacked` evidence.
+- Plan `02-06` closed the NSIS checkpoint by writing a fresh artifact pair that records the real `DB 管理` sqlite blocker, preserves `close=pass`, and marks the missing installer / first-launch screenshots as incomplete proof instead of installer success.
 
 ## Notes
 
@@ -69,4 +70,4 @@ Current execution status:
 - Real MySQL access is useful but should remain optional during packaged smoke unless a packaging-specific DB regression demands it
 
 ---
-*Last updated: 2026-03-19 after executing v1.3 / Phase 2 Plan 05*
+*Last updated: 2026-03-19 after executing v1.3 / Phase 2 Plan 06*
