@@ -120,3 +120,46 @@ test("validateGenerateDdlRequest accepts a valid request", () => {
     }),
   );
 });
+
+test("validateGenerateDdlRequest allows boolean size 1 for MySQL compatibility", () => {
+  assert.doesNotThrow(() =>
+    validateGenerateDdlRequest({
+      dialect: "mysql",
+      tables: [
+        {
+          logicalTableName: "ProcessResults",
+          physicalTableName: "process_results",
+          columns: [
+            { logicalName: "Unread", physicalName: "is_unread", dataType: "boolean", size: "1" },
+          ],
+        },
+      ],
+    }),
+  );
+});
+
+test("validateGenerateDdlRequest still rejects boolean sizes above 1", () => {
+  let captured: DdlValidationError | null = null;
+
+  try {
+    validateGenerateDdlRequest({
+      dialect: "mysql",
+      tables: [
+        {
+          logicalTableName: "ProcessResults",
+          physicalTableName: "process_results",
+          columns: [
+            { logicalName: "Unread", physicalName: "is_unread", dataType: "boolean", size: "2" },
+          ],
+        },
+      ],
+    });
+    assert.fail("expected DdlValidationError");
+  } catch (error) {
+    assert.ok(error instanceof DdlValidationError);
+    captured = error;
+  }
+
+  assert.ok(captured);
+  assert.equal(captured.issues[0]?.issueCode, "TYPE_MUST_NOT_INCLUDE_SIZE");
+});

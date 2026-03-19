@@ -18,6 +18,7 @@
     "build:electron": "npm run build && npm run rebuild:native:electron && npm run preflight:desktop && electron-builder -c.npmRebuild=false",
     "rebuild": "taskkill //F //IM DBSchemaExcel2DDL.exe 2>nul || true && npm run build:electron",
     "start:app": "cd dist-electron/win-unpacked && start \"\" \"DBSchemaExcel2DDL.exe\"",
+    "start:app:db-management-test": "powershell -ExecutionPolicy Bypass -File script/start-db-management-test.ps1",
     "start:electron": "npm run build && npm run rebuild:native:electron && npm run preflight:desktop && electron .",
     "release": "npm run build && npm run rebuild:native:electron && npm run preflight:desktop && electron-builder -c.npmRebuild=false --publish always",
     "start": "npm run rebuild:native:node && cross-env NODE_ENV=production node dist/index.cjs",

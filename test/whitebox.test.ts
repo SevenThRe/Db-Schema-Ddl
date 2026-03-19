@@ -1,6 +1,9 @@
 import "./server/ddl-validation.test.ts";
 import "./server/extensions-catalog.test.ts";
 import "./server/db-diff-phase4.test.ts";
+import "./server/db-connection-import.test.ts";
+import "./server/db-connection-service.test.ts";
+import "./server/db-init-phase2.test.ts";
 import "./server/mysql-introspection-normalizer.test.ts";
 import "./server/excel-executor.test.ts";
 import "./server/excel-executor-coverage.test.ts";

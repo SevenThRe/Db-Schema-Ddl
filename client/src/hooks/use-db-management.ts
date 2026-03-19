@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import type {
   DbConnectionSummary,
+  DbConnectionImportResponse,
   DbConnectionUpsertRequest,
   DbConnectionTestResponse,
   DbComparePolicy,
@@ -167,6 +168,26 @@ export function useCreateDbConnection() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CONNECTIONS_QUERY_KEY });
+    },
+  });
+}
+
+export function useParseDbConnectionImports() {
+  return useMutation({
+    mutationFn: async (input: { content: string; fileName?: string }) => {
+      const data = await fetchJson<DbConnectionImportResponse>(
+        api.dbManagement.importConnections.path,
+        {
+          code: "REQUEST_FAILED",
+          message: "Failed to parse DB connection imports",
+        },
+        {
+          method: api.dbManagement.importConnections.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      return api.dbManagement.importConnections.responses[200].parse(data);
     },
   });
 }

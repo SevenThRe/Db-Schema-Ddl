@@ -35,3 +35,14 @@ test("db management routes expose diff preview, rename confirmation, SQL preview
   assert.match(source, /previewDbSql/);
   assert.match(source, /previewDbDryRun/);
 });
+
+test("db diff service defaults file-vs-db compare to file scope and keeps rename rejection non-destructive", async () => {
+  const source = await read("server/lib/extensions/db-management/db-diff-service.ts");
+
+  assert.match(source, /coverageMode === "strict_database"/);
+  assert.match(source, /const treatDbOnlyAsRemoved = args\.treatDbOnlyAsRemoved \?\? true/);
+  assert.match(source, /if \(treatDbOnlyAsRemoved\) \{/);
+  assert.match(source, /context\?\.coverageMode === "strict_database"/);
+  assert.match(source, /if \(treatDbOnlyAsRemoved && tableChange\.dbTable\)/);
+  assert.match(source, /if \(treatDbOnlyAsRemoved && columnChange\.dbColumn\)/);
+});

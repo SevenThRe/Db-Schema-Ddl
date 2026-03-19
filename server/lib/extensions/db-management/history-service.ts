@@ -543,6 +543,7 @@ export async function compareLiveDatabases(input: DbVsDbCompareRequest): Promise
     sheetName: source.catalog.databaseName,
     tables: sourceTables,
     dbTables: targetTables,
+    treatDbOnlyAsRemoved: true,
   });
 
   const baseResult: DbVsDbCompareResponse = {

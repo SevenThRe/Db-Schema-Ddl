@@ -9,6 +9,12 @@ import type {
 } from "@shared/schema";
 import { storage } from "../../../storage";
 import { decryptDbPassword, encryptDbPassword } from "./credential-vault";
+import {
+  hasDbConnectionIdentityChanged,
+  isDatabaseEnumerationUnavailable,
+  normalizeDbConnectionEndpoint,
+  normalizeDbConnectionError,
+} from "./connection-service-helpers";
 
 function toConnectionSummary(connection: DbConnectionRecord): DbConnectionSummary {
   const { encryptedPassword, ...summary } = connection;
@@ -53,11 +59,16 @@ export async function withMySqlConnection<T>(
   databaseName: string | undefined,
   work: (client: mysql.Connection) => Promise<T>,
 ): Promise<T> {
-  const client = await openConnection(connection, databaseName);
+  let client: mysql.Connection | null = null;
   try {
+    client = await openConnection(connection, databaseName);
     return await work(client);
+  } catch (error) {
+    throw normalizeDbConnectionError(error, databaseName);
   } finally {
-    await client.end();
+    if (client) {
+      await client.end();
+    }
   }
 }
 
@@ -80,14 +91,15 @@ export async function createDbConnection(
     throw new Error("Password is required when creating a connection.");
   }
 
+  const normalizedEndpoint = normalizeDbConnectionEndpoint(input);
   const encryptedPassword =
     input.rememberPassword === false ? undefined : await encryptDbPassword(input.password);
 
   const created = await storage.createDbConnection({
     name: input.name.trim(),
     dialect: "mysql",
-    host: input.host.trim(),
-    port: input.port,
+    host: normalizedEndpoint.host,
+    port: normalizedEndpoint.port,
     username: input.username.trim(),
     encryptedPassword,
     passwordStorage: "electron-safe-storage",
@@ -107,6 +119,8 @@ export async function updateDbConnection(
   input: DbConnectionUpsertRequest,
 ): Promise<DbConnectionSummary> {
   const existing = await getDbConnectionRecordOrThrow(id);
+  const connectionIdentityChanged = hasDbConnectionIdentityChanged(existing, input);
+  const normalizedEndpoint = normalizeDbConnectionEndpoint(input);
 
   let encryptedPassword = existing.encryptedPassword;
   if (input.clearSavedPassword || input.rememberPassword === false) {
@@ -118,13 +132,17 @@ export async function updateDbConnection(
 
   const updated = await storage.updateDbConnection(id, {
     name: input.name.trim(),
-    host: input.host.trim(),
-    port: input.port,
+    host: normalizedEndpoint.host,
+    port: normalizedEndpoint.port,
     username: input.username.trim(),
     encryptedPassword,
     rememberPassword: input.rememberPassword,
     sslMode: input.sslMode,
     passwordStorage: "electron-safe-storage",
+    lastSelectedDatabase: connectionIdentityChanged ? undefined : existing.lastSelectedDatabase,
+    lastTestStatus: connectionIdentityChanged ? "unknown" : existing.lastTestStatus,
+    lastTestMessage: connectionIdentityChanged ? undefined : existing.lastTestMessage,
+    lastTestedAt: connectionIdentityChanged ? undefined : existing.lastTestedAt,
   });
 
   if (!updated) {
@@ -147,16 +165,28 @@ export async function testDbConnection(id: number): Promise<DbConnectionTestResp
       const [versionRows] = await client.query<Array<RowDataPacket & { version: string }>>(
         "SELECT VERSION() AS version",
       );
-      const [databaseRows] = await client.query<Array<RowDataPacket & { name: string }>>(
-        "SELECT SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME",
-      );
+      try {
+        const [databaseRows] = await client.query<Array<RowDataPacket & { name: string }>>(
+          "SELECT SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME",
+        );
 
-      return {
-        success: true,
-        message: "Connection test succeeded.",
-        serverVersion: versionRows[0]?.version,
-        databaseCount: databaseRows.length,
-      } satisfies DbConnectionTestResponse;
+        return {
+          success: true,
+          message: "连接测试成功。",
+          serverVersion: versionRows[0]?.version,
+          databaseCount: databaseRows.length,
+        } satisfies DbConnectionTestResponse;
+      } catch (error) {
+        if (!isDatabaseEnumerationUnavailable(error)) {
+          throw error;
+        }
+
+        return {
+          success: true,
+          message: "连接测试成功，但当前账号无法枚举 database，请手动输入要读取的 database 名称。",
+          serverVersion: versionRows[0]?.version,
+        } satisfies DbConnectionTestResponse;
+      }
     });
 
     await storage.updateDbConnection(id, {
@@ -167,7 +197,7 @@ export async function testDbConnection(id: number): Promise<DbConnectionTestResp
 
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Connection test failed.";
+    const message = normalizeDbConnectionError(error).message;
     await storage.updateDbConnection(id, {
       lastTestStatus: "failed",
       lastTestMessage: message,
@@ -184,16 +214,47 @@ export async function testDbConnection(id: number): Promise<DbConnectionTestResp
 export async function listDatabasesForConnection(id: number): Promise<DbDatabaseOption[]> {
   const connection = await getDbConnectionRecordOrThrow(id);
 
-  return withMySqlConnection(connection, undefined, async (client) => {
-    const [rows] = await client.query<Array<RowDataPacket & { name: string }>>(
-      "SELECT SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME",
-    );
+  let databases: DbDatabaseOption[];
+  try {
+    databases = await withMySqlConnection(connection, undefined, async (client) => {
+      const [rows] = await client.query<Array<RowDataPacket & { name: string }>>(
+        "SELECT SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME",
+      );
 
-    return rows.map((row) => ({
-      name: row.name,
-      isSelected: row.name === connection.lastSelectedDatabase,
+      return rows.map((row) => ({
+        name: row.name,
+        isSelected: row.name === connection.lastSelectedDatabase,
+      }));
+    });
+  } catch (error) {
+    if (!isDatabaseEnumerationUnavailable(error)) {
+      throw error;
+    }
+
+    return connection.lastSelectedDatabase
+      ? [{
+          name: connection.lastSelectedDatabase,
+          isSelected: true,
+        }]
+      : [];
+  }
+
+  if (
+    connection.lastSelectedDatabase &&
+    !databases.some((database) => database.name === connection.lastSelectedDatabase)
+  ) {
+    await storage.updateDbConnection(id, {
+      lastSelectedDatabase: undefined,
+      lastTestMessage: `之前选中的数据库 ${connection.lastSelectedDatabase} 已不存在，已清除选择。`,
+    });
+
+    return databases.map((database) => ({
+      ...database,
+      isSelected: false,
     }));
-  });
+  }
+
+  return databases;
 }
 
 export async function selectDatabaseForConnection(

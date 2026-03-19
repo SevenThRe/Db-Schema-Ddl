@@ -1,42 +1,49 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: 'IBM Plex Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Professional Data Tool Palette - Blue/Slate Theme */
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  /* Editorial-industrial workbench palette */
+  --background: 210 33% 98%;
+  --foreground: 221 39% 13%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 221 39% 13%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 221 39% 13%;
 
-  --primary: 221 83% 53%; /* Vibrant Blue */
+  --primary: 221 80% 54%;
   --primary-foreground: 210 40% 98%;
 
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11.2%;
+  --secondary: 215 38% 95%;
+  --secondary-foreground: 221 39% 13%;
 
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 216 28% 93%;
+  --muted-foreground: 220 16% 43%;
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222 47% 11.2%;
+  --accent: 214 49% 94%;
+  --accent-foreground: 221 39% 13%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221 83% 53%;
+  --border: 218 29% 85%;
+  --input: 218 29% 85%;
+  --ring: 221 80% 54%;
   --button-outline: hsl(var(--border) / 0.95);
+  --panel: 0 0% 100%;
+  --panel-muted: 216 38% 96%;
+  --workspace-ink: 225 33% 12%;
+  --workspace-ink-soft: 221 27% 19%;
+  --workspace-glow: 215 100% 68%;
+  --workspace-grid: 218 22% 88%;
+  --workspace-shadow: 220 53% 10%;
 
   --radius: 0.75rem;
 }
@@ -73,13 +80,35 @@
 }
 
 @layer base {
+  html {
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-border;
+  }
+
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-image:
+      radial-gradient(circle at top left, hsl(var(--workspace-glow) / 0.14), transparent 28%),
+      radial-gradient(circle at top right, hsl(197 89% 66% / 0.08), transparent 20%),
+      linear-gradient(180deg, hsl(210 40% 99%), hsl(215 38% 95%));
+    min-height: 100vh;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-bold tracking-tight text-foreground;
+  }
+
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  [data-radix-collection-item]:focus-visible {
+    @apply outline-none ring-2 ring-primary/60 ring-offset-2 ring-offset-background;
   }
 }
 
@@ -98,4 +127,46 @@
 /* Syntax Highlighting Base */
 code {
   @apply font-mono text-sm;
+}
+
+@layer utilities {
+  .workbench-shell {
+    @apply relative overflow-hidden rounded-[28px] border border-white/70 bg-background/80 shadow-[0_24px_80px_-32px_hsl(var(--workspace-shadow)/0.45)] backdrop-blur-xl;
+  }
+
+  .workbench-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, hsl(var(--workspace-grid) / 0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--workspace-grid) / 0.12) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 72%);
+    pointer-events: none;
+  }
+
+  .panel-surface {
+    @apply rounded-[24px] border border-white/70 bg-white/82 shadow-[0_16px_60px_-32px_hsl(var(--workspace-shadow)/0.32)] backdrop-blur-xl;
+  }
+
+  .panel-surface-muted {
+    @apply rounded-[22px] border border-white/70 bg-[hsl(var(--panel-muted)/0.92)] shadow-[0_14px_48px_-28px_hsl(var(--workspace-shadow)/0.2)];
+  }
+
+  .section-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-[0.32em] text-primary/75;
+  }
+
+  .section-headline {
+    @apply text-[clamp(1.2rem,2.2vw,2rem)] font-semibold leading-tight text-[hsl(var(--workspace-ink))];
+  }
+
+  .section-copy {
+    @apply text-sm leading-6 text-muted-foreground;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/78 px-3 py-1 text-[11px] font-medium text-[hsl(var(--workspace-ink-soft))] shadow-sm;
+  }
 }

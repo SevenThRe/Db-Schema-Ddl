@@ -75,6 +75,7 @@ export async function applyDbChanges(connectionId: number, input: DbApplyRequest
       fileId: input.compareSource.fileId,
       sheetName: input.compareSource.sheetName,
       scope: "sheet",
+      coverageMode: "file_scope",
       databaseName: input.databaseName,
       refreshLiveSchema: false,
     },

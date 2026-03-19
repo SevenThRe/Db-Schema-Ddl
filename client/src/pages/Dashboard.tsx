@@ -31,7 +31,7 @@ const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
 const LAST_SELECTED_FILE_STORAGE_KEY = "dashboard:lastSelectedFile";
 const PREVIEW_ACTION_BUTTON_CLASS =
-  "h-6 px-2.5 gap-1.5 text-[11px] shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none backdrop-blur-[2px] hover:bg-accent/55";
+  "h-8 px-3 gap-1.5 text-[11px] shrink-0 rounded-full border-[color:var(--button-outline)] bg-white/86 font-medium text-[hsl(var(--workspace-ink-soft))] shadow-sm backdrop-blur-md hover:bg-accent/80";
 
 type StoredSheetSelections = Record<string, string>;
 interface StoredFileSelection {
@@ -124,12 +124,19 @@ function getSheetName(sheet: unknown): string | null {
 }
 
 export default function Dashboard() {
+  const [isDbManagementTestMode] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return new URLSearchParams(window.location.search).get("db-management-test") === "1";
+  });
   const [isDesktopSmokeMode] = useState(() => {
     if (typeof window === "undefined") {
       return false;
     }
     return new URLSearchParams(window.location.search).get("desktop-smoke") === "1";
   });
+  const canBypassOfficialExtensionGate = isDesktopSmokeMode || isDbManagementTestMode;
   const [initialFileSelection] = useState<StoredFileSelection | null>(() => readStoredFileSelection());
   const initialFileSelectionRef = useRef<StoredFileSelection | null>(initialFileSelection);
   const desktopSmokeAttemptedRef = useRef(false);
@@ -402,13 +409,13 @@ export default function Dashboard() {
     if (activeModule !== "db-management") {
       return;
     }
-    if (isDesktopSmokeMode) {
+    if (canBypassOfficialExtensionGate) {
       return;
     }
     if (dbManagementExtension?.status !== "enabled") {
       setActiveModule("workspace");
     }
-  }, [activeModule, dbManagementExtension, isDesktopSmokeMode]);
+  }, [activeModule, canBypassOfficialExtensionGate, dbManagementExtension]);
 
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
@@ -483,6 +490,22 @@ export default function Dashboard() {
     (isSheetsLoading || Boolean(sheets && sheets.length > 0));
   const layoutLabel = isCompactLayout ? "2-column" : "3-column";
   const versionLabel = appVersion ? `v${appVersion}` : "v--";
+  const activeModuleLabel =
+    activeModule === "db-management"
+      ? "DB Control Center"
+      : activeModule === "ddl-import"
+        ? "DDL Import Bay"
+        : "Definition Workbench";
+  const activeModuleDescription =
+    activeModule === "db-management"
+      ? "连接、快照、差异、历史与应用流程集中在一个操作台里。"
+      : activeModule === "ddl-import"
+        ? "把现有 DDL、模板与工作簿重新接到同一条生成链路上。"
+        : "围绕文件、工作表、表结构预览与 DDL 输出的主工作台。";
+  const searchShortcutLabel =
+    typeof window !== "undefined" && /Mac|iPhone|iPod|iPad/i.test(window.navigator.platform)
+      ? "⌘ P"
+      : "Ctrl P";
 
   const handleManualUpdateCheck = useCallback(async () => {
     if (!window.electronAPI?.checkForUpdates || isCheckingUpdates) {
@@ -575,11 +598,13 @@ export default function Dashboard() {
   }, [toast]);
 
   const handleDbManagementEntryClick = useCallback(() => {
-    void refreshOfficialExtensionCatalog();
+    if (!canBypassOfficialExtensionGate) {
+      void refreshOfficialExtensionCatalog();
+    }
 
     const extension = dbManagementExtension;
     if (!extension || extension.status === "not_installed") {
-      if (isDesktopSmokeMode) {
+      if (canBypassOfficialExtensionGate) {
         setActiveModule("db-management");
         return;
       }
@@ -593,7 +618,7 @@ export default function Dashboard() {
       extension.updateAvailable ||
       extension.lifecycle?.stage === "failed"
     ) {
-      if (isDesktopSmokeMode) {
+      if (canBypassOfficialExtensionGate) {
         setActiveModule("db-management");
         return;
       }
@@ -602,7 +627,7 @@ export default function Dashboard() {
     }
 
     setActiveModule("db-management");
-  }, [dbManagementExtension, isDesktopSmokeMode, refreshOfficialExtensionCatalog]);
+  }, [canBypassOfficialExtensionGate, dbManagementExtension, refreshOfficialExtensionCatalog]);
 
   useEffect(() => {
     if (!isDesktopSmokeMode || isDbManagementExtensionLoading || desktopSmokeAttemptedRef.current) {
@@ -679,20 +704,28 @@ export default function Dashboard() {
   }, [disableExtension, toast]);
 
   const renderPreviewPane = (showSheetTrigger: boolean) => (
-    <div className="flex flex-col h-full min-w-0">
-      <div className="px-3 py-1.5 border-b border-border/60 bg-background flex items-center justify-between gap-2 shrink-0">
-        <div className="min-w-0 flex items-center gap-1.5 overflow-x-auto">
+    <div className="flex h-full min-w-0 flex-col bg-transparent">
+      <div className="shrink-0 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-md">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="section-kicker">Preview Surface</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              在同一个数据画布里切换自动解析、原始工作表与 schema 差异。
+            </p>
+          </div>
+
+          <div className="min-w-0 flex items-center gap-1.5 overflow-x-auto">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
-            <TabsList className="h-6 p-0.5">
-              <TabsTrigger value="auto" className="text-[11px] h-5 px-2 gap-1">
+            <TabsList className="h-auto rounded-full border border-white/80 bg-[hsl(var(--panel-muted)/0.88)] p-1 shadow-sm">
+              <TabsTrigger value="auto" className="h-8 gap-1.5 rounded-full px-3 text-[11px] font-medium">
                 <TableProperties className="w-3 h-3" />
                 {t("view.autoParse")}
               </TabsTrigger>
-              <TabsTrigger value="spreadsheet" className="text-[11px] h-5 px-2 gap-1">
+              <TabsTrigger value="spreadsheet" className="h-8 gap-1.5 rounded-full px-3 text-[11px] font-medium">
                 <Grid3X3 className="w-3 h-3" />
                 {t("view.spreadsheet")}
               </TabsTrigger>
-              <TabsTrigger value="diff" className="text-[11px] h-5 px-2 gap-1">
+              <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-full px-3 text-[11px] font-medium">
                 <Sparkles className="w-3 h-3" />
                 Diff
               </TabsTrigger>
@@ -721,20 +754,21 @@ export default function Dashboard() {
           >
             <Search className="w-3 h-3" />
             <span className="hidden sm:inline">{t("search.button") || "Search"}</span>
-            <kbd className="pointer-events-none ml-1 hidden h-4 select-none items-center gap-1 rounded-md border border-border/70 bg-background/85 px-1 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
-              <span className="text-xs">⌘</span>P
+            <kbd className="pointer-events-none ml-1 hidden h-5 select-none items-center rounded-md border border-white/80 bg-white/85 px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
+              {searchShortcutLabel}
             </kbd>
           </Button>
         </div>
 
         {viewMode === "spreadsheet" && regionTables && regionTables.length > 0 && (
-          <span className="text-[10px] text-green-600 font-medium">
+          <span className="status-pill">
             ✓ {t("table.tablesParsedFromSelection", { count: regionTables.length })}
           </span>
         )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden bg-[linear-gradient(180deg,hsl(var(--panel-muted)/0.55),hsl(var(--background)/0.32))]">
         {viewMode === "auto" ? (
           isResolvingDefaultSheet ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
@@ -793,48 +827,89 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="h-screen w-full bg-background overflow-hidden flex flex-col">
-      <header className="h-12 shrink-0 border-b border-border/60 bg-background/95 px-3">
-        <div className="h-full flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] text-muted-foreground truncate">{t("app.title")}</p>
-            <p className="text-[11px] font-medium text-foreground truncate">
-              {selectedFileName || t("sidebar.noFilesYet")}
-            </p>
-          </div>
+    <div className="h-screen w-full overflow-hidden p-3">
+      <div className="workbench-shell flex h-full flex-col">
+        <header className="relative z-10 shrink-0 border-b border-white/70 bg-[linear-gradient(135deg,hsl(var(--background)/0.96),hsl(var(--panel-muted)/0.86))] px-4 py-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 max-w-3xl">
+              <p className="section-kicker">Schema Workbench</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  variant={activeModule === "workspace" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 rounded-full px-4 text-[11px]"
+                  onClick={() => setActiveModule("workspace")}
+                >
+                  <TableProperties className="mr-1.5 h-3.5 w-3.5" />
+                  Definition
+                </Button>
+                <Button
+                  variant={activeModule === "db-management" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 rounded-full px-4 text-[11px]"
+                  onClick={handleDbManagementEntryClick}
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  DB Control
+                </Button>
+                <Button
+                  variant={activeModule === "ddl-import" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 rounded-full px-4 text-[11px]"
+                  onClick={() => setActiveModule("ddl-import")}
+                >
+                  <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
+                  DDL Import
+                </Button>
+              </div>
+              <h1 className="section-headline mt-4">
+                {activeModuleLabel}
+              </h1>
+              <p className="section-copy mt-2 max-w-2xl">
+                {activeModuleDescription}
+              </p>
+            </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-[10px]"
-              onClick={() => setActiveModule("ddl-import")}
-            >
-              <FileCode2 className="mr-1 h-3 w-3" />
-              DDL Import
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-[10px]"
-              onClick={handleManualUpdateCheck}
-              disabled={isCheckingUpdates || !window.electronAPI?.checkForUpdates}
-            >
-              {isCheckingUpdates ? <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> : null}
-              {versionLabel}
-            </Button>
-            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              <LayoutPanelLeft className="w-3 h-3" />
-              {layoutLabel}
-            </span>
-            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-[180px] truncate">
-              {selectedSheet || t("sheet.selectSheet")}
-            </span>
+            <div className="panel-surface-muted grid gap-3 p-3 sm:grid-cols-2 xl:min-w-[420px] xl:max-w-[480px]">
+              <div className="space-y-1">
+                <p className="section-kicker">Active File</p>
+                <p className="truncate text-sm font-semibold text-[hsl(var(--workspace-ink))]">
+                  {selectedFileName || t("sidebar.noFilesYet")}
+                </p>
+                <p className="text-[11px] text-muted-foreground">当前编辑对象与 DDL 输出上下文。</p>
+              </div>
+              <div className="space-y-1">
+                <p className="section-kicker">Current Sheet</p>
+                <p className="truncate text-sm font-semibold text-[hsl(var(--workspace-ink))]">
+                  {selectedSheet || t("sheet.selectSheet")}
+                </p>
+                <p className="text-[11px] text-muted-foreground">让文件、工作表与当前模块保持同一条认知链路。</p>
+              </div>
+              <div className="status-pill justify-between">
+                <span className="inline-flex items-center gap-2">
+                  <LayoutPanelLeft className="h-3.5 w-3.5" />
+                  Workspace
+                </span>
+                <span>{layoutLabel}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 justify-between rounded-2xl border-white/80 bg-white/82 px-3 text-[11px] font-medium"
+                onClick={handleManualUpdateCheck}
+                disabled={isCheckingUpdates || !window.electronAPI?.checkForUpdates}
+              >
+                <span className="inline-flex items-center gap-2">
+                  {isCheckingUpdates ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Release
+                </span>
+                <span>{versionLabel}</span>
+              </Button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="flex-1 flex overflow-hidden">
+        <div className="flex flex-1 overflow-hidden">
         <Sidebar
           selectedFileId={selectedFileId}
           onSelectFile={setSelectedFileId}
@@ -843,84 +918,87 @@ export default function Dashboard() {
           onSelectDbManagement={handleDbManagementEntryClick}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="border-r border-border/70 overflow-hidden"
+          className="overflow-hidden border-r border-white/60"
         />
 
-        <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
-          {activeModule === "ddl-import" ? (
-            renderDdlImportWorkspace()
-          ) : activeModule === "db-management" &&
-            (dbManagementExtension?.status === "enabled" || isDesktopSmokeMode) ? (
-            renderDbManagementWorkspace()
-          ) : isCompactLayout ? (
-            <>
+        <main className="min-w-0 flex-1 overflow-hidden p-3">
+          <div className="panel-surface flex h-full min-w-0 overflow-hidden">
+            {activeModule === "ddl-import" ? (
+              renderDdlImportWorkspace()
+            ) : activeModule === "db-management" &&
+              (dbManagementExtension?.status === "enabled" || canBypassOfficialExtensionGate) ? (
+              renderDbManagementWorkspace()
+            ) : isCompactLayout ? (
+              <>
+                <ResizablePanelGroup direction="horizontal" className="flex-1">
+                  <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={65} minSize={45}>
+                    {renderPreviewPane(true)}
+                  </ResizablePanel>
+
+                  <ResizableHandle />
+
+                  <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={35} minSize={25}>
+                    <DdlGenerator
+                      fileId={selectedFileId}
+                      sheetName={selectedSheet}
+                      overrideTables={activeTables}
+                      currentTable={viewMode === "auto" ? currentTable : null}
+                      selectedTableNames={selectedTableNames}
+                      onSelectedTableNamesChange={setSelectedTableNames}
+                      onOpenImportWorkspace={() => setActiveModule("ddl-import")}
+                    />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+
+                <Sheet open={sheetSelectorOpen} onOpenChange={setSheetSelectorOpen}>
+                  <SheetContent side="left" className="flex w-[min(92vw,360px)] flex-col p-0 sm:max-w-[360px]">
+                    <SheetHeader className="border-b border-border/60 px-4 py-3">
+                      <SheetTitle className="text-sm">{t("sheet.selectSheet")}</SheetTitle>
+                    </SheetHeader>
+                    <div className="min-h-0 flex-1">
+                      <SheetSelector
+                        fileId={selectedFileId}
+                        selectedSheet={selectedSheet}
+                        onSelectSheet={handleSheetSelection}
+                      />
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </>
+            ) : (
               <ResizablePanelGroup direction="horizontal" className="flex-1">
-                <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={65} minSize={45}>
-                  {renderPreviewPane(true)}
+                <ResizablePanel id="dashboard-desktop-sheets" order={1} defaultSize={16} minSize={12} maxSize={26}>
+                  <SheetSelector
+                    fileId={selectedFileId}
+                    selectedSheet={selectedSheet}
+                    onSelectSheet={handleSheetSelection}
+                  />
                 </ResizablePanel>
 
                 <ResizableHandle />
 
-                <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={35} minSize={25}>
-                <DdlGenerator
-                  fileId={selectedFileId}
-                  sheetName={selectedSheet}
-                  overrideTables={activeTables}
-                  currentTable={viewMode === "auto" ? currentTable : null}
-                  selectedTableNames={selectedTableNames}
-                  onSelectedTableNamesChange={setSelectedTableNames}
-                  onOpenImportWorkspace={() => setActiveModule("ddl-import")}
+                <ResizablePanel id="dashboard-desktop-preview" order={2} defaultSize={54} minSize={30}>
+                  {renderPreviewPane(false)}
+                </ResizablePanel>
+
+                <ResizableHandle />
+
+                <ResizablePanel id="dashboard-desktop-ddl" order={3} defaultSize={30} minSize={20}>
+                  <DdlGenerator
+                    fileId={selectedFileId}
+                    sheetName={selectedSheet}
+                    overrideTables={activeTables}
+                    currentTable={viewMode === "auto" ? currentTable : null}
+                    selectedTableNames={selectedTableNames}
+                    onSelectedTableNamesChange={setSelectedTableNames}
+                    onOpenImportWorkspace={() => setActiveModule("ddl-import")}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
-
-              <Sheet open={sheetSelectorOpen} onOpenChange={setSheetSelectorOpen}>
-                <SheetContent side="left" className="p-0 sm:max-w-[360px] w-[min(92vw,360px)] flex flex-col">
-                  <SheetHeader className="px-4 py-3 border-b border-border/60">
-                    <SheetTitle className="text-sm">{t("sheet.selectSheet")}</SheetTitle>
-                  </SheetHeader>
-                  <div className="flex-1 min-h-0">
-                    <SheetSelector
-                      fileId={selectedFileId}
-                      selectedSheet={selectedSheet}
-                      onSelectSheet={handleSheetSelection}
-                    />
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </>
-          ) : (
-            <ResizablePanelGroup direction="horizontal" className="flex-1">
-              <ResizablePanel id="dashboard-desktop-sheets" order={1} defaultSize={16} minSize={12} maxSize={26}>
-                <SheetSelector
-                  fileId={selectedFileId}
-                  selectedSheet={selectedSheet}
-                  onSelectSheet={handleSheetSelection}
-                />
-              </ResizablePanel>
-
-              <ResizableHandle />
-
-              <ResizablePanel id="dashboard-desktop-preview" order={2} defaultSize={54} minSize={30}>
-                {renderPreviewPane(false)}
-              </ResizablePanel>
-
-              <ResizableHandle />
-
-              <ResizablePanel id="dashboard-desktop-ddl" order={3} defaultSize={30} minSize={20}>
-                <DdlGenerator
-                  fileId={selectedFileId}
-                  sheetName={selectedSheet}
-                  overrideTables={activeTables}
-                  currentTable={viewMode === "auto" ? currentTable : null}
-                  selectedTableNames={selectedTableNames}
-                  onSelectedTableNamesChange={setSelectedTableNames}
-                  onOpenImportWorkspace={() => setActiveModule("ddl-import")}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          )}
+            )}
+          </div>
         </main>
+      </div>
       </div>
 
       <SearchDialog

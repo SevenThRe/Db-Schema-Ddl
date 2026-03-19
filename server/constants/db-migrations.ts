@@ -92,4 +92,17 @@ export const DB_MIGRATIONS: DbMigrationDefinition[] = [
       DB_INIT_SQL.createDbSchemaSnapshotsUniqueIndex,
     ],
   },
+  {
+    version: 10,
+    name: "create_db_management_runtime_tables",
+    statements: [
+      DB_INIT_SQL.createDbSchemaScanEventsTable,
+      DB_INIT_SQL.createDbSchemaScanEventsUniqueIndex,
+      DB_INIT_SQL.createDbDeployJobsTable,
+      DB_INIT_SQL.createDbDeployJobsCompareHashUniqueIndex,
+      DB_INIT_SQL.createDbDeployJobStatementResultsTable,
+      DB_INIT_SQL.createDbDeployJobStatementResultsUniqueIndex,
+      DB_INIT_SQL.createDbComparePoliciesTable,
+    ],
+  },
 ] as const;

@@ -329,6 +329,14 @@ function appendTypeMustNotIncludeSizeIssue(
   });
 }
 
+function allowsCompatibilitySizeOne(baseType: string, effectiveSize: string): boolean {
+  if ((baseType !== "boolean" && baseType !== "bool") || !INTEGER_SIZE_PATTERN.test(effectiveSize)) {
+    return false;
+  }
+
+  return Number.parseInt(effectiveSize, 10) === 1;
+}
+
 function appendTypeOnlyAcceptsIntegerSizeIssue(
   issues: DdlValidationIssue[],
   context: ColumnValidationContext,
@@ -368,6 +376,9 @@ function validateSizeRules(
 
   const sizeRule = SIZE_RULES[parsed.baseType];
   if (sizeRule === "none") {
+    if (allowsCompatibilitySizeOne(parsed.baseType, effectiveSize)) {
+      return;
+    }
     appendTypeMustNotIncludeSizeIssue(issues, context, effectiveSize);
     return;
   }

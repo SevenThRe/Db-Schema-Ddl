@@ -21,6 +21,8 @@ import {
   extensionLifecycleStateSchema,
   dbConnectionSummarySchema,
   dbConnectionUpsertRequestSchema,
+  dbConnectionImportRequestSchema,
+  dbConnectionImportResponseSchema,
   dbConnectionTestResponseSchema,
   dbDatabaseOptionSchema,
   dbSelectDatabaseRequestSchema,
@@ -390,6 +392,15 @@ export const api = {
       input: dbConnectionUpsertRequestSchema,
       responses: {
         201: dbConnectionSummarySchema,
+        400: apiErrorSchema,
+      },
+    },
+    importConnections: {
+      method: "POST" as const,
+      path: "/api/db-management/connections/import" as const,
+      input: dbConnectionImportRequestSchema,
+      responses: {
+        200: dbConnectionImportResponseSchema,
         400: apiErrorSchema,
       },
     },

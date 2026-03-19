@@ -10,9 +10,9 @@ import {
   normalizeUnknownError,
   shouldPresentFatalDialog,
 } from '@shared/desktop-runtime';
-import { extensionService } from './extensions';
 import { initAutoUpdater } from './updater';
 import type { Server } from 'http';
+import type { ElectronExtensionService } from './extensions';
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
@@ -20,6 +20,7 @@ let httpServer: Server | null = null;
 let isShuttingDown = false;
 let activeSockets = new Set<any>();
 let hasShownFatalErrorDialog = false;
+let extensionServicePromise: Promise<ElectronExtensionService> | null = null;
 
 const relaunchGuardEnv = 'DBSCHEMA_ELECTRON_RELAUNCH_ATTEMPTED';
 
@@ -31,6 +32,13 @@ function getSmokeModeConfig() {
     screenshotPath: process.env.DBSCHEMA_SMOKE_SCREENSHOT_PATH?.trim() || undefined,
     autoCloseDelayMs: Number.isFinite(autoCloseDelay) ? Math.max(autoCloseDelay, 0) : undefined,
   };
+}
+
+function isLocalDbManagementTestModeEnabled(): boolean {
+  return (
+    isTruthyEnv(process.env.DBSCHEMA_LOCAL_DB_MANAGEMENT_TEST) ||
+    process.argv.includes("--db-management-test")
+  );
 }
 
 function getBootstrapLogPath() {
@@ -88,6 +96,11 @@ function reportMainProcessError(context: string, err: unknown, options?: { showD
 function isTruthyEnv(value: unknown): boolean {
   const normalized = String(value ?? '').trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+async function getExtensionService(): Promise<ElectronExtensionService> {
+  extensionServicePromise ??= import("./extensions").then((module) => module.extensionService);
+  return await extensionServicePromise;
 }
 
 if (!app || typeof app.whenReady !== 'function') {
@@ -356,6 +369,9 @@ function createWindow() {
   if (smokeMode.enabled) {
     windowUrl.searchParams.set("desktop-smoke", "1");
   }
+  if (isLocalDbManagementTestModeEnabled()) {
+    windowUrl.searchParams.set("db-management-test", "1");
+  }
   mainWindow.loadURL(windowUrl.toString());
 
   // 開発環境では DevTools を開く
@@ -584,6 +600,7 @@ ipcMain.handle("extensions:get-install-context", async (_event, rawExtensionId: 
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.getInstallContext(parsed.data);
 });
 
@@ -592,6 +609,7 @@ ipcMain.handle("extensions:open-install-flow", async (_event, rawExtensionId: st
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.openInstallFlow(parsed.data);
 });
 
@@ -600,6 +618,7 @@ ipcMain.handle("extensions:get-catalog", async (_event, rawExtensionId: string, 
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.getCatalog(parsed.data, Boolean(force));
 });
 
@@ -608,6 +627,7 @@ ipcMain.handle("extensions:start-install", async (_event, rawExtensionId: string
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.startInstall(parsed.data);
 });
 
@@ -616,6 +636,7 @@ ipcMain.handle("extensions:get-lifecycle-state", async (_event, rawExtensionId: 
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.getLifecycleState(parsed.data);
 });
 
@@ -624,6 +645,7 @@ ipcMain.handle("extensions:uninstall", async (_event, rawExtensionId: string) =>
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.uninstallExtension(parsed.data);
 });
 
@@ -632,5 +654,6 @@ ipcMain.handle("extensions:activate", async (_event, rawExtensionId: string) => 
   if (!parsed.success) {
     throw new Error("Unknown extension id");
   }
+  const extensionService = await getExtensionService();
   return extensionService.activateExtension(parsed.data);
 });

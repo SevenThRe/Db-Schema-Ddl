@@ -12,6 +12,7 @@ import {
   testDbConnection,
   updateDbConnection,
 } from "../lib/extensions/db-management/connection-service";
+import { parseDbConnectionImports } from "../lib/extensions/db-management/connection-import-service";
 import {
   confirmDbDiffRenames,
   previewDbDiff,
@@ -128,6 +129,30 @@ export function registerDbManagementRoutes(app: Express): void {
     try {
       const created = await createDbConnection(payload.data);
       res.status(201).json(api.dbManagement.createConnection.responses[201].parse(created));
+    } catch (error) {
+      handleRouteError(res, error);
+    }
+  });
+
+  app.post(api.dbManagement.importConnections.path, async (req, res) => {
+    if (!requireElectronMode(res)) {
+      return;
+    }
+
+    const payload = api.dbManagement.importConnections.input.safeParse(req.body);
+    if (!payload.success) {
+      sendApiError(res, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: API_ERROR_CODES.invalidRequest,
+        message: "Invalid DB connection import payload.",
+        issues: payload.error.issues,
+      });
+      return;
+    }
+
+    try {
+      const result = parseDbConnectionImports(payload.data.content, payload.data.fileName);
+      res.json(api.dbManagement.importConnections.responses[200].parse(result));
     } catch (error) {
       handleRouteError(res, error);
     }

@@ -36,3 +36,14 @@ test("dashboard wires install dialog into module entry flow", async () => {
   assert.match(source, /onInstall=\{openOfficialExtensionFlow\}/);
   assert.match(source, /onRefreshCatalog=\{refreshOfficialExtensionCatalog\}/);
 });
+
+test("dashboard supports a local db management test mode without published official extension", async () => {
+  const source = await read("client/src/pages/Dashboard.tsx");
+
+  assert.match(source, /db-management-test/);
+  assert.match(source, /const canBypassOfficialExtensionGate = isDesktopSmokeMode \|\| isDbManagementTestMode/);
+  assert.match(source, /if \(!canBypassOfficialExtensionGate\) {\s*void refreshOfficialExtensionCatalog\(\);/);
+  assert.match(source, /if \(canBypassOfficialExtensionGate\) {\s*setActiveModule\("db-management"\);/);
+  assert.match(source, /\(dbManagementExtension\?\.status === "enabled" \|\| canBypassOfficialExtensionGate\)/);
+  assert.match(source, /if \(canBypassOfficialExtensionGate\) {\s*return;\s*}\s*if \(dbManagementExtension\?\.status !== "enabled"\)/);
+});

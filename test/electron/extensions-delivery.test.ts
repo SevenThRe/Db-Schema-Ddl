@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -135,4 +136,38 @@ test("downloadFileWithProgress writes the fetched asset to disk and reports prog
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("electron main lazily loads extension service after runtime paths are configured", () => {
+  const mainProcessPath = path.resolve("electron/main.ts");
+  const mainProcessSource = fs.readFileSync(mainProcessPath, "utf8");
+
+  assert.doesNotMatch(mainProcessSource, /import\s+\{\s*extensionService\s*\}\s+from\s+['"]\.\/extensions['"]/);
+  assert.match(mainProcessSource, /async function getExtensionService\(\): Promise<ElectronExtensionService>/);
+  assert.match(mainProcessSource, /import\("\.\/extensions"\)\.then\(\(module\) => module\.extensionService\)/);
+  assert.match(mainProcessSource, /const extensionService = await getExtensionService\(\);/);
+});
+
+test("electron main exposes a dedicated local db management test mode for packaged app validation", () => {
+  const mainProcessPath = path.resolve("electron/main.ts");
+  const mainProcessSource = fs.readFileSync(mainProcessPath, "utf8");
+
+  assert.match(mainProcessSource, /function isLocalDbManagementTestModeEnabled\(\): boolean/);
+  assert.match(mainProcessSource, /DBSCHEMA_LOCAL_DB_MANAGEMENT_TEST/);
+  assert.match(mainProcessSource, /process\.argv\.includes\("--db-management-test"\)/);
+  assert.match(mainProcessSource, /windowUrl\.searchParams\.set\("db-management-test", "1"\)/);
+});
+
+test("repository includes a helper script to launch packaged db management test mode", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  const launcherScript = fs.readFileSync(path.resolve("script/start-db-management-test.ps1"), "utf8");
+
+  assert.equal(
+    packageJson.scripts?.["start:app:db-management-test"],
+    "powershell -ExecutionPolicy Bypass -File script/start-db-management-test.ps1",
+  );
+  assert.match(launcherScript, /DBSCHEMA_LOCAL_DB_MANAGEMENT_TEST = "1"/);
+  assert.match(launcherScript, /Start-Process -FilePath \$resolvedExecutable -WorkingDirectory \$workingDirectory -ArgumentList "--db-management-test"/);
 });

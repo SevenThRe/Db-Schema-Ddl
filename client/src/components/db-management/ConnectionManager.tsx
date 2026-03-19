@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import type { DbConnectionSummary, DbConnectionUpsertRequest } from "@shared/schema";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import type {
+  DbConnectionImportDraft,
+  DbConnectionImportResponse,
+  DbConnectionSummary,
+  DbConnectionUpsertRequest,
+} from "@shared/schema";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, PlugZap, Save, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, PlugZap, Save, Trash2, Upload } from "lucide-react";
 
 interface ConnectionManagerProps {
   connections: DbConnectionSummary[];
@@ -17,9 +24,12 @@ interface ConnectionManagerProps {
   onSave: (input: DbConnectionUpsertRequest, connectionId?: number) => Promise<void>;
   onDelete: (connectionId: number) => Promise<void>;
   onTest: (connectionId: number) => Promise<void>;
+  onParseImports: (input: { content: string; fileName?: string }) => Promise<DbConnectionImportResponse>;
+  onSaveImportedDrafts: (drafts: DbConnectionImportDraft[]) => Promise<void>;
   isSaving: boolean;
   isDeleting: boolean;
   isTesting: boolean;
+  isImporting: boolean;
 }
 
 const EMPTY_FORM: DbConnectionUpsertRequest = {
@@ -40,14 +50,27 @@ export function ConnectionManager({
   onSave,
   onDelete,
   onTest,
+  onParseImports,
+  onSaveImportedDrafts,
   isSaving,
   isDeleting,
   isTesting,
+  isImporting,
 }: ConnectionManagerProps) {
   const [form, setForm] = useState<DbConnectionUpsertRequest>(EMPTY_FORM);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importFileName, setImportFileName] = useState<string | undefined>();
+  const [importResult, setImportResult] = useState<DbConnectionImportResponse | null>(null);
+  const [isBulkImportSaving, setIsBulkImportSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ?? null;
+  const savableImportDrafts = useMemo(
+    () => (importResult?.drafts ?? []).filter((draft) => draft.missingFields.length === 0),
+    [importResult],
+  );
 
   useEffect(() => {
     if (!selectedConnection) {
@@ -76,11 +99,69 @@ export function ConnectionManager({
     }
   };
 
+  const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setImportFileName(file.name);
+      setImportText(await file.text());
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleParseImports = async () => {
+    try {
+      const result = await onParseImports({
+        content: importText,
+        fileName: importFileName,
+      });
+      setImportResult(result);
+    } catch {
+      // Toast is handled by the workspace-level mutation wrapper.
+    }
+  };
+
+  const loadDraftIntoForm = (draft: DbConnectionImportDraft) => {
+    setForm({
+      name: draft.name,
+      host: draft.host,
+      port: draft.port,
+      username: draft.username,
+      password: draft.password ?? "",
+      rememberPassword: true,
+      clearSavedPassword: false,
+      sslMode: draft.sslMode,
+    });
+    onSelectConnection(0);
+    setIsImportDialogOpen(false);
+  };
+
+  const handleSaveSavableImports = async () => {
+    if (savableImportDrafts.length === 0) {
+      return;
+    }
+
+    setIsBulkImportSaving(true);
+    try {
+      await onSaveImportedDrafts(savableImportDrafts);
+      setIsImportDialogOpen(false);
+      setImportResult(null);
+      setImportText("");
+      setImportFileName(undefined);
+    } finally {
+      setIsBulkImportSaving(false);
+    }
+  };
+
   return (
     <Card className="border-border/70">
       <CardHeader className="space-y-2">
         <CardTitle className="text-base">连接管理</CardTitle>
-        <CardDescription>保存 MySQL server 连接，测试连通性，并复用已记住的密码。</CardDescription>
+        <CardDescription>保存或导入 MySQL 连接，测试连通性，并复用已记住的密码完成后续列库与 schema 读取。</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -146,8 +227,11 @@ export function ConnectionManager({
               id="db-connection-host"
               value={form.host}
               onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
-              placeholder="127.0.0.1"
+              placeholder="127.0.0.1 或 192.168.3.227:3306"
             />
+            <div className="text-[11px] text-muted-foreground">
+              支持直接填写 `host:port`，例如 `192.168.3.227:3306`。
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="db-connection-port">Port</Label>
@@ -206,7 +290,7 @@ export function ConnectionManager({
           <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
             <div className="space-y-0.5">
               <div className="text-sm font-medium">记住密码</div>
-              <div className="text-xs text-muted-foreground">默认保存到本机受保护存储，下次可直接重连。</div>
+              <div className="text-xs text-muted-foreground">列出 database、读取 schema 与后续比对都依赖已保存密码。</div>
             </div>
             <Switch
               checked={form.rememberPassword}
@@ -225,6 +309,10 @@ export function ConnectionManager({
           <Button onClick={() => void handleSubmit()} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             {selectedConnection ? "更新连接" : "保存连接"}
+          </Button>
+          <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            导入配置
           </Button>
           {selectedConnection ? (
             <>
@@ -270,6 +358,120 @@ export function ConnectionManager({
             最近测试结果：{selectedConnection.lastTestMessage}
           </div>
         ) : null}
+
+        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+          <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>导入连接配置</DialogTitle>
+              <DialogDescription>
+                支持 JDBC URL、Spring `application.yml` / `.properties`，以及任何包含 `jdbc:mysql://...` 的文本导出内容。识别到多条数据源时会一起列出来。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".yml,.yaml,.properties,.txt,.conf,.cnf,.json,.xml"
+                  onChange={(event) => {
+                    void handleImportFileChange(event);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  选择配置文件
+                </Button>
+                {importFileName ? (
+                  <Badge variant="outline">{importFileName}</Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">也可以直接把配置文本粘贴到下面。</span>
+                )}
+              </div>
+
+              <Textarea
+                value={importText}
+                onChange={(event) => setImportText(event.target.value)}
+                className="min-h-[220px] font-mono text-xs"
+                placeholder={"spring:\n  datasource:\n    primary:\n      url: jdbc:mysql://127.0.0.1:3306/app\n      username: root\n      password: secret"}
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => void handleParseImports()}
+                  disabled={isImporting || importText.trim().length === 0}
+                >
+                  {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  解析连接
+                </Button>
+                {savableImportDrafts.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void handleSaveSavableImports()}
+                    disabled={isBulkImportSaving}
+                  >
+                    {isBulkImportSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    批量保存可用连接（{savableImportDrafts.length}）
+                  </Button>
+                ) : null}
+              </div>
+
+              {importResult?.findings.length ? (
+                <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  {importResult.findings.map((finding) => (
+                    <div key={finding}>{finding}</div>
+                  ))}
+                </div>
+              ) : null}
+
+              {importResult?.drafts.length ? (
+                <ScrollArea className="max-h-64 rounded-md border border-border/60">
+                  <div className="space-y-2 p-2">
+                    {importResult.drafts.map((draft) => (
+                      <div key={`${draft.sourceLabel}-${draft.name}`} className="rounded-md border border-border/60 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium">{draft.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {(draft.username || "用户名待补充")}@{draft.host}:{draft.port}
+                              {draft.databaseName ? ` / ${draft.databaseName}` : ""}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">{draft.sourceLabel}</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="outline">{draft.sourceType}</Badge>
+                            {draft.missingFields.map((field) => (
+                              <Badge key={field} variant="outline">
+                                缺少{field === "password" ? "密码" : "用户名"}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" onClick={() => loadDraftIntoForm(draft)}>
+                            填入表单
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
+                关闭
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

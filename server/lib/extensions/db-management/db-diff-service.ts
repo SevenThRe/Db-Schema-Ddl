@@ -373,6 +373,7 @@ function buildColumnChanges(
   sheetName: string,
   fileTable: DbFileTable,
   dbTable: DbSchemaCatalog["tables"][number],
+  treatDbOnlyAsRemoved: boolean,
 ): { changes: DbDiffColumnChange[]; renameSuggestions: DbRenameSuggestion[] } {
   const changes: DbDiffColumnChange[] = [];
   const suggestions: DbRenameSuggestion[] = [];
@@ -449,25 +450,31 @@ function buildColumnChanges(
       blockers: [],
     });
   });
-  dbTable.columns.forEach((dbColumn, index) => {
-    if (matchedDbIndexes.has(index)) return;
-    const entityKey = buildEntityKey(["column", sheetName, dbTable.name, dbColumn.name, "drop"]);
-    changes.push({
-      action: "removed",
-      entityKey,
-      requiresConfirmation: false,
-      dbColumn,
-      changedFields: [],
-      blockers: buildColumnBlockers(sheetName, dbTable.name, undefined, dbColumn, "removed", entityKey, false),
+  if (treatDbOnlyAsRemoved) {
+    dbTable.columns.forEach((dbColumn, index) => {
+      if (matchedDbIndexes.has(index)) return;
+      const entityKey = buildEntityKey(["column", sheetName, dbTable.name, dbColumn.name, "drop"]);
+      changes.push({
+        action: "removed",
+        entityKey,
+        requiresConfirmation: false,
+        dbColumn,
+        changedFields: [],
+        blockers: buildColumnBlockers(sheetName, dbTable.name, undefined, dbColumn, "removed", entityKey, false),
+      });
     });
-  });
+  }
 
   return { changes: changes.sort((left, right) => left.entityKey.localeCompare(right.entityKey)), renameSuggestions: suggestions };
 }
 
-function compareMatchedTables(fileTable: DbFileTable, dbTable: DbSchemaCatalog["tables"][number]) {
+function compareMatchedTables(
+  fileTable: DbFileTable,
+  dbTable: DbSchemaCatalog["tables"][number],
+  treatDbOnlyAsRemoved: boolean,
+) {
   const changedFields = collectTableChangedFields(fileTable, dbTable);
-  const columns = buildColumnChanges(fileTable.sheetName, fileTable, dbTable);
+  const columns = buildColumnChanges(fileTable.sheetName, fileTable, dbTable, treatDbOnlyAsRemoved);
   return {
     changedFields,
     columnChanges: columns.changes,
@@ -512,6 +519,8 @@ function buildDiffSummary(
 
 export function applyRenameDecisionsToCompareResult<T extends DbComparePreviewCore>(result: T, decisions: DbRenameDecisionItem[]): T {
   const decisionMap = new Map<string, DbRenameDecision>(decisions.map((item) => [item.entityKey, item.decision]));
+  const treatDbOnlyAsRemoved =
+    (result as T & { context?: { coverageMode?: "file_scope" | "strict_database" } }).context?.coverageMode === "strict_database";
   const tableChanges: DbDiffTableChange[] = [];
   for (const tableChange of result.tableChanges) {
     if (tableChange.action === "rename_suggest") {
@@ -526,7 +535,7 @@ export function applyRenameDecisionsToCompareResult<T extends DbComparePreviewCo
         continue;
       }
       if (decision === "reject") {
-        if (tableChange.dbTable) {
+        if (treatDbOnlyAsRemoved && tableChange.dbTable) {
           tableChanges.push({
             action: "removed",
             entityKey: buildEntityKey(["table", tableChange.sheetName, tableChange.dbTable.name, "drop"]),
@@ -574,7 +583,7 @@ export function applyRenameDecisionsToCompareResult<T extends DbComparePreviewCo
           blockers: columnChange.blockers.filter((blocker) => blocker.code !== "rename_unconfirmed"),
         });
       } else if (decision === "reject") {
-        if (columnChange.dbColumn) {
+        if (treatDbOnlyAsRemoved && columnChange.dbColumn) {
           columnChanges.push({
             action: "removed",
             entityKey: buildEntityKey([tableChange.entityKey, columnChange.dbColumn.name, "drop"]),
@@ -638,7 +647,9 @@ export function compareFileLikeTablesAgainstDbSchema(args: {
   sheetName: string;
   tables: DbFileTable[];
   dbTables: DbSchemaCatalog["tables"];
+  treatDbOnlyAsRemoved?: boolean;
 }): DbComparePreviewCore {
+  const treatDbOnlyAsRemoved = args.treatDbOnlyAsRemoved ?? true;
   const tableChanges: DbDiffTableChange[] = [];
   const renameSuggestions: DbRenameSuggestion[] = [];
   const matchedFileIndexes = new Set<number>();
@@ -650,7 +661,7 @@ export function compareFileLikeTablesAgainstDbSchema(args: {
     if (!match) return;
     matchedFileIndexes.add(index);
     matchedDbIndexes.add(match.index);
-    const compared = compareMatchedTables(fileTable, match.table);
+    const compared = compareMatchedTables(fileTable, match.table, treatDbOnlyAsRemoved);
     tableChanges.push({
       action: "modified",
       entityKey: buildEntityKey(["table", fileTable.sheetName, match.table.name]),
@@ -680,7 +691,7 @@ export function compareFileLikeTablesAgainstDbSchema(args: {
     matchedFileIndexes.add(unmatchedFileTables[pair.leftIndex]!.index);
     matchedDbIndexes.add(unmatchedDbTables[pair.rightIndex]!.index);
     const entityKey = buildTableRenameEntityKey(fileTable.sheetName, dbTable.name, fileTableName(fileTable));
-    const compared = compareMatchedTables(fileTable, dbTable);
+    const compared = compareMatchedTables(fileTable, dbTable, treatDbOnlyAsRemoved);
     tableChanges.push({
       action: "rename_suggest",
       entityKey,
@@ -725,25 +736,27 @@ export function compareFileLikeTablesAgainstDbSchema(args: {
     });
   });
 
-  args.dbTables.forEach((dbTable, index) => {
-    if (matchedDbIndexes.has(index)) return;
-    const entityKey = buildEntityKey(["table", args.sheetName, dbTable.name, "drop"]);
-    tableChanges.push({
-      action: "removed",
-      entityKey,
-      sheetName: args.sheetName,
-      requiresConfirmation: false,
-      dbTable,
-      changedFields: [],
-      columnChanges: [],
-      blockers: [
-        createBlocker("drop_table", "table", entityKey, `Removing DB table ${dbTable.name} is blocked in preview.`, {
-          sheetName: args.sheetName,
-          tableName: dbTable.name,
-        }),
-      ],
+  if (treatDbOnlyAsRemoved) {
+    args.dbTables.forEach((dbTable, index) => {
+      if (matchedDbIndexes.has(index)) return;
+      const entityKey = buildEntityKey(["table", args.sheetName, dbTable.name, "drop"]);
+      tableChanges.push({
+        action: "removed",
+        entityKey,
+        sheetName: args.sheetName,
+        requiresConfirmation: false,
+        dbTable,
+        changedFields: [],
+        columnChanges: [],
+        blockers: [
+          createBlocker("drop_table", "table", entityKey, `Removing DB table ${dbTable.name} is blocked in preview.`, {
+            sheetName: args.sheetName,
+            tableName: dbTable.name,
+          }),
+        ],
+      });
     });
-  });
+  }
 
   const blockers = tableChanges.flatMap((change) => [...change.blockers, ...change.columnChanges.flatMap((column) => column.blockers)]);
   return {
@@ -765,12 +778,14 @@ export async function previewDbDiff(connectionId: number, compare: DbDiffPreview
     sheetName: compare.sheetName,
     tables,
     dbTables,
+    treatDbOnlyAsRemoved: compare.coverageMode === "strict_database",
   });
   return {
     context: {
       fileId: file.id,
       fileName: file.originalName,
       scope: compare.scope,
+      coverageMode: compare.coverageMode,
       sheetName: compare.sheetName,
       tableName: compare.tableName,
       connectionId,

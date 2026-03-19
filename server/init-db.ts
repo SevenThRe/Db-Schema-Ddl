@@ -94,6 +94,13 @@ export async function initializeDatabase() {
     await executeSql(DB_INIT_SQL.createDbConnectionsUniqueIndex);
     await executeSql(DB_INIT_SQL.createDbSchemaSnapshotsTable);
     await executeSql(DB_INIT_SQL.createDbSchemaSnapshotsUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbSchemaScanEventsTable);
+    await executeSql(DB_INIT_SQL.createDbSchemaScanEventsUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbDeployJobsTable);
+    await executeSql(DB_INIT_SQL.createDbDeployJobsCompareHashUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbDeployJobStatementResultsTable);
+    await executeSql(DB_INIT_SQL.createDbDeployJobStatementResultsUniqueIndex);
+    await executeSql(DB_INIT_SQL.createDbComparePoliciesTable);
     await ensureDdlSettingsCompatColumns();
 
     // 检查是否已有默认设置

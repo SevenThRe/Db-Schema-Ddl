@@ -550,6 +550,40 @@ export const dbConnectionUpsertRequestSchema = z.object({
   sslMode: dbConnectionSslModeSchema.default("preferred"),
 });
 
+export const dbConnectionImportSourceTypeSchema = z.enum([
+  "jdbc-url",
+  "spring-config",
+  "generic-config",
+]);
+
+export const dbConnectionImportMissingFieldSchema = z.enum([
+  "username",
+  "password",
+]);
+
+export const dbConnectionImportDraftSchema = z.object({
+  name: z.string().min(1).max(120),
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535).default(3306),
+  username: z.string().max(255).default(""),
+  password: z.string().optional(),
+  databaseName: z.string().min(1).optional(),
+  sslMode: dbConnectionSslModeSchema.default("preferred"),
+  sourceType: dbConnectionImportSourceTypeSchema,
+  sourceLabel: z.string().min(1),
+  missingFields: z.array(dbConnectionImportMissingFieldSchema).default([]),
+});
+
+export const dbConnectionImportRequestSchema = z.object({
+  content: z.string().min(1).max(200_000),
+  fileName: z.string().min(1).max(255).optional(),
+});
+
+export const dbConnectionImportResponseSchema = z.object({
+  drafts: z.array(dbConnectionImportDraftSchema).default([]),
+  findings: z.array(z.string().min(1)).default([]),
+});
+
 export const dbConnectionTestResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -658,6 +692,7 @@ export const dbSchemaIntrospectResponseSchema = z.object({
 });
 
 export const dbDiffScopeSchema = z.enum(["sheet", "table"]);
+export const dbDiffCoverageModeSchema = z.enum(["file_scope", "strict_database"]);
 export const dbDiffActionSchema = z.enum(["added", "removed", "modified", "rename_suggest", "renamed"]);
 export const dbDiffEntityTypeSchema = z.enum(["table", "column"]);
 export const dbRenameDecisionSchema = z.enum(["pending", "accept", "reject"]);
@@ -761,6 +796,7 @@ export const dbDiffContextSchema = z.object({
   fileId: z.number().int().positive(),
   fileName: z.string().min(1),
   scope: dbDiffScopeSchema,
+  coverageMode: dbDiffCoverageModeSchema.default("file_scope"),
   sheetName: z.string().min(1),
   tableName: z.string().optional(),
   connectionId: z.number().int().positive(),
@@ -775,6 +811,7 @@ export const dbDiffPreviewRequestSchema = z
     fileId: z.number().int().positive(),
     sheetName: z.string().min(1),
     scope: dbDiffScopeSchema.default("sheet"),
+    coverageMode: dbDiffCoverageModeSchema.default("file_scope"),
     tableName: z.string().min(1).optional(),
     databaseName: z.string().min(1).optional(),
     refreshLiveSchema: z.boolean().default(false),
@@ -2468,6 +2505,11 @@ export type DbConnectionTestStatus = z.infer<typeof dbConnectionTestStatusSchema
 export type DbConnectionRecord = z.infer<typeof dbConnectionRecordSchema>;
 export type DbConnectionSummary = z.infer<typeof dbConnectionSummarySchema>;
 export type DbConnectionUpsertRequest = z.infer<typeof dbConnectionUpsertRequestSchema>;
+export type DbConnectionImportSourceType = z.infer<typeof dbConnectionImportSourceTypeSchema>;
+export type DbConnectionImportMissingField = z.infer<typeof dbConnectionImportMissingFieldSchema>;
+export type DbConnectionImportDraft = z.infer<typeof dbConnectionImportDraftSchema>;
+export type DbConnectionImportRequest = z.infer<typeof dbConnectionImportRequestSchema>;
+export type DbConnectionImportResponse = z.infer<typeof dbConnectionImportResponseSchema>;
 export type DbConnectionTestResponse = z.infer<typeof dbConnectionTestResponseSchema>;
 export type DbDatabaseOption = z.infer<typeof dbDatabaseOptionSchema>;
 export type DbPrimaryKey = z.infer<typeof dbPrimaryKeySchema>;

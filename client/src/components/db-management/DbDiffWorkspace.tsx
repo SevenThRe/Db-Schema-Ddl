@@ -180,6 +180,7 @@ export function DbDiffWorkspace({ selectedConnection, selectedFileId, selectedFi
       fileId: selectedFileId,
       sheetName: selectedSheet,
       scope,
+      coverageMode: "file_scope",
       tableName: scope === "table" ? selectedTableName ?? undefined : undefined,
       databaseName: selectedConnection.lastSelectedDatabase,
       refreshLiveSchema,

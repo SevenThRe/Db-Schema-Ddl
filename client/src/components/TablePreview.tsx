@@ -33,9 +33,9 @@ const COMPACT_TABLE_GRID_CLASS =
   "grid grid-cols-[56px_minmax(240px,_1.1fr)_minmax(220px,_1fr)] gap-2 px-4";
 const COMPACT_TABLE_BREAKPOINT = 980;
 const TOOLBAR_ICON_BUTTON_CLASS =
-  "h-7 w-7 shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
+  "h-8 w-8 shrink-0 rounded-full border-[color:var(--button-outline)] bg-white/86 text-[hsl(var(--workspace-ink-soft))] shadow-sm hover:bg-accent/80";
 const TOOLBAR_BUTTON_CLASS =
-  "h-7 px-2 text-[11px] rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55";
+  "h-8 px-3 text-[11px] rounded-full border-[color:var(--button-outline)] bg-white/86 font-medium text-[hsl(var(--workspace-ink-soft))] shadow-sm hover:bg-accent/80";
 const LAST_SELECTED_TABLE_STORAGE_KEY = "tablePreview:lastSelectedTableByFileSheet";
 
 type StoredTableSelections = Record<string, string>;
@@ -145,12 +145,12 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
   }, [validation.invalidColumns]);
 
   return (
-    <div className="space-y-3">
-      {/* 表头信息 */}
-      <div>
-        <h2 className="text-base font-semibold tracking-tight text-foreground flex items-center gap-2.5 flex-wrap">
+    <div className="space-y-4">
+      <div className="panel-surface-muted p-4">
+        <p className="section-kicker">Selected Table</p>
+        <h2 className="mt-2 flex flex-wrap items-center gap-2.5 text-[1.15rem] font-semibold tracking-tight text-[hsl(var(--workspace-ink))]">
           {table.logicalTableName || "Untitled Table"}
-          <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground">
+          <Badge variant="outline" className="rounded-full border-white/80 bg-white/80 font-mono font-normal text-xs text-muted-foreground">
             {table.physicalTableName || "NO_PHYSICAL_NAME"}
           </Badge>
           {validation.hasIssues && (
@@ -162,13 +162,18 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
             </Badge>
           )}
         </h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          {table.columns.length} {t("table.columns")}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="rounded-full border-white/80 bg-white/82 px-2.5 py-1 text-[10px] font-medium">
+            {table.columns.length} {t("table.columns")}
+          </Badge>
+          <Badge variant="outline" className="rounded-full border-white/80 bg-white/82 px-2.5 py-1 text-[10px] font-medium">
+            {compactMode ? "Compact grid" : "Full grid"}
+          </Badge>
+        </div>
       </div>
 
       {validation.hasIssues && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm">
+        <div className="rounded-[22px] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
           <div className="font-medium text-amber-700 dark:text-amber-300">
             {t("table.namingWarningTitle")}
           </div>
@@ -187,11 +192,10 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
         </div>
       )}
 
-      {/* 表格容器 */}
-      <div className="border border-border/60 rounded-sm overflow-hidden bg-background">
+      <div className="overflow-hidden rounded-[24px] border border-white/70 bg-white/84 shadow-[0_18px_60px_-34px_hsl(var(--workspace-shadow)/0.3)]">
         {compactMode ? (
           <div>
-            <div className={cn(COMPACT_TABLE_GRID_CLASS, "py-2.5 bg-muted/40 border-b border-border/70 font-medium text-xs")}>
+            <div className={cn(COMPACT_TABLE_GRID_CLASS, "border-b border-border/70 bg-[hsl(var(--panel-muted)/0.92)] py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground")}>
               <div>No.</div>
               <div>{t("table.logicalName")}</div>
               <div>{t("table.physicalName")}</div>
@@ -202,10 +206,10 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                   key={index}
                   className={cn(
                     COMPACT_TABLE_GRID_CLASS,
-                    "py-2 border-b border-border/70 hover:bg-muted/20 transition-colors items-start text-xs",
+                    "items-start border-b border-border/70 py-2.5 text-xs transition-colors hover:bg-[hsl(var(--panel-muted)/0.62)]",
                   )}
                 >
-                  <div className="font-mono text-xs text-muted-foreground pt-0.5">{col.no || index + 1}</div>
+                  <div className="pt-0.5 font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
                   <div className="min-w-0">
                     <div
                       className={cn(
@@ -254,7 +258,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className={cn(TABLE_COLUMN_GRID_CLASS, "py-2.5 bg-muted/40 border-b border-border/70 font-medium text-xs")}>
+              <div className={cn(TABLE_COLUMN_GRID_CLASS, "border-b border-border/70 bg-[hsl(var(--panel-muted)/0.92)] py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground")}>
                 <div>No.</div>
                 <div></div>
                 <div>{t("table.logicalName")}</div>
@@ -269,7 +273,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                     key={index}
                   className={cn(
                       TABLE_COLUMN_GRID_CLASS,
-                      "py-2 border-b border-border/70 hover:bg-muted/20 transition-colors items-center text-xs",
+                      "items-center border-b border-border/70 py-2.5 text-xs transition-colors hover:bg-[hsl(var(--panel-muted)/0.62)]",
                     )}
                   >
                     <div className="font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
@@ -546,11 +550,12 @@ export function TablePreview({
 
   if (!fileId || !sheetName) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
-        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+      <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/80">
           <AlertTriangle className="w-8 h-8 text-muted-foreground/50" />
         </div>
-        <p>{t("table.selectSheet")}</p>
+        <p className="text-sm font-medium text-foreground">{t("table.selectSheet")}</p>
+        <p className="mt-1 text-xs">先锁定工作表，再进入表结构预览。</p>
       </div>
     );
   }
@@ -580,9 +585,10 @@ export function TablePreview({
 
   if (tableList.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
-        <AlertTriangle className="w-8 h-8 mb-4 opacity-50" />
+      <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
+        <AlertTriangle className="mb-4 h-8 w-8 opacity-50" />
         <p className="text-sm">{t("table.noTables")}</p>
+        <p className="mt-1 text-xs">这个工作表还没有形成可预览的表定义。</p>
       </div>
     );
   }
@@ -590,10 +596,11 @@ export function TablePreview({
   if (filteredEntries.length === 0) {
     return (
       <div className="flex flex-col h-full bg-background/40">
-        <div className="px-3 py-2 border-b border-border/60 bg-background/80 space-y-1.5">
+        <div className="space-y-2 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex-1 min-w-[220px]">
-              <p className="text-xs text-muted-foreground truncate">
+              <p className="section-kicker">Table Preview</p>
+              <p className="mt-1 truncate text-sm text-muted-foreground">
                 {t("table.tablesFound", { count: tableList.length })} <span className="font-medium text-foreground">{sheetName}</span>
               </p>
             </div>
@@ -602,6 +609,7 @@ export function TablePreview({
                 variant={showFilterBar || hasActiveFilters ? "secondary" : "outline"}
                 size="icon"
                 className={TOOLBAR_ICON_BUTTON_CLASS}
+                aria-label={t("ddl.filterByColumn")}
                 onClick={() => setShowFilterBar((previous) => !previous)}
               >
                 <Filter className="w-3.5 h-3.5" />
@@ -645,21 +653,22 @@ export function TablePreview({
             </div>
           )}
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
+        <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
           <AlertTriangle className="w-8 h-8 mb-4 opacity-50" />
           <p className="text-sm">{t("search.noResults")}</p>
+          <p className="mt-1 text-xs">试试清空筛选条件，或者回到工作表列表重新选择范围。</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* 顶部工具栏 */}
-      <div className="px-3 py-2 border-b border-border/60 bg-background/80 space-y-1.5">
+    <div className="flex h-full flex-col bg-[linear-gradient(180deg,hsl(var(--panel-muted)/0.48),transparent_24%)]">
+      <div className="space-y-2 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-md">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex-1 min-w-[220px]">
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="section-kicker">Table Preview</p>
+            <p className="mt-1 truncate text-sm text-muted-foreground">
               {t("table.tablesFound", { count: filteredEntries.length })} <span className="font-medium text-foreground">{sheetName}</span>
               {tableList.length > 0 && filteredEntries.length !== tableList.length && (
                 <span className="ml-2 text-[11px] text-muted-foreground">({filteredEntries.length}/{tableList.length})</span>
@@ -678,6 +687,7 @@ export function TablePreview({
                 variant={showFilterBar || hasActiveFilters ? "secondary" : "outline"}
                 size="icon"
                 className={TOOLBAR_ICON_BUTTON_CLASS}
+                aria-label={t("ddl.searchTables")}
                 onClick={() => setShowFilterBar((previous) => !previous)}
               >
                 <Filter className="w-3.5 h-3.5" />
@@ -687,6 +697,7 @@ export function TablePreview({
                 variant="outline"
                 size="sm"
                 className={cn(TOOLBAR_BUTTON_CLASS, "shrink-0")}
+                aria-label="Previous table"
                 onClick={() => {
                   const currentPosition = filteredEntries.findIndex((entry) => entry.absoluteIndex === currentTableIndex);
                   if (currentPosition <= 0) return;
@@ -699,10 +710,10 @@ export function TablePreview({
 
               <Select
                 value={currentTableIndex.toString()}
-                onValueChange={(value) => setCurrentTableIndex(parseInt(value))}
+                onValueChange={(value) => setCurrentTableIndex(Number.parseInt(value, 10))}
               >
                 <SelectTrigger className={cn(
-                  "max-w-[60vw] h-7 text-xs shrink-0 rounded-full border-[color:var(--button-outline)] bg-background/80 shadow-none hover:bg-accent/55",
+                  "max-w-[60vw] h-8 shrink-0 rounded-full border-[color:var(--button-outline)] bg-white/86 text-xs shadow-sm hover:bg-accent/80",
                   isCompactColumns ? "w-[180px] min-w-[130px] sm:w-[210px] sm:min-w-[150px]" : "w-[220px] min-w-[140px] sm:w-[270px] sm:min-w-[170px]",
                 )}>
                   <SelectValue />
@@ -737,6 +748,7 @@ export function TablePreview({
                 variant="outline"
                 size="sm"
                 className={cn(TOOLBAR_BUTTON_CLASS, "shrink-0")}
+                aria-label="Next table"
                 onClick={() => {
                   const currentPosition = filteredEntries.findIndex((entry) => entry.absoluteIndex === currentTableIndex);
                   if (currentPosition < 0 || currentPosition >= filteredEntries.length - 1) return;
@@ -791,8 +803,7 @@ export function TablePreview({
         )}
       </div>
 
-      {/* 表格内容区域 */}
-      <div ref={contentContainerRef} className="flex-1 overflow-auto bg-background px-3 py-4 md:px-4 md:py-5">
+      <div ref={contentContainerRef} className="flex-1 overflow-auto px-4 py-4 md:px-5 md:py-5">
         {currentTable && <SingleTablePreview table={currentTable} compactMode={isCompactColumns} />}
       </div>
     </div>

@@ -149,6 +149,75 @@ export const DB_INIT_SQL = {
     CREATE UNIQUE INDEX IF NOT EXISTS db_schema_snapshots_conn_db_hash_unique
     ON db_schema_snapshots(connection_id, database_name, snapshot_hash)
   `,
+  createDbSchemaScanEventsTable: `
+    CREATE TABLE IF NOT EXISTS db_schema_scan_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connection_id INTEGER NOT NULL,
+      dialect TEXT NOT NULL DEFAULT 'mysql',
+      database_name TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL DEFAULT 'new_snapshot',
+      previous_snapshot_hash TEXT,
+      change_summary_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDbSchemaScanEventsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS db_schema_scan_events_conn_db_snapshot_created_unique
+    ON db_schema_scan_events(connection_id, database_name, snapshot_hash, created_at)
+  `,
+  createDbDeployJobsTable: `
+    CREATE TABLE IF NOT EXISTS db_deploy_jobs (
+      id TEXT PRIMARY KEY,
+      connection_id INTEGER NOT NULL,
+      dialect TEXT NOT NULL DEFAULT 'mysql',
+      database_name TEXT NOT NULL,
+      compare_hash TEXT NOT NULL,
+      compare_source_json TEXT NOT NULL,
+      baseline_source_json TEXT NOT NULL,
+      target_snapshot_hash TEXT NOT NULL,
+      selected_tables_json TEXT NOT NULL,
+      summary_json TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDbDeployJobsCompareHashUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS db_deploy_jobs_compare_hash_unique
+    ON db_deploy_jobs(compare_hash, id)
+  `,
+  createDbDeployJobStatementResultsTable: `
+    CREATE TABLE IF NOT EXISTS db_deploy_job_statement_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL,
+      statement_id TEXT NOT NULL,
+      table_name TEXT,
+      statement_kind TEXT NOT NULL,
+      related_entity_keys_json TEXT NOT NULL DEFAULT '[]',
+      blocker_codes_json TEXT NOT NULL DEFAULT '[]',
+      blocked INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      sql TEXT NOT NULL,
+      error_code TEXT,
+      error_message TEXT,
+      executed_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  createDbDeployJobStatementResultsUniqueIndex: `
+    CREATE UNIQUE INDEX IF NOT EXISTS db_deploy_job_statement_results_job_statement_unique
+    ON db_deploy_job_statement_results(job_id, statement_id)
+  `,
+  createDbComparePoliciesTable: `
+    CREATE TABLE IF NOT EXISTS db_compare_policies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_rename_auto_accept_threshold INTEGER,
+      column_rename_auto_accept_threshold INTEGER,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
   createProcessingTasksTable: `
     CREATE TABLE IF NOT EXISTS processing_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
