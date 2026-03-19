@@ -42,11 +42,13 @@ powershell -ExecutionPolicy Bypass -File .\script\desktop-packaged-smoke-install
   -FirstLaunchStatus pending `
   -DbEntryStatus pending `
   -CloseStatus pending `
+  -DbEntryNote "Record the exact blocker here if `DB 管理` failed, including the sqlite or runtime error text." `
   -ManualEvidence "Waiting for operator confirmation of install -> first launch -> `DB 管理` -> close."
 ```
 
 Add `-InstallerArtifactPath` or `-InstallDirectory` when the defaults are not correct.
 Re-run the helper with `pass` or `fail` for each step after the real install path is observed so the artifact does not imply a successful run without proof.
+When any step fails, pass the observed reason with `-InstallNote`, `-FirstLaunchNote`, `-DbEntryNote`, or `-CloseNote` so the JSON/Markdown artifacts preserve the real blocker text instead of a generic failed-step message.
 
 All packaged smoke review artifacts are expected under `artifacts/desktop-smoke/`.
 

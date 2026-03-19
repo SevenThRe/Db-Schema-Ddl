@@ -14,6 +14,10 @@ param(
   [string]$DbEntryStatus = "pending",
   [ValidateSet("pass", "fail", "pending")]
   [string]$CloseStatus = "pending",
+  [string]$InstallNote,
+  [string]$FirstLaunchNote,
+  [string]$DbEntryNote,
+  [string]$CloseNote,
   [string[]]$ManualEvidence = @(),
   [switch]$SemiManual
 )
@@ -136,7 +140,8 @@ function Add-StepResultFinding {
   param(
     [System.Collections.Generic.List[object]]$Findings,
     [string]$StepName,
-    [string]$StepStatus
+    [string]$StepStatus,
+    [string]$StepNote
   )
 
   switch ($StepStatus) {
@@ -147,10 +152,18 @@ function Add-StepResultFinding {
         "db-entry" { "DB_ENTRY_FAILURE" }
         "close" { "RAW_CLOSE_ERROR" }
       }
-      Add-ProofFinding -Findings $Findings -Code $code -Message "Installer step '$StepName' failed." -Severity "critical" -IsBlocker $true
+      $message = "Installer step '$StepName' failed."
+      if ($StepNote) {
+        $message = "$message Detail: $StepNote"
+      }
+      Add-ProofFinding -Findings $Findings -Code $code -Message $message -Severity "critical" -IsBlocker $true
     }
     "pending" {
-      Add-ProofFinding -Findings $Findings -Code "STEP_RESULT_PENDING" -Message "Installer step '$StepName' is still awaiting operator confirmation." -Severity "warning" -IsBlocker $false
+      $message = "Installer step '$StepName' is still awaiting operator confirmation."
+      if ($StepNote) {
+        $message = "$message Detail: $StepNote"
+      }
+      Add-ProofFinding -Findings $Findings -Code "STEP_RESULT_PENDING" -Message $message -Severity "warning" -IsBlocker $false
     }
   }
 }
@@ -306,28 +319,28 @@ if (-not $SemiManual.IsPresent -and -not (Test-Path $installedExecutablePath)) {
 $stepResults = [ordered]@{
   install = [ordered]@{
     status = $InstallStatus
-    note = "Installer UI reached the expected completion state."
+    note = if ($InstallNote) { $InstallNote } else { "Installer UI reached the expected completion state." }
     requiredEvidenceKinds = @("installer", "installer-ui-screenshot")
   }
   "first-launch" = [ordered]@{
     status = $FirstLaunchStatus
-    note = "Installed executable launched and the main window became interactive."
+    note = if ($FirstLaunchNote) { $FirstLaunchNote } else { "Installed executable launched and the main window became interactive." }
     requiredEvidenceKinds = @("installed-executable", "first-launch-screenshot")
   }
   "db-entry" = [ordered]@{
     status = $DbEntryStatus
-    note = "The installed app entered `DB 管理` during the reviewed run."
+    note = if ($DbEntryNote) { $DbEntryNote } else { "The installed app entered `DB 管理` during the reviewed run." }
     requiredEvidenceKinds = @("first-launch-screenshot", "packaged-log")
   }
   close = [ordered]@{
     status = $CloseStatus
-    note = "The installed app closed cleanly without raw JS error spam."
+    note = if ($CloseNote) { $CloseNote } else { "The installed app closed cleanly without raw JS error spam." }
     requiredEvidenceKinds = @("packaged-log")
   }
 }
 
 foreach ($stepName in $stepResults.Keys) {
-  Add-StepResultFinding -Findings $blockerFindings -StepName $stepName -StepStatus $stepResults[$stepName].status
+  Add-StepResultFinding -Findings $blockerFindings -StepName $stepName -StepStatus $stepResults[$stepName].status -StepNote $stepResults[$stepName].note
 }
 
 $proofStatus = Get-ProofStatus -Findings $blockerFindings

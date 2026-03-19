@@ -243,6 +243,23 @@ test("installer smoke helper accepts explicit screenshot and log evidence plus p
   assert.match(installerScript, /close/);
 });
 
+test("installer smoke helper preserves explicit per-step notes in findings and step results", () => {
+  const installerScriptPath = path.resolve("script/desktop-packaged-smoke-installer.ps1");
+  const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
+  const installerScript = fs.readFileSync(installerScriptPath, "utf8");
+  const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
+
+  assert.match(installerScript, /\$InstallNote/);
+  assert.match(installerScript, /\$FirstLaunchNote/);
+  assert.match(installerScript, /\$DbEntryNote/);
+  assert.match(installerScript, /\$CloseNote/);
+  assert.match(installerScript, /Detail: \$StepNote/);
+  assert.match(packagedSmokeDoc, /-DbEntryNote/);
+  assert.match(packagedSmokeDoc, /-InstallNote/);
+  assert.match(packagedSmokeDoc, /-FirstLaunchNote/);
+  assert.match(packagedSmokeDoc, /-CloseNote/);
+});
+
 test("packaged smoke docs classify installer release blockers explicitly", () => {
   const packagedSmokeDocPath = path.resolve("docs/desktop-packaged-smoke.md");
   const packagedSmokeDoc = fs.readFileSync(packagedSmokeDocPath, "utf8");
