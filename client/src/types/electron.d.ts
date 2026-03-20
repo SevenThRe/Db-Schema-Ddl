@@ -17,6 +17,7 @@ export interface ElectronAPI {
     updateAvailable: boolean;
     currentVersion: string;
     latestVersion: string;
+    releaseUrl: string;
     message?: string;
   }>;
   getAppVersion: () => Promise<string>;

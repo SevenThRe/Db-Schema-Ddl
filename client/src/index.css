@@ -8,7 +8,6 @@
   --font-sans: 'IBM Plex Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Editorial-industrial workbench palette */
   --background: 210 33% 98%;
   --foreground: 221 39% 13%;
 
@@ -45,7 +44,7 @@
   --workspace-grid: 218 22% 88%;
   --workspace-shadow: 220 53% 10%;
 
-  --radius: 0.75rem;
+  --radius: 0.375rem;
 }
 
 .dark {
@@ -91,10 +90,7 @@
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    background-image:
-      radial-gradient(circle at top left, hsl(var(--workspace-glow) / 0.14), transparent 28%),
-      radial-gradient(circle at top right, hsl(197 89% 66% / 0.08), transparent 20%),
-      linear-gradient(180deg, hsl(210 40% 99%), hsl(215 38% 95%));
+    background-image: none;
     min-height: 100vh;
   }
 
@@ -131,42 +127,39 @@ code {
 
 @layer utilities {
   .workbench-shell {
-    @apply relative overflow-hidden rounded-[28px] border border-white/70 bg-background/80 shadow-[0_24px_80px_-32px_hsl(var(--workspace-shadow)/0.45)] backdrop-blur-xl;
+    @apply relative overflow-hidden bg-background;
   }
 
   .workbench-shell::before {
     content: "";
     position: absolute;
     inset: 0;
-    background-image:
-      linear-gradient(to right, hsl(var(--workspace-grid) / 0.12) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--workspace-grid) / 0.12) 1px, transparent 1px);
-    background-size: 24px 24px;
-    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 72%);
+    background: none;
+    mask-image: none;
     pointer-events: none;
   }
 
   .panel-surface {
-    @apply rounded-[24px] border border-white/70 bg-white/82 shadow-[0_16px_60px_-32px_hsl(var(--workspace-shadow)/0.32)] backdrop-blur-xl;
+    @apply border border-border bg-background shadow-none;
   }
 
   .panel-surface-muted {
-    @apply rounded-[22px] border border-white/70 bg-[hsl(var(--panel-muted)/0.92)] shadow-[0_14px_48px_-28px_hsl(var(--workspace-shadow)/0.2)];
+    @apply border border-border bg-muted/20 shadow-none;
   }
 
   .section-kicker {
-    @apply text-[10px] font-semibold uppercase tracking-[0.32em] text-primary/75;
+    @apply text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground;
   }
 
   .section-headline {
-    @apply text-[clamp(1.2rem,2.2vw,2rem)] font-semibold leading-tight text-[hsl(var(--workspace-ink))];
+    @apply text-[clamp(1.2rem,2vw,1.9rem)] font-semibold leading-tight text-foreground;
   }
 
   .section-copy {
-    @apply text-sm leading-6 text-muted-foreground;
+    @apply text-sm text-muted-foreground;
   }
 
   .status-pill {
-    @apply inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/78 px-3 py-1 text-[11px] font-medium text-[hsl(var(--workspace-ink-soft))] shadow-sm;
+    @apply inline-flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-[11px] font-medium text-muted-foreground;
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, FileSpreadsheet, GitBranch, History, Network, ShieldCheck } from "lucide-react";
+import { ArrowRightLeft, FileSpreadsheet, GitBranch, History, Network, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -24,13 +24,12 @@ import { DbLiveExportWorkspace } from "./DbLiveExportWorkspace";
 import { DbSchemaGraph } from "./DbSchemaGraph";
 import { DbSnapshotCompareWorkspace, type DbSnapshotCompareWorkspaceSeed } from "./DbSnapshotCompareWorkspace";
 import { DbVsDbWorkspace } from "./DbVsDbWorkspace";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DbConnectionImportDraft, DbConnectionUpsertRequest } from "@shared/schema";
 import type { DbManagementViewMode } from "@shared/schema";
 
 interface DbManagementWorkspaceProps {
-  onBack: () => void;
   onActivateFile?: (fileId: number) => void;
   selectedFileId: number | null;
   selectedSheet: string | null;
@@ -48,32 +47,32 @@ const DEFAULT_DIFF_STATE: DbDiffWorkspaceStateSnapshot = {
 const VIEW_MODES: readonly DbManagementViewMode[] = ["diff", "db-vs-db", "snapshot-compare", "live-export", "history", "apply", "graph"];
 const VIEW_META: Record<DbManagementViewMode, { title: string; description: string }> = {
   diff: {
-    title: "Definition vs Live Schema",
-    description: "先看差异，再决定 rename、预览 SQL 或进入 apply 阶段。",
+    title: "定义对照",
+    description: "对照定义书与当前库。",
   },
   "db-vs-db": {
-    title: "DB vs DB",
-    description: "对比两个真实 database 的结构演进，适合环境核对与迁移前检查。",
+    title: "库对库",
+    description: "对比两个真实库。",
   },
   "snapshot-compare": {
-    title: "Snapshot Compare",
-    description: "围绕历史 snapshot 做回溯与横向比较，确认 schema 变化轨迹。",
+    title: "快照对比",
+    description: "比较历史快照。",
   },
   "live-export": {
-    title: "Live Export",
-    description: "把 live database 导回 XLSX，回到工作簿驱动的主链路。",
+    title: "导出 XLSX",
+    description: "把当前库导回 XLSX。",
   },
   history: {
-    title: "History",
-    description: "查看过去的 snapshot 与比较记录，恢复你的操作上下文。",
+    title: "历史",
+    description: "查看当前库的快照历史。",
   },
   apply: {
-    title: "Apply",
-    description: "在真正执行前确认风险、上下文与差异来源，降低误操作概率。",
+    title: "执行变更",
+    description: "只执行通过检查的变更。",
   },
   graph: {
-    title: "Schema Graph",
-    description: "用关系视图理解表之间的结构关联，而不是在列表里盲找。",
+    title: "关系图",
+    description: "查看表关系图。",
   },
 };
 
@@ -81,11 +80,15 @@ function readStoredViewMode(): DbManagementViewMode {
   if (typeof window === "undefined") {
     return "diff";
   }
+  const requested = new URLSearchParams(window.location.search).get("db-view");
+  if (VIEW_MODES.includes(requested as DbManagementViewMode)) {
+    return requested as DbManagementViewMode;
+  }
   const stored = window.localStorage.getItem(DB_MANAGEMENT_ACTIVE_VIEW_STORAGE_KEY);
   return VIEW_MODES.includes(stored as DbManagementViewMode) ? (stored as DbManagementViewMode) : "diff";
 }
 
-export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, selectedSheet, selectedFileName }: DbManagementWorkspaceProps) {
+export function DbManagementWorkspace({ onActivateFile, selectedFileId, selectedSheet, selectedFileName }: DbManagementWorkspaceProps) {
   const { toast } = useToast();
   const { data: connections = [] } = useDbConnections();
   const createConnection = useCreateDbConnection();
@@ -111,7 +114,7 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
       ? introspectSchema.data
       : null;
   const activeViewMeta = VIEW_META[activeView];
-  const selectedDatabaseLabel = selectedConnection?.lastSelectedDatabase ?? "未选择 database";
+  const selectedDatabaseLabel = selectedConnection?.lastSelectedDatabase ?? "未选择数据库";
   const connectionLabel = selectedConnection
     ? `${selectedConnection.username}@${selectedConnection.host}:${selectedConnection.port}`
     : "选择或创建一个连接";
@@ -265,7 +268,7 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
     } catch (error) {
       toast({
         title: "DB 管理",
-        description: error instanceof Error ? error.message : "切换 database 失败。",
+        description: error instanceof Error ? error.message : "切换数据库失败。",
         variant: "destructive",
       });
     }
@@ -275,7 +278,7 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
     if (!selectedConnection?.lastSelectedDatabase) {
       toast({
         title: "DB 管理",
-        description: "请先选择一个 database。",
+        description: "请先选择一个数据库。",
         variant: "destructive",
       });
       return;
@@ -290,62 +293,35 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
         },
       });
       toast({
-        title: "Schema 读取完成",
-        description: `${result.selectedDatabase} 已生成 ${result.snapshot.tableCount} 张表的 snapshot。`,
+        title: "快照读取完成",
+        description: `${result.selectedDatabase} 已生成 ${result.snapshot.tableCount} 张表的快照。`,
       });
     } catch (error) {
       toast({
-        title: "Schema 读取失败",
-        description: error instanceof Error ? error.message : "读取 schema 失败。",
+        title: "快照读取失败",
+        description: error instanceof Error ? error.message : "读取快照失败。",
         variant: "destructive",
       });
     }
   };
 
   return (
-    <div className="flex h-full flex-col overflow-auto bg-[linear-gradient(180deg,hsl(var(--panel-muted)/0.6),transparent_36%)] p-5">
-      <section className="mb-5 overflow-hidden rounded-[28px] border border-[hsl(var(--workspace-ink))/0.08] bg-[linear-gradient(135deg,hsl(var(--workspace-ink)),hsl(var(--workspace-ink-soft)))] px-5 py-5 text-white shadow-[0_28px_80px_-36px_hsl(var(--workspace-shadow)/0.65)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/55">DB Control Center</p>
-            <h2 className="mt-3 text-[clamp(1.5rem,2.6vw,2.5rem)] font-semibold leading-tight">
-              把连接、快照、差异与执行放回一条清晰的数据库工作流里
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
-              当前 DB 管理模块不再只是功能堆叠，而是围绕“连接上下文、目标 database、活动工作簿、当前操作模式”展开的专业操作台。
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={onBack}
-            className="h-10 rounded-full border-white/20 bg-white/6 px-4 text-white hover:bg-white/12 hover:text-white"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            返回定义书
-          </Button>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/12 bg-white/8 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">Connection</p>
-            <p className="mt-2 truncate text-sm font-medium">{connectionLabel}</p>
-            <p className="mt-1 text-xs text-white/55">连接是所有 schema 读取、差异分析与 apply 流程的起点。</p>
-          </div>
-          <div className="rounded-2xl border border-white/12 bg-white/8 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">Database</p>
-            <p className="mt-2 truncate text-sm font-medium">{selectedDatabaseLabel}</p>
-            <p className="mt-1 text-xs text-white/55">任何 snapshot、graph、history 与 live export 都应显式绑定当前 database。</p>
-          </div>
-          <div className="rounded-2xl border border-white/12 bg-white/8 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">Workbook Context</p>
-            <p className="mt-2 truncate text-sm font-medium">{workbookLabel}</p>
-            <p className="mt-1 text-xs text-white/55">让 DB 操作和 Excel 定义书保持同一个上下文，不再来回失焦。</p>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <section className="border-b border-border px-4 py-2.5">
+        <div className="flex flex-col gap-2">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[hsl(var(--workspace-ink))]">数据库管理</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="truncate">连接: {connectionLabel}</span>
+              <span className="truncate">数据库: {selectedDatabaseLabel}</span>
+              <span className="truncate">文件: {workbookLabel}</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1.22fr_0.78fr]">
-        <div className="panel-surface-muted p-1.5">
+      <div className="flex-1 overflow-auto px-4 py-4">
+        <div className="grid gap-4 xl:grid-cols-[1.22fr_0.78fr]">
           <ConnectionManager
             connections={connections}
             selectedConnectionId={selectedConnectionId}
@@ -360,36 +336,22 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
             isTesting={testConnection.isPending}
             isImporting={parseConnectionImports.isPending}
           />
-        </div>
-
-        <div className="panel-surface-muted p-1.5">
-          <Card className="border-white/70 bg-white/86 shadow-none">
-            <CardHeader className="space-y-3">
-              <div>
-                <p className="section-kicker">Context & Introspection</p>
-                <CardTitle className="mt-2 text-xl text-[hsl(var(--workspace-ink))]">操作上下文</CardTitle>
-                <CardDescription className="mt-2 text-sm leading-6">
-                  先明确当前连接和 database，再决定要读取快照、查看差异，还是把 live schema 回写到工作簿。
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <Card className="border-border shadow-none">
+            <CardContent className="space-y-4 p-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/70 bg-[hsl(var(--panel-muted)/0.85)] px-4 py-3">
-                  <p className="section-kicker">Selected View</p>
-                  <p className="mt-2 text-sm font-semibold text-[hsl(var(--workspace-ink))]">{activeViewMeta.title}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeViewMeta.description}</p>
+                <div className="border border-border bg-muted/20 px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">当前模式</div>
+                  <div className="mt-1 text-sm font-medium text-[hsl(var(--workspace-ink))]">{activeViewMeta.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{activeViewMeta.description}</div>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-[hsl(var(--panel-muted)/0.85)] px-4 py-3">
-                  <p className="section-kicker">Snapshot Status</p>
-                  <p className="mt-2 text-sm font-semibold text-[hsl(var(--workspace-ink))]">
-                    {latestResult ? `${latestResult.snapshot.tableCount} 张表已载入` : "尚未读取最新 snapshot"}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {latestResult
-                      ? `当前快照来自 ${latestResult.selectedDatabase}。`
-                      : "选择 database 后触发 introspection，建立后续差异与历史的基础。"}
-                  </p>
+                <div className="border border-border bg-muted/20 px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">最近快照</div>
+                  <div className="mt-1 text-sm font-medium text-[hsl(var(--workspace-ink))]">
+                    {latestResult ? `${latestResult.snapshot.tableCount} 张表` : "未读取"}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {latestResult ? latestResult.selectedDatabase : "选择数据库后读取快照。"}
+                  </div>
                 </div>
               </div>
 
@@ -411,112 +373,109 @@ export function DbManagementWorkspace({ onBack, onActivateFile, selectedFileId, 
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      <div className="mt-4 panel-surface-muted p-4">
-        <Tabs value={activeView} onValueChange={(value) => setActiveView(value as DbManagementViewMode)} className="space-y-4">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="section-kicker">Workspace Modes</p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-tight text-[hsl(var(--workspace-ink))]">
-                {activeViewMeta.title}
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {activeViewMeta.description} 初次进入默认打开差异视图，之后会记住你上次停留的位置。
-              </p>
+        <div className="mt-4 border border-border bg-background">
+          <Tabs value={activeView} onValueChange={(value) => setActiveView(value as DbManagementViewMode)} className="min-h-0">
+            <div className="border-b border-border px-4 py-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <div className="text-sm font-medium text-[hsl(var(--workspace-ink))]">{activeViewMeta.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{activeViewMeta.description}</div>
+                </div>
+                <TabsList className="h-auto flex-wrap justify-start gap-1 rounded-sm border border-border bg-muted/20 p-1">
+                  <TabsTrigger value="diff" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <GitBranch className="h-4 w-4" />
+                    差异
+                  </TabsTrigger>
+                  <TabsTrigger value="db-vs-db" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <ArrowRightLeft className="h-4 w-4" />
+                    库对库
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <History className="h-4 w-4" />
+                    历史
+                  </TabsTrigger>
+                  <TabsTrigger value="snapshot-compare" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <ArrowRightLeft className="h-4 w-4" />
+                    快照对比
+                  </TabsTrigger>
+                  <TabsTrigger value="live-export" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    导出 XLSX
+                  </TabsTrigger>
+                  <TabsTrigger value="apply" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <ShieldCheck className="h-4 w-4" />
+                    执行变更
+                  </TabsTrigger>
+                  <TabsTrigger value="graph" className="gap-2 rounded-sm px-3 py-1.5 text-[11px] font-medium">
+                    <Network className="h-4 w-4" />
+                    关系图
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             </div>
-            <TabsList className="h-auto flex-wrap justify-start gap-1 rounded-[20px] border border-white/80 bg-white/82 p-1 shadow-sm">
-              <TabsTrigger value="diff" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <GitBranch className="h-4 w-4" />
-                差异
-              </TabsTrigger>
-              <TabsTrigger value="db-vs-db" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <ArrowRightLeft className="h-4 w-4" />
-                DB vs DB
-              </TabsTrigger>
-              <TabsTrigger value="history" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <History className="h-4 w-4" />
-                历史
-              </TabsTrigger>
-              <TabsTrigger value="snapshot-compare" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <ArrowRightLeft className="h-4 w-4" />
-                Snapshot Compare
-              </TabsTrigger>
-              <TabsTrigger value="live-export" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <FileSpreadsheet className="h-4 w-4" />
-                Live DB to XLSX
-              </TabsTrigger>
-              <TabsTrigger value="apply" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <ShieldCheck className="h-4 w-4" />
-                Apply
-              </TabsTrigger>
-              <TabsTrigger value="graph" className="gap-2 rounded-2xl px-3 py-2 text-[11px] font-medium">
-                <Network className="h-4 w-4" />
-                关系图
-              </TabsTrigger>
-            </TabsList>
-          </div>
 
-          <TabsContent value="diff" className="mt-0">
-            <DbDiffWorkspace
-              selectedConnection={selectedConnection}
-              selectedFileId={selectedFileId}
-              selectedFileName={selectedFileName}
-              selectedSheet={selectedSheet}
-              onStateChange={setDiffState}
-            />
-          </TabsContent>
+            <TabsContent value="diff" className="mt-0 p-4">
+              <DbDiffWorkspace
+                selectedConnection={selectedConnection}
+                selectedFileId={selectedFileId}
+                selectedFileName={selectedFileName}
+                selectedSheet={selectedSheet}
+                onStateChange={setDiffState}
+              />
+            </TabsContent>
 
-          <TabsContent value="db-vs-db" className="mt-0">
-            <DbVsDbWorkspace seedConnection={selectedConnection} />
-          </TabsContent>
+            <TabsContent value="db-vs-db" className="mt-0 p-4">
+              <DbVsDbWorkspace seedConnection={selectedConnection} />
+            </TabsContent>
 
-          <TabsContent value="history" className="mt-0">
-            <DbHistoryPanel
-              selectedConnection={selectedConnection}
-              selectedFileId={selectedFileId}
-              selectedFileName={selectedFileName}
-              selectedSheet={selectedSheet}
-              onOpenSnapshotCompare={(seed) => {
-                setSnapshotCompareSeed(seed);
-                setActiveView("snapshot-compare");
-              }}
-            />
-          </TabsContent>
+            <TabsContent value="history" className="mt-0 p-4">
+              <DbHistoryPanel
+                selectedConnection={selectedConnection}
+                selectedFileId={selectedFileId}
+                selectedFileName={selectedFileName}
+                selectedSheet={selectedSheet}
+                onOpenSnapshotCompare={(seed) => {
+                  setSnapshotCompareSeed(seed);
+                  setActiveView("snapshot-compare");
+                }}
+              />
+            </TabsContent>
 
-          <TabsContent value="snapshot-compare" className="mt-0">
-            <DbSnapshotCompareWorkspace
-              seedConnection={selectedConnection}
-              initialSeed={snapshotCompareSeed}
-            />
-          </TabsContent>
+            <TabsContent value="snapshot-compare" className="mt-0 p-4">
+              <DbSnapshotCompareWorkspace
+                seedConnection={selectedConnection}
+                initialSeed={snapshotCompareSeed}
+              />
+            </TabsContent>
 
-          <TabsContent value="live-export" className="mt-0">
-            <DbLiveExportWorkspace
-              selectedConnection={selectedConnection}
-              onActivateFile={onActivateFile}
-            />
-          </TabsContent>
+            <TabsContent value="live-export" className="mt-0 p-4">
+              <DbLiveExportWorkspace
+                selectedConnection={selectedConnection}
+                onActivateFile={onActivateFile}
+              />
+            </TabsContent>
 
-          <TabsContent value="apply" className="mt-0">
-            <DbApplyPanel
-              selectedConnection={selectedConnection}
-              selectedFileId={selectedFileId}
-              selectedFileName={selectedFileName}
-              selectedSheet={selectedSheet}
-              diffState={diffState}
-            />
-          </TabsContent>
+            <TabsContent value="apply" className="mt-0 p-4">
+              <DbApplyPanel
+                selectedConnection={selectedConnection}
+                selectedFileId={selectedFileId}
+                selectedFileName={selectedFileName}
+                selectedSheet={selectedSheet}
+                diffState={diffState}
+              />
+            </TabsContent>
 
-          <TabsContent value="graph" className="mt-0">
-            <DbSchemaGraph
-              selectedConnection={selectedConnection}
-              selectedFileId={selectedFileId}
-              selectedFileName={selectedFileName}
-              selectedSheet={selectedSheet}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="graph" className="mt-0 p-4">
+              <DbSchemaGraph
+                selectedConnection={selectedConnection}
+                selectedFileId={selectedFileId}
+                selectedFileName={selectedFileName}
+                selectedSheet={selectedSheet}
+              />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );

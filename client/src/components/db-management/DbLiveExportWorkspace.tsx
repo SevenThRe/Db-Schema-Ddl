@@ -81,7 +81,7 @@ function filterIssuesForSelection(issues: DbLiveExportIssue[], selectedTableName
 }
 
 function freshnessLabel(mode: DbSnapshotCompareLiveFreshness) {
-  return mode === "refresh_live" ? "导出前刷新 live" : "使用最近 snapshot";
+  return mode === "refresh_live" ? "导出前刷新当前库" : "使用最近快照";
 }
 
 function reviewArtifact(
@@ -181,15 +181,15 @@ export function DbLiveExportWorkspace({
   const handleRefreshPreview = async () => {
     if (!selectedConnection?.id || !selectedDatabase) {
       toast({
-        title: "Live DB to XLSX",
-        description: "还没有可导出的数据库目录。先选择连接、database 和 freshness 模式，再读取当前目录开始审阅。",
+        title: "导出 XLSX",
+        description: "还没有可导出的数据库目录。先选择连接、数据库和读取模式，再读取当前目录开始审阅。",
         variant: "destructive",
       });
       return;
     }
     if (!selectedTemplateId) {
       toast({
-        title: "Live DB to XLSX",
+        title: "导出 XLSX",
         description: "请先选择导出的官方模板。",
         variant: "destructive",
       });
@@ -199,7 +199,7 @@ export function DbLiveExportWorkspace({
     if (
       freshnessMode === "refresh_live" &&
       typeof window !== "undefined" &&
-      !window.confirm("这会重新扫描当前数据库，并可能生成新的 snapshot 版本。确认继续刷新吗？")
+      !window.confirm("这会重新扫描当前数据库，并可能生成新的快照版本。确认继续刷新吗？")
     ) {
       return;
     }
@@ -219,7 +219,7 @@ export function DbLiveExportWorkspace({
       });
     } catch (error) {
       toast({
-        title: "导出未完成。请先处理阻断项，或切换 freshness 后重新读取目录。",
+        title: "导出未完成",
         description: error instanceof Error ? error.message : "读取导出目录失败。",
         variant: "destructive",
       });
@@ -259,7 +259,7 @@ export function DbLiveExportWorkspace({
     }
     if (!reviewedArtifact.canExport) {
       toast({
-        title: "导出未完成。请先处理阻断项，或切换 freshness 后重新读取目录。",
+        title: "导出未完成",
         description: "当前仍有阻断项，无法继续生成工作簿。",
         variant: "destructive",
       });
@@ -290,7 +290,7 @@ export function DbLiveExportWorkspace({
       onActivateFile?.(result.file.id);
     } catch (error) {
       toast({
-        title: "导出未完成。请先处理阻断项，或切换 freshness 后重新读取目录。",
+        title: "导出未完成",
         description: error instanceof Error ? error.message : "生成 XLSX 工作簿失败。",
         variant: "destructive",
       });
@@ -300,46 +300,46 @@ export function DbLiveExportWorkspace({
   const allFilteredSelected = filteredTables.length > 0 && filteredTables.every((table) => selectedSet.has(normalizeName(table.name)));
 
   return (
-    <Card className="border-border/70">
-      <CardHeader className="space-y-3">
+    <Card className="border-border">
+      <CardHeader className="space-y-3 border-b border-border pb-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <CardTitle className="text-base">Live DB to XLSX</CardTitle>
+            <CardTitle className="text-base">导出 XLSX</CardTitle>
             <CardDescription>
-              从当前 live DB / snapshot 目录生成官方模板工作簿，成功后立即回到标准文件列表流程。
+              从当前库 / 快照目录生成官方模板工作簿，成功后立即回到标准文件列表流程。
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">whole catalog first</Badge>
-            <Badge variant="outline">parser round-trip gated</Badge>
+            <Badge variant="outline">先读全库目录</Badge>
+            <Badge variant="outline">解析回环校验</Badge>
             <Badge variant="secondary">{freshnessLabel(freshnessMode)}</Badge>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="grid gap-0 overflow-hidden rounded-2xl border border-border/60 bg-muted/20 lg:grid-cols-[0.95fr_1.15fr_0.9fr]">
-        <section className="min-h-[580px] border-b border-border/60 bg-background lg:border-b-0 lg:border-r">
+      <CardContent className="grid gap-0 overflow-hidden border border-border bg-muted/20 lg:grid-cols-[0.95fr_1.15fr_0.9fr]">
+        <section className="min-h-[580px] border-b border-border bg-background lg:border-b-0 lg:border-r">
           <div className="space-y-4 p-6">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Source</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">来源</div>
               <h3 className="mt-2 text-base font-semibold">读取导出目录</h3>
               <p className="text-sm text-muted-foreground">
-                先确认当前连接、database 和 freshness，再读取完整目录进入审阅。
+                先确认当前连接、数据库和读取模式，再读取完整目录进入审阅。
               </p>
             </div>
 
-            <Card className="border-border/70 bg-slate-50/70 dark:bg-slate-950/20">
+            <Card className="border-border bg-slate-50/70 dark:bg-slate-950/20">
               <CardContent className="space-y-3 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Database className="h-4 w-4 text-primary" />
                   当前来源
                 </div>
-                <div className="rounded-xl border border-border/60 bg-background px-3 py-2 text-sm">
+                <div className="border border-border bg-background px-3 py-2 text-sm">
                   <div className="font-medium">{selectedConnection?.name ?? "未选择连接"}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{selectedDatabase ?? "请先在上方选择 database"}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{selectedDatabase ?? "请先在上方选择数据库"}</div>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Freshness</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">读取模式</div>
                   <div className="grid gap-2">
                     <Button
                       type="button"
@@ -347,7 +347,7 @@ export function DbLiveExportWorkspace({
                       className="justify-start"
                       onClick={() => setFreshnessMode("latest_snapshot")}
                     >
-                      使用最近 snapshot
+                      使用最近快照
                     </Button>
                     <Button
                       type="button"
@@ -355,7 +355,7 @@ export function DbLiveExportWorkspace({
                       className="justify-start"
                       onClick={() => setFreshnessMode("refresh_live")}
                     >
-                      导出前刷新 live
+                      导出前刷新当前库
                     </Button>
                   </div>
                 </div>
@@ -376,7 +376,7 @@ export function DbLiveExportWorkspace({
                 <FileSpreadsheet className="h-4 w-4" />
                 <AlertTitle>还没有可导出的数据库目录</AlertTitle>
                 <AlertDescription>
-                  先选择连接、database 和 freshness 模式，再读取当前目录开始审阅。
+                  先选择连接、数据库和读取模式，再读取当前目录开始审阅。
                 </AlertDescription>
               </Alert>
             ) : (
@@ -392,9 +392,9 @@ export function DbLiveExportWorkspace({
           </div>
         </section>
 
-        <section className="min-h-[580px] border-b border-border/60 bg-background lg:border-b-0 lg:border-r">
+        <section className="min-h-[580px] border-b border-border bg-background lg:border-b-0 lg:border-r">
           <div className="flex h-full flex-col">
-            <div className="border-b border-border/60 px-6 py-4">
+            <div className="border-b border-border px-6 py-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h3 className="text-base font-semibold">表选择</h3>
@@ -409,12 +409,12 @@ export function DbLiveExportWorkspace({
                     placeholder="筛选表名或备注"
                     className="h-9 w-[220px]"
                   />
-                  <Badge variant="secondary">{selectedTableNames.length} selected</Badge>
+                  <Badge variant="secondary">{selectedTableNames.length} 已选</Badge>
                 </div>
               </div>
             </div>
 
-            <div className="border-b border-border/60 px-6 py-3">
+            <div className="border-b border-border px-6 py-3">
               <div className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={allFilteredSelected}
@@ -432,7 +432,7 @@ export function DbLiveExportWorkspace({
                 {(filteredTables.length === 0 ? artifact?.catalog.tables ?? [] : filteredTables).map((table) => {
                   const isSelected = selectedSet.has(normalizeName(table.name));
                   return (
-                    <div key={table.name} className="rounded-2xl border border-border/60 bg-background p-4">
+                    <div key={table.name} className="border border-border bg-background p-4">
                       <div className="flex items-start gap-3">
                         <Checkbox
                           checked={isSelected}
@@ -445,14 +445,14 @@ export function DbLiveExportWorkspace({
                             <label htmlFor={`live-export-${table.name}`} className="cursor-pointer font-medium">
                               {table.name}
                             </label>
-                            <Badge variant="outline">{table.columns.length} columns</Badge>
+                            <Badge variant="outline">{table.columns.length} 列</Badge>
                             {table.foreignKeys.length > 0 ? <Badge variant="outline">{table.foreignKeys.length} FK</Badge> : null}
                             {table.indexes.filter((index) => !index.primary).length > 0 ? (
                               <Badge variant="outline">{table.indexes.filter((index) => !index.primary).length} IDX</Badge>
                             ) : null}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {table.comment || "无表备注"} · {table.engine || "engine unknown"}
+                            {table.comment || "无表备注"} · {table.engine || "未知引擎"}
                           </div>
                         </div>
                       </div>
@@ -460,7 +460,7 @@ export function DbLiveExportWorkspace({
                   );
                 })}
                 {artifact && filteredTables.length === 0 && tableFilter.trim() ? (
-                  <div className="rounded-2xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+                  <div className="border border-dashed border-border p-6 text-sm text-muted-foreground">
                     当前筛选没有匹配到表，请调整关键字后重试。
                   </div>
                 ) : null}
@@ -471,36 +471,36 @@ export function DbLiveExportWorkspace({
 
         <section className="min-h-[580px] bg-slate-50/70 dark:bg-slate-950/20">
           <div className="flex h-full flex-col">
-            <div className="border-b border-border/60 px-6 py-4">
+            <div className="border-b border-border px-6 py-4">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-primary" />
                 <h3 className="text-base font-semibold">导出准备</h3>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                右侧是整个工作流的 trust gate：先看 blocker / 有损项，再选择模板并生成 XLSX 工作簿。
+                右侧是整个工作流的最终门槛：先看阻断 / 有损项，再选择模板并生成 XLSX 工作簿。
               </p>
             </div>
 
             <div className="space-y-4 p-6">
-              <Card className={cn("border-border/70", hasBlockingIssues && "border-red-500/40 bg-red-500/10")}>
+              <Card className={cn("border-border", hasBlockingIssues && "border-red-500/40 bg-red-500/10")}>
                 <CardContent className="space-y-4 p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-semibold">Issue Summary</div>
+                    <div className="text-sm font-semibold">问题汇总</div>
                     <Badge variant={hasBlockingIssues ? "destructive" : "secondary"}>
-                      {reviewedArtifact?.selectedTableNames.length ?? 0} tables
+                      {reviewedArtifact?.selectedTableNames.length ?? 0} 张表
                     </Badge>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-red-700 dark:text-red-200">blocking</div>
+                    <div className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-red-700 dark:text-red-200">阻断</div>
                       <div className="mt-1 text-lg font-semibold">{reviewedArtifact?.issueSummary.blockingCount ?? 0}</div>
                     </div>
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200">confirm</div>
+                    <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200">确认</div>
                       <div className="mt-1 text-lg font-semibold">{reviewedArtifact?.issueSummary.confirmCount ?? 0}</div>
                     </div>
-                    <div className="rounded-xl border border-slate-400/30 bg-slate-500/10 px-3 py-2 text-sm">
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-700 dark:text-slate-200">info</div>
+                    <div className="border border-slate-400/30 bg-slate-500/10 px-3 py-2 text-sm">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-700 dark:text-slate-200">提示</div>
                       <div className="mt-1 text-lg font-semibold">{reviewedArtifact?.issueSummary.infoCount ?? 0}</div>
                     </div>
                   </div>
@@ -517,7 +517,7 @@ export function DbLiveExportWorkspace({
                     </SelectContent>
                   </Select>
                   {requiresLossyConfirmation ? (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                    <div className="border border-amber-500/30 bg-amber-500/10 p-3">
                       <div className="text-sm font-medium text-amber-800 dark:text-amber-100">存在有损项</div>
                       <div className="mt-1 text-xs text-amber-700 dark:text-amber-200">
                         当前选择仍包含不会被工作簿结构完整保存的数据库信息，继续前请明确确认。
@@ -560,7 +560,7 @@ export function DbLiveExportWorkspace({
               <ScrollArea className="min-h-0 flex-1">
                 <div className="space-y-3 pr-1">
                   {(reviewedArtifact?.issues ?? []).map((issue) => (
-                    <div key={`${issue.entityKey}:${issue.kind}`} className={cn("rounded-xl border p-3 text-sm", ISSUE_STYLES[issue.severity])}>
+                    <div key={`${issue.entityKey}:${issue.kind}`} className={cn("border p-3 text-sm", ISSUE_STYLES[issue.severity])}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-medium">{issue.message}</div>
                         <Badge variant="outline">{issue.severity}</Badge>
@@ -570,7 +570,7 @@ export function DbLiveExportWorkspace({
                     </div>
                   ))}
                   {reviewedArtifact && reviewedArtifact.issues.length === 0 ? (
-                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-100">
+                    <div className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-100">
                       当前选择没有阻断项，也没有需要额外确认的有损项，可以直接生成 XLSX 工作簿。
                     </div>
                   ) : null}

@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateAvailable: boolean;
     currentVersion: string;
     latestVersion: string;
+    releaseUrl: string;
     message?: string;
   }> => {
     return await ipcRenderer.invoke('check-for-updates');

@@ -21,6 +21,25 @@ interface DbApplyPanelProps {
 
 type DbApplyTableChange = NonNullable<DbDiffWorkspaceStateSnapshot["compareResult"]>["tableChanges"][number];
 
+function applyStatusLabel(status: string): string {
+  switch (status) {
+    case "pending":
+      return "待执行";
+    case "running":
+      return "执行中";
+    case "succeeded":
+      return "成功";
+    case "failed":
+      return "失败";
+    case "blocked":
+      return "阻断";
+    case "skipped":
+      return "跳过";
+    default:
+      return status;
+  }
+}
+
 function tableNameFromChange(change: DbApplyTableChange): string {
   return change.fileTable?.physicalTableName || change.dbTable?.name || change.fileTable?.logicalTableName || "unknown_table";
 }
@@ -68,7 +87,7 @@ export function DbApplyPanel({
 
   const runApply = async () => {
     if (!selectedConnection?.lastSelectedDatabase || !selectedFileId || !selectedSheet || !diffState.compareResult) {
-      toast({ title: "安全 Apply", description: "请先在差异视图中完成 compare。", variant: "destructive" });
+      toast({ title: "安全执行", description: "请先在差异视图中完成比较。", variant: "destructive" });
       return;
     }
     const selections = tableOptions
@@ -80,7 +99,7 @@ export function DbApplyPanel({
         blockerCodes: [],
       }));
     if (!selections.length) {
-      toast({ title: "安全 Apply", description: "至少勾选一张可执行的表。", variant: "destructive" });
+      toast({ title: "安全执行", description: "至少勾选一张可执行的表。", variant: "destructive" });
       return;
     }
 
@@ -110,12 +129,12 @@ export function DbApplyPanel({
       });
       setActiveJobId(result.job.id);
       toast({
-        title: "安全 Apply",
+        title: "安全执行",
         description: `已提交执行作业 ${result.job.id}。`,
       });
     } catch (error) {
       toast({
-        title: "安全 Apply",
+        title: "安全执行",
         description: error instanceof Error ? error.message : "提交执行作业失败。",
         variant: "destructive",
       });
@@ -124,11 +143,11 @@ export function DbApplyPanel({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_1.05fr]">
-      <Card className="border-border/70">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-sm">安全 Apply</CardTitle>
+              <CardTitle className="text-sm">安全执行</CardTitle>
               <CardDescription>只允许执行无阻断项的表，风险项始终只读展示。</CardDescription>
             </div>
             <ShieldCheck className="h-4 w-4 text-muted-foreground" />
@@ -136,20 +155,20 @@ export function DbApplyPanel({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{selectedConnection?.name ?? "未选连接"}</Badge>
-            <Badge variant="outline">{selectedConnection?.lastSelectedDatabase ?? "未选 database"}</Badge>
-            <Badge variant="secondary">{selectedFileName ?? "未选文件"}</Badge>
+            <Badge variant="outline" className="rounded-sm">{selectedConnection?.name ?? "未选连接"}</Badge>
+            <Badge variant="outline" className="rounded-sm">{selectedConnection?.lastSelectedDatabase ?? "未选数据库"}</Badge>
+            <Badge variant="secondary" className="rounded-sm">{selectedFileName ?? "未选文件"}</Badge>
           </div>
 
           {!diffState.compareResult ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-              先在差异视图中完成 compare 和 SQL preview，这里才会出现可执行表清单。
+            <div className="border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+              先在差异视图中完成比较和 SQL 预览，这里才会出现可执行表清单。
             </div>
           ) : (
             <ScrollArea className="h-[400px] pr-3">
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {tableOptions.map((option) => (
-                  <div key={option.tableName} className="rounded-2xl border border-border/60 bg-background p-3">
+                  <div key={option.tableName} className="border border-border bg-background p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -160,18 +179,18 @@ export function DbApplyPanel({
                         <div>
                           <div className="text-sm font-semibold">{option.tableName}</div>
                           <div className="text-xs text-muted-foreground">
-                            {option.blocked ? "该表当前不可执行" : "该表通过安全规则，可参与 apply"}
+                            {option.blocked ? "该表当前不可执行" : "该表通过安全规则，可参与执行"}
                           </div>
                         </div>
                       </div>
-                      <Badge variant={option.blocked ? "destructive" : "outline"}>
+                      <Badge variant={option.blocked ? "destructive" : "outline"} className="rounded-sm">
                         {option.blocked ? "已阻断" : "可执行"}
                       </Badge>
                     </div>
                     {option.blockerMessages.length > 0 ? (
                       <div className="mt-3 space-y-2">
                         {option.blockerMessages.map((message) => (
-                          <div key={`${option.tableName}:${message}`} className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                          <div key={`${option.tableName}:${message}`} className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                             {message}
                           </div>
                         ))}
@@ -183,41 +202,41 @@ export function DbApplyPanel({
             </ScrollArea>
           )}
 
-          <Button onClick={runApply} disabled={applyChanges.isPending || selectedTables.length === 0}>
+          <Button className="rounded-sm" onClick={runApply} disabled={applyChanges.isPending || selectedTables.length === 0}>
             {applyChanges.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}
             执行选中的安全变更
           </Button>
         </CardContent>
       </Card>
 
-      <Card className="border-border/70">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">执行结果</CardTitle>
           <CardDescription>先看 summary，再下钻到表级和 SQL 级明细。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!deployJob.data ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-              最近一次 apply 作业提交后，会先在这里显示总览，再显示 statement 级细节。
+            <div className="border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+              最近一次执行作业提交后，会先在这里显示总览，再显示语句级细节。
             </div>
           ) : (
             <>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">job {deployJob.data.job.id}</Badge>
-                <Badge variant="outline">status {deployJob.data.job.status}</Badge>
-                <Badge variant="secondary">tables {deployJob.data.job.summary?.selectedTableCount ?? 0}</Badge>
-                <Badge variant="secondary">executed {deployJob.data.job.summary?.executedStatementCount ?? 0}</Badge>
-                <Badge variant={Boolean(deployJob.data.job.summary?.failedStatementCount) ? "destructive" : "outline"}>
-                  failed {deployJob.data.job.summary?.failedStatementCount ?? 0}
+                <Badge variant="outline" className="rounded-sm">job {deployJob.data.job.id}</Badge>
+                <Badge variant="outline" className="rounded-sm">状态 {applyStatusLabel(deployJob.data.job.status)}</Badge>
+                <Badge variant="secondary" className="rounded-sm">表 {deployJob.data.job.summary?.selectedTableCount ?? 0}</Badge>
+                <Badge variant="secondary" className="rounded-sm">已执行 {deployJob.data.job.summary?.executedStatementCount ?? 0}</Badge>
+                <Badge variant={Boolean(deployJob.data.job.summary?.failedStatementCount) ? "destructive" : "outline"} className="rounded-sm">
+                  失败 {deployJob.data.job.summary?.failedStatementCount ?? 0}
                 </Badge>
               </div>
 
-              <div className="rounded-2xl border border-border/60 bg-background p-4">
-                <div className="text-sm font-semibold">Summary</div>
+              <div className="border border-border bg-background p-4">
+                <div className="text-sm font-semibold">汇总</div>
                 <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
                   <div>选中表数: {deployJob.data.job.summary?.selectedTableCount ?? 0}</div>
-                  <div>已执行 statement: {deployJob.data.job.summary?.executedStatementCount ?? 0}</div>
-                  <div>失败 statement: {deployJob.data.job.summary?.failedStatementCount ?? 0}</div>
+                  <div>已执行语句: {deployJob.data.job.summary?.executedStatementCount ?? 0}</div>
+                  <div>失败语句: {deployJob.data.job.summary?.failedStatementCount ?? 0}</div>
                   <div>阻断或跳过: {deployJob.data.job.summary?.blockedStatementCount ?? 0}</div>
                 </div>
               </div>
@@ -227,17 +246,17 @@ export function DbApplyPanel({
               <ScrollArea className="h-[280px] pr-3">
                 <div className="space-y-3">
                   {deployJob.data.results.map((result) => (
-                    <div key={result.statementId} className="rounded-2xl border border-border/60 bg-background p-3">
+                    <div key={result.statementId} className="border border-border bg-background p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-sm font-semibold">{result.tableName ?? result.statementKind}</div>
                           <div className="text-xs text-muted-foreground">{result.statementId}</div>
                         </div>
-                        <Badge variant={result.status === "failed" ? "destructive" : "outline"}>
-                          {result.status}
+                        <Badge variant={result.status === "failed" ? "destructive" : "outline"} className="rounded-sm">
+                          {applyStatusLabel(result.status)}
                         </Badge>
                       </div>
-                      <pre className="mt-3 overflow-x-auto rounded-xl bg-muted/30 p-3 text-xs leading-6 text-muted-foreground">
+                      <pre className="mt-3 overflow-x-auto border border-border bg-muted/30 p-3 text-xs leading-6 text-muted-foreground">
                         {result.sql}
                       </pre>
                     </div>

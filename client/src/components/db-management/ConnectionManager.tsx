@@ -158,17 +158,25 @@ export function ConnectionManager({
   };
 
   return (
-    <Card className="border-border/70">
-      <CardHeader className="space-y-2">
-        <CardTitle className="text-base">连接管理</CardTitle>
-        <CardDescription>保存或导入 MySQL 连接，测试连通性，并复用已记住的密码完成后续列库与 schema 读取。</CardDescription>
+    <Card className="border-border shadow-none">
+      <CardHeader className="border-b border-border p-4 pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base text-[hsl(var(--workspace-ink))]">连接</CardTitle>
+            <CardDescription className="mt-1 text-xs">保存、导入、测试 MySQL 连接。</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" className="rounded-sm px-3" onClick={() => setIsImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            导入
+          </Button>
+        </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        <ScrollArea className="max-h-52 rounded-md border border-border/60">
-          <div className="space-y-2 p-2">
+      <CardContent className="space-y-3 p-4">
+        <ScrollArea className="max-h-40 border border-border bg-muted/20">
+          <div className="divide-y divide-border">
             {connections.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border/60 p-3 text-sm text-muted-foreground">
+              <div className="px-3 py-4 text-sm text-muted-foreground">
                 还没有保存的 MySQL 连接。
               </div>
             ) : (
@@ -177,10 +185,10 @@ export function ConnectionManager({
                   key={connection.id}
                   type="button"
                   onClick={() => onSelectConnection(connection.id)}
-                  className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                  className={`w-full px-3 py-3 text-left transition ${
                     connection.id === selectedConnectionId
-                      ? "border-primary bg-primary/5"
-                      : "border-border/60 hover:border-primary/40 hover:bg-muted/40"
+                      ? "bg-primary/8"
+                      : "hover:bg-muted/30"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -192,11 +200,11 @@ export function ConnectionManager({
                     </div>
                     <div className="flex items-center gap-2">
                       {connection.passwordStored ? (
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="rounded-sm text-[10px]">
                           已记住密码
                         </Badge>
                       ) : null}
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="rounded-sm text-[10px]">
                         {connection.lastTestStatus === "ok"
                           ? "测试通过"
                           : connection.lastTestStatus === "failed"
@@ -211,7 +219,7 @@ export function ConnectionManager({
           </div>
         </ScrollArea>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-2 border border-border bg-background p-3 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="db-connection-name">连接名称</Label>
             <Input
@@ -222,19 +230,19 @@ export function ConnectionManager({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="db-connection-host">Host</Label>
+            <Label htmlFor="db-connection-host">主机</Label>
             <Input
               id="db-connection-host"
               value={form.host}
               onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
               placeholder="127.0.0.1 或 192.168.3.227:3306"
             />
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground">
               支持直接填写 `host:port`，例如 `192.168.3.227:3306`。
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="db-connection-port">Port</Label>
+            <Label htmlFor="db-connection-port">端口</Label>
             <Input
               id="db-connection-port"
               type="number"
@@ -280,17 +288,17 @@ export function ConnectionManager({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="disable">disable</SelectItem>
-                <SelectItem value="preferred">preferred</SelectItem>
-                <SelectItem value="required">required</SelectItem>
+                <SelectItem value="disable">禁用</SelectItem>
+                <SelectItem value="preferred">优先</SelectItem>
+                <SelectItem value="required">必需</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
+          <div className="flex items-center justify-between border border-border bg-muted/20 px-3 py-3">
             <div className="space-y-0.5">
               <div className="text-sm font-medium">记住密码</div>
-              <div className="text-xs text-muted-foreground">列出 database、读取 schema 与后续比对都依赖已保存密码。</div>
+              <div className="text-[10px] text-muted-foreground">后续列库和快照读取会复用。</div>
             </div>
             <Switch
               checked={form.rememberPassword}
@@ -306,18 +314,15 @@ export function ConnectionManager({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void handleSubmit()} disabled={isSaving}>
+          <Button className="rounded-sm px-4" onClick={() => void handleSubmit()} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             {selectedConnection ? "更新连接" : "保存连接"}
-          </Button>
-          <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            导入配置
           </Button>
           {selectedConnection ? (
             <>
               <Button
                 variant="outline"
+                className="rounded-sm px-4"
                 onClick={() => void onTest(selectedConnection.id)}
                 disabled={isTesting}
               >
@@ -330,6 +335,7 @@ export function ConnectionManager({
               </Button>
               <Button
                 variant="outline"
+                className="rounded-sm px-4"
                 onClick={() => void onDelete(selectedConnection.id)}
                 disabled={isDeleting}
               >
@@ -342,6 +348,7 @@ export function ConnectionManager({
               </Button>
               <Button
                 variant="ghost"
+                className="rounded-sm px-4"
                 onClick={() => {
                   setForm(EMPTY_FORM);
                   onSelectConnection(0);
@@ -354,7 +361,7 @@ export function ConnectionManager({
         </div>
 
         {selectedConnection?.lastTestMessage ? (
-          <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <div className="border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             最近测试结果：{selectedConnection.lastTestMessage}
           </div>
         ) : null}
@@ -423,7 +430,7 @@ export function ConnectionManager({
               </div>
 
               {importResult?.findings.length ? (
-                <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <div className="border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                   {importResult.findings.map((finding) => (
                     <div key={finding}>{finding}</div>
                   ))}
@@ -431,10 +438,10 @@ export function ConnectionManager({
               ) : null}
 
               {importResult?.drafts.length ? (
-                <ScrollArea className="max-h-64 rounded-md border border-border/60">
+                <ScrollArea className="max-h-64 border border-border">
                   <div className="space-y-2 p-2">
                     {importResult.drafts.map((draft) => (
-                      <div key={`${draft.sourceLabel}-${draft.name}`} className="rounded-md border border-border/60 p-3">
+                      <div key={`${draft.sourceLabel}-${draft.name}`} className="border border-border p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="space-y-1">
                             <div className="text-sm font-medium">{draft.name}</div>

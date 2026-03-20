@@ -15,7 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ExtensionManagementSection } from "@/components/settings/ExtensionManagementSection";
 import { DbComparePolicySection } from "@/components/settings/DbComparePolicySection";
-import { Settings as SettingsIcon, Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
+import { Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
@@ -39,6 +39,17 @@ const MYSQL_BOOLEAN_MODE_OPTIONS = [
 ] as const;
 
 const DEFAULT_PK_MARKERS = ["\u3007"];
+const SETTINGS_SECTIONS = [
+  { id: "extensions", label: "扩展管理" },
+  { id: "compare-policy", label: "对比策略" },
+  { id: "ddl-options", label: "DDL" },
+  { id: "mysql", label: "MySQL" },
+  { id: "varchar", label: "VARCHAR" },
+  { id: "export", label: "导出" },
+  { id: "parsing", label: "解析" },
+  { id: "name-fix", label: "命名修复" },
+  { id: "developer", label: "开发者" },
+] as const;
 
 function normalizePkMarkersInput(input: string): string[] {
   const markers = input
@@ -112,6 +123,9 @@ export default function Settings() {
     allowExternalPathWrite: false,
   });
   const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
+  const [activeSettingsSection, setActiveSettingsSection] = useState<(typeof SETTINGS_SECTIONS)[number]["id"]>(
+    SETTINGS_SECTIONS[0].id,
+  );
 
   // 开发者模式状态（localStorage）
   const [developerMode, setDeveloperMode] = useState(() => {
@@ -137,6 +151,47 @@ export default function Settings() {
       setPkMarkersInput(markersToInputValue(settings.pkMarkers));
     }
   }, [settings]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const targets = SETTINGS_SECTIONS
+      .map((section) => ({
+        id: section.id,
+        element: document.getElementById(`settings-section-${section.id}`),
+      }))
+      .filter((entry): entry is { id: (typeof SETTINGS_SECTIONS)[number]["id"]; element: HTMLElement } => Boolean(entry.element));
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+
+        if (!visible) {
+          return;
+        }
+
+        const matched = targets.find((target) => target.element === visible.target);
+        if (matched) {
+          setActiveSettingsSection(matched.id);
+        }
+      },
+      {
+        rootMargin: "-72px 0px -55% 0px",
+        threshold: [0.15, 0.35, 0.6],
+      },
+    );
+
+    targets.forEach((target) => observer.observe(target.element));
+    return () => observer.disconnect();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,32 +275,72 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container max-w-3xl mx-auto py-8 px-4">
-        <div className="mb-6">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="mb-4">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              {t("settings.backToDashboard")}
-            </Button>
-          </Link>
-          <div className="flex items-center gap-3 mb-2">
-            <SettingsIcon className="w-6 h-6 text-primary" />
-            <h1 className="text-3xl font-bold">{t("settings.title")}</h1>
+      <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-4">
+        <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-background/95 px-4 backdrop-blur-sm">
+          <div className="flex h-12 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Link href="/">
+                <Button variant="ghost" size="sm" className="h-8 rounded-sm px-2.5">
+                  <ArrowLeft className="mr-1.5 h-4 w-4" />
+                  {t("settings.backToDashboard")}
+                </Button>
+              </Link>
+              <div className="hidden h-4 w-px bg-border md:block" />
+              <div className="truncate text-sm font-semibold text-foreground">{t("settings.title")}</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button type="submit" form="settings-form" disabled={isPending} size="sm" className="h-8 min-w-28 rounded-sm px-3">
+                {isPending ? (
+                  t("settings.saving")
+                ) : (
+                  <>
+                    <Save className="mr-1.5 h-4 w-4" />
+                    {t("settings.save")}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
-          <p className="text-muted-foreground">
-            {t("settings.subtitle")}
-          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <ExtensionManagementSection />
-          <DbComparePolicySection />
+        <form id="settings-form" onSubmit={handleSubmit} className="flex gap-4 py-4">
+          <aside className="hidden xl:block xl:w-56 xl:shrink-0">
+            <div className="sticky top-16 border border-border bg-background">
+              <div className="border-b border-border px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                设置
+              </div>
+              <nav className="flex flex-col p-1.5">
+                {SETTINGS_SECTIONS.map((section) => (
+                  <a
+                    key={section.id}
+                    href={`#settings-section-${section.id}`}
+                    className={`flex h-8 items-center rounded-sm px-2.5 text-xs ${
+                      activeSettingsSection === section.id
+                        ? "bg-primary/10 font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                    }`}
+                  >
+                    {section.label}
+                  </a>
+                ))}
+              </nav>
+            </div>
+          </aside>
+
+          <div className="min-w-0 flex-1 grid gap-4 xl:grid-cols-2">
+            <div id="settings-section-extensions" className="xl:col-span-2 scroll-mt-16">
+              <ExtensionManagementSection />
+            </div>
+            <div id="settings-section-compare-policy" className="xl:col-span-2 scroll-mt-16">
+              <DbComparePolicySection />
+            </div>
 
           {/* DDL Generation Options */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.ddlOptions.title")}</h2>
+          <div id="settings-section-ddl-options" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.ddlOptions.title")}</h2>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5 flex-1">
                 <Label htmlFor="includeCommentHeader">{t("settings.ddlOptions.includeCommentHeader")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -273,7 +368,7 @@ export default function Settings() {
               </p>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5 flex-1">
                 <Label htmlFor="includeSetNames">{t("settings.ddlOptions.includeSetNames")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -287,7 +382,7 @@ export default function Settings() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5 flex-1">
                 <Label htmlFor="includeDropTable">{t("settings.ddlOptions.includeDropTable")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -301,7 +396,7 @@ export default function Settings() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5 flex-1">
                 <Label htmlFor="useCustomHeader">{t("settings.ddlOptions.useCustomHeader")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -317,7 +412,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="customHeaderTemplate">{t("settings.ddlOptions.customHeaderTemplate")}</Label>
                 <Button
                   type="button"
@@ -346,8 +441,8 @@ export default function Settings() {
           </div>
 
           {/* MySQL Settings */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.mysql.title")}</h2>
+          <div id="settings-section-mysql" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.mysql.title")}</h2>
 
             <div className="space-y-2">
               <Label htmlFor="mysqlEngine">{t("settings.mysql.engine")}</Label>
@@ -461,8 +556,8 @@ export default function Settings() {
           </div>
 
           {/* VARCHAR Settings */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.varchar.title")}</h2>
+          <div id="settings-section-varchar" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.varchar.title")}</h2>
 
             <div className="space-y-2">
               <Label htmlFor="varcharCharset">{t("settings.varchar.charset")}</Label>
@@ -510,8 +605,8 @@ export default function Settings() {
           </div>
 
           {/* Export Settings */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.export.title")}</h2>
+          <div id="settings-section-export" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.export.title")}</h2>
 
             <div className="space-y-2">
               <Label htmlFor="exportFilenamePrefix">{t("settings.export.filenamePrefix")}</Label>
@@ -600,8 +695,8 @@ export default function Settings() {
           </div>
 
           {/* Excel Parsing Settings */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.parsing.title")}</h2>
+          <div id="settings-section-parsing" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.parsing.title")}</h2>
 
             <div className="space-y-2">
               <Label htmlFor="maxConsecutiveEmptyRows">{t("settings.parsing.maxConsecutiveEmptyRows")}</Label>
@@ -637,8 +732,8 @@ export default function Settings() {
           </div>
 
           {/* Name Fix Settings */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold mb-4">{t("settings.nameFix.title")}</h2>
+          <div id="settings-section-name-fix" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.nameFix.title")}</h2>
 
             <div className="space-y-2">
               <Label htmlFor="nameFixDefaultMode">{t("settings.nameFix.defaultApplyMode")}</Label>
@@ -752,7 +847,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border rounded-md px-3 py-2">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5">
                 <Label htmlFor="allowOverwriteInElectron">{t("settings.nameFix.allowOverwriteInElectron")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -766,7 +861,7 @@ export default function Settings() {
               />
             </div>
 
-            <div className="flex items-center justify-between border rounded-md px-3 py-2">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5">
                 <Label htmlFor="allowExternalPathWrite">{t("settings.nameFix.allowExternalPathWrite")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -782,13 +877,13 @@ export default function Settings() {
           </div>
 
           {/* Developer Mode */}
-          <div className="bg-card border border-border rounded-lg p-6 space-y-5">
-            <div className="flex items-center gap-3 mb-4">
-              <Code2 className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-semibold">{t("settings.developer.title")}</h2>
+          <div id="settings-section-developer" className="border border-border bg-background px-4 py-4 space-y-4 xl:col-span-2 scroll-mt-16">
+            <div className="-mx-4 -mt-4 mb-4 flex items-center gap-2 border-b border-border px-4 py-3">
+              <Code2 className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">{t("settings.developer.title")}</h2>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
               <div className="space-y-0.5 flex-1">
                 <Label htmlFor="developerMode">{t("settings.developer.modeLabel")}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -802,7 +897,7 @@ export default function Settings() {
               />
             </div>
 
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+            <div className="border border-border bg-muted/10 p-4 space-y-2">
               <p className="text-sm font-medium text-foreground">{t("settings.developer.shortcutTitle")}</p>
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>
@@ -814,7 +909,7 @@ export default function Settings() {
               </ul>
             </div>
 
-            <div className="border border-border rounded-lg p-4 space-y-4">
+            <div className="border border-border bg-background p-4 space-y-4">
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t("settings.developer.runtimeGuard.title")}
@@ -1087,7 +1182,7 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border rounded-md px-3 py-2">
+              <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
                 <div className="space-y-0.5">
                   <Label htmlFor="prewarmEnabled">
                     {t("settings.developer.runtimeGuard.prewarmEnabledLabel")}
@@ -1105,23 +1200,6 @@ export default function Settings() {
               </div>
             </div>
           </div>
-
-          <div className="flex justify-end gap-3">
-            <Link href="/">
-              <Button type="button" variant="outline">
-                {t("settings.cancel")}
-              </Button>
-            </Link>
-            <Button type="submit" disabled={isPending} className="min-w-32">
-              {isPending ? (
-                t("settings.saving")
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  {t("settings.save")}
-                </>
-              )}
-            </Button>
           </div>
         </form>
       </div>

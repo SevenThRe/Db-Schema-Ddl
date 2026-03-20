@@ -47,6 +47,18 @@ function lifecycleLabel(stage?: string): string {
   }
 }
 
+function normalizeExtensionMessage(message?: string | null): string | null {
+  if (!message) {
+    return null;
+  }
+  switch (message) {
+    case "Official extension manifest asset was not found on GitHub releases.":
+      return "未在 GitHub Releases 中找到官方扩展清单资源。";
+    default:
+      return message;
+  }
+}
+
 export function ExtensionManagementSection() {
   const { data: extension } = useExtension(DB_MANAGEMENT_EXTENSION_ID);
   const refreshCatalog = useRefreshExtensionCatalog();
@@ -99,17 +111,12 @@ export function ExtensionManagementSection() {
       : 0;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold">扩展管理</h2>
-            <Badge variant="outline" className="text-[10px]">官方扩展</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            DB 管理作为按需下载的官方扩展交付。这里集中处理安装、更新、启用和卸载。
-          </p>
+    <div className="border border-border bg-background">
+      <div className="flex min-h-12 items-center justify-between gap-4 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Database className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold">扩展管理</h2>
+          <Badge variant="outline" className="text-[10px]">官方扩展</Badge>
         </div>
 
         <Button
@@ -123,29 +130,33 @@ export function ExtensionManagementSection() {
         </Button>
       </div>
 
+      <div className="space-y-5 px-4 py-4">
+      <p className="text-sm text-muted-foreground">
+        DB 管理作为按需下载的官方扩展交付。这里集中处理安装、更新、启用和卸载。
+      </p>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+        <div className="border border-border bg-muted/10 p-4">
           <div className="text-xs text-muted-foreground">当前状态</div>
           <div className="mt-1 text-sm font-medium text-foreground">{extension?.stateLabel ?? "未安装"}</div>
         </div>
-        <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+        <div className="border border-border bg-muted/10 p-4">
           <div className="text-xs text-muted-foreground">已安装版本</div>
           <div className="mt-1 text-sm font-medium text-foreground">{extension?.installedVersion ?? "尚未安装"}</div>
         </div>
-        <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+        <div className="border border-border bg-muted/10 p-4">
           <div className="text-xs text-muted-foreground">可用版本</div>
           <div className="mt-1 text-sm font-medium text-foreground">
             {extension?.updateVersion ?? extension?.catalog?.version ?? "未检查"}
           </div>
         </div>
-        <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+        <div className="border border-border bg-muted/10 p-4">
           <div className="text-xs text-muted-foreground">生命周期</div>
           <div className="mt-1 text-sm font-medium text-foreground">{lifecycleLabel(lifecycleStage)}</div>
         </div>
       </div>
 
       {extension?.catalog ? (
-        <div className="rounded-lg border border-border/70 bg-background p-4 space-y-3">
+        <div className="border border-border bg-background p-4 space-y-3">
           <div className="flex items-start gap-2">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <div className="space-y-1 min-w-0">
@@ -154,7 +165,7 @@ export function ExtensionManagementSection() {
                 {extension.catalog.package?.size ? ` · ${(extension.catalog.package.size / (1024 * 1024)).toFixed(1)} MB` : ""}
               </div>
               <div className="text-xs text-muted-foreground">
-                {extension.catalog.compatibilityMessage ?? extension.catalog.summary ?? "官方扩展元数据已就绪。"}
+                {normalizeExtensionMessage(extension.catalog.compatibilityMessage) ?? extension.catalog.summary ?? "官方扩展元数据已就绪。"}
               </div>
               {extension.catalog.releaseNotes ? (
                 <div className="text-xs text-muted-foreground line-clamp-3">{extension.catalog.releaseNotes}</div>
@@ -165,7 +176,7 @@ export function ExtensionManagementSection() {
       ) : null}
 
       {lifecycle ? (
-        <div className="rounded-lg border border-border/70 bg-background p-4 space-y-3">
+        <div className="border border-border bg-background p-4 space-y-3">
           <div className="flex items-start gap-2">
             {lifecycle.stage === "failed" ? (
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
@@ -175,7 +186,7 @@ export function ExtensionManagementSection() {
             <div className="space-y-1 min-w-0 flex-1">
               <div className="text-sm font-medium text-foreground">{lifecycleLabel(lifecycle.stage)}</div>
               <div className="text-xs text-muted-foreground">
-                {lifecycle.lastErrorMessage ??
+                {normalizeExtensionMessage(lifecycle.lastErrorMessage) ??
                   (lifecycle.stage === "ready_to_enable"
                     ? "扩展已安装完成，点击立即启用后会自动重启应用。"
                     : "当前扩展生命周期状态会同步到 Sidebar 和安装面板。")}
@@ -258,6 +269,7 @@ export function ExtensionManagementSection() {
             卸载
           </Button>
         ) : null}
+      </div>
       </div>
     </div>
   );

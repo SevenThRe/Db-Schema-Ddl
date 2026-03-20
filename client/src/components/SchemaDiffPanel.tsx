@@ -1734,7 +1734,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-8 rounded-sm px-2 text-[11px]"
                         onClick={() => applyBatchRenameDecision("accept", "all")}
                       >
                         {t("schemaDiff.rename.bulkAccept")}
@@ -1833,10 +1833,10 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                   {previewResult.renameSuggestions.map((suggestion) => (
                     <div
                       key={suggestion.entityKey}
-                      className="rounded-md border border-border/60 p-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_72px_210px] items-center gap-2"
+                      className="border border-border/60 p-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_72px_210px] items-center gap-2"
                     >
                       <div className="min-w-0 flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] shrink-0">
+                        <Badge variant="outline" className="shrink-0">
                           {suggestion.entityType}
                         </Badge>
                         <p className="text-xs font-medium truncate">
@@ -1846,7 +1846,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         </p>
                       </div>
                       <div className="md:justify-self-center">
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline">
                           {suggestion.confidence.toFixed(2)}
                         </Badge>
                       </div>
@@ -1855,13 +1855,13 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                           type="single"
                           value={renameDecisions[suggestion.entityKey] ?? suggestion.decision}
                           onValueChange={(value) => setSuggestionDecision(suggestion.entityKey, (value || "pending") as RenameDecisionDraft)}
-                          className="gap-0 rounded-md border border-border/70 bg-background/80 p-0.5"
+                          className="gap-0 rounded-sm border border-border/70 bg-background/80 p-0.5"
                         >
                           <ToggleGroupItem
                             value="accept"
                             variant="default"
                             size="sm"
-                            className="min-h-7 min-w-[56px] rounded-[6px] px-2 text-[11px] text-muted-foreground data-[state=on]:bg-emerald-500/15 data-[state=on]:text-emerald-700 dark:data-[state=on]:text-emerald-300"
+                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-emerald-500/15 data-[state=on]:text-emerald-700 dark:data-[state=on]:text-emerald-300"
                           >
                             {t("schemaDiff.rename.accept")}
                           </ToggleGroupItem>
@@ -1869,7 +1869,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                             value="reject"
                             variant="default"
                             size="sm"
-                            className="min-h-7 min-w-[56px] rounded-[6px] px-2 text-[11px] text-muted-foreground data-[state=on]:bg-rose-500/15 data-[state=on]:text-rose-700 dark:data-[state=on]:text-rose-300"
+                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-rose-500/15 data-[state=on]:text-rose-700 dark:data-[state=on]:text-rose-300"
                           >
                             {t("schemaDiff.rename.reject")}
                           </ToggleGroupItem>
@@ -1877,7 +1877,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                             value="pending"
                             variant="default"
                             size="sm"
-                            className="min-h-7 min-w-[56px] rounded-[6px] px-2 text-[11px] text-muted-foreground data-[state=on]:bg-sky-500/15 data-[state=on]:text-sky-700 dark:data-[state=on]:text-sky-300"
+                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-sky-500/15 data-[state=on]:text-sky-700 dark:data-[state=on]:text-sky-300"
                           >
                             {t("schemaDiff.rename.pending")}
                           </ToggleGroupItem>
@@ -1887,7 +1887,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                   ))}
                   <Button
                     size="sm"
-                    className="h-8 text-xs"
+                    className="h-8 rounded-sm text-xs"
                     onClick={handleConfirmRenames}
                     disabled={confirmMutation.isPending || previewResult.renameSuggestions.length === 0 || decidedRenameCount === 0}
                   >
@@ -1903,7 +1903,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                 <CardTitle className="text-sm">{t("schemaDiff.diffView.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+                <div className="border border-border/60 bg-muted/20 p-2.5 space-y-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
                       { key: "all", label: t("schemaDiff.filters.all"), count: changeCounts.all },
@@ -1917,7 +1917,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant={changeFilter === item.key ? "default" : "outline"}
-                        className="h-7 px-2 text-[10px] font-mono"
+                        className="h-8 rounded-sm px-2 text-[10px] font-mono"
                         onClick={() => setChangeFilter(item.key as ChangeFilter)}
                       >
                         {item.label} {item.count}
@@ -2330,7 +2330,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         {t("schemaDiff.alter.artifactsCount", { count: alterResult.artifacts.length })}
                       </Badge>
                       <Select value={selectedArtifactName} onValueChange={setSelectedArtifactName}>
-                        <SelectTrigger className="h-7 text-xs max-w-[360px]">
+                        <SelectTrigger className="h-8 text-xs max-w-[360px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -2345,7 +2345,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                     <Input
                       readOnly
                       value={selectedArtifact?.artifactName || ""}
-                      className="h-7 text-xs bg-muted/20"
+                      className="h-8 text-xs bg-muted/20"
                     />
                     <pre className="max-h-[360px] overflow-auto rounded-md border border-border/60 bg-black/[0.92] p-3 font-mono text-[11px] leading-relaxed selection:bg-primary/30">
                       {selectedArtifact?.sql ? (

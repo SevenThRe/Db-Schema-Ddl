@@ -127,7 +127,7 @@ class ErrorBoundaryBase extends Component<BaseProps, State> {
       <div className="h-screen w-full flex items-center justify-center bg-background p-8">
         <div className="max-w-2xl w-full space-y-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-sm bg-red-100 dark:bg-red-900/20">
               <AlertTriangle className="w-8 h-8 text-red-500" />
             </div>
             <div>
@@ -136,7 +136,7 @@ class ErrorBoundaryBase extends Component<BaseProps, State> {
             </div>
           </div>
 
-          <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+          <div className="bg-muted/50 border border-border p-4 space-y-2">
             <h2 className="font-semibold text-foreground">{t("errorBoundary.solutionsTitle")}</h2>
             <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
               <li>{t("errorBoundary.solutionReload")}</li>

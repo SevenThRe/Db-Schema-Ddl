@@ -1,7 +1,7 @@
 import { useTableInfo } from "@/hooks/use-ddl";
 import { Loader2, AlertTriangle, Key, ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -15,7 +15,7 @@ import type { TableInfo, ColumnInfo } from "@shared/schema";
 import { validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import { translateApiError } from "@/lib/api-error";
 import { useTranslation } from "react-i18next";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, useDeferredValue } from "react";
 
 interface TablePreviewProps {
   fileId: number | null;
@@ -33,9 +33,9 @@ const COMPACT_TABLE_GRID_CLASS =
   "grid grid-cols-[56px_minmax(240px,_1.1fr)_minmax(220px,_1fr)] gap-2 px-4";
 const COMPACT_TABLE_BREAKPOINT = 980;
 const TOOLBAR_ICON_BUTTON_CLASS =
-  "h-8 w-8 shrink-0 rounded-full border-[color:var(--button-outline)] bg-white/86 text-[hsl(var(--workspace-ink-soft))] shadow-sm hover:bg-accent/80";
+  "h-8 w-8 shrink-0 rounded-sm border border-border bg-background text-muted-foreground hover:bg-muted/40";
 const TOOLBAR_BUTTON_CLASS =
-  "h-8 px-3 text-[11px] rounded-full border-[color:var(--button-outline)] bg-white/86 font-medium text-[hsl(var(--workspace-ink-soft))] shadow-sm hover:bg-accent/80";
+  "h-8 rounded-sm border border-border bg-background px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted/40";
 const LAST_SELECTED_TABLE_STORAGE_KEY = "tablePreview:lastSelectedTableByFileSheet";
 
 type StoredTableSelections = Record<string, string>;
@@ -145,57 +145,47 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
   }, [validation.invalidColumns]);
 
   return (
-    <div className="space-y-4">
-      <div className="panel-surface-muted p-4">
-        <p className="section-kicker">Selected Table</p>
-        <h2 className="mt-2 flex flex-wrap items-center gap-2.5 text-[1.15rem] font-semibold tracking-tight text-[hsl(var(--workspace-ink))]">
-          {table.logicalTableName || "Untitled Table"}
-          <Badge variant="outline" className="rounded-full border-white/80 bg-white/80 font-mono font-normal text-xs text-muted-foreground">
-            {table.physicalTableName || "NO_PHYSICAL_NAME"}
-          </Badge>
-          {validation.hasIssues && (
-            <Badge
-              variant="destructive"
-              className="h-5 px-2 py-0.5 font-normal text-xs leading-none"
-            >
-              {t("table.namingWarningBadge")}
-            </Badge>
-          )}
-        </h2>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-full border-white/80 bg-white/82 px-2.5 py-1 text-[10px] font-medium">
-            {table.columns.length} {t("table.columns")}
-          </Badge>
-          <Badge variant="outline" className="rounded-full border-white/80 bg-white/82 px-2.5 py-1 text-[10px] font-medium">
-            {compactMode ? "Compact grid" : "Full grid"}
-          </Badge>
+    <div className="space-y-0 border-b border-border bg-background">
+      <div className="border-b border-border px-4 py-2">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-[14px] font-semibold text-foreground">
+              {table.logicalTableName || "Untitled Table"}
+            </h2>
+            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+              {table.physicalTableName || "NO_PHYSICAL_NAME"}
+            </p>
+          </div>
+          {validation.hasIssues ? (
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
+              Warning
+            </span>
+          ) : null}
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {table.columns.length} {t("table.columns")} · {compactMode ? "紧凑视图" : "完整视图"}
+        </p>
       </div>
 
       {validation.hasIssues && (
-        <div className="rounded-[22px] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          <div className="font-medium text-amber-700 dark:text-amber-300">
-            {t("table.namingWarningTitle")}
-          </div>
-          <ul className="mt-1.5 list-disc pl-5 text-amber-700/90 dark:text-amber-200/90 space-y-1">
-            {validation.hasInvalidTableName && (
-              <li className="font-mono text-xs break-all whitespace-normal">
+        <div className="border-b border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-200">
+          <div className="text-xs font-medium">{t("table.namingWarningTitle")}</div>
+          <div className="mt-1 text-xs leading-5">
+            {validation.hasInvalidTableName ? (
+              <span className="font-mono break-all">
                 {validation.tableNameCurrent || "(empty)"} {"->"} {validation.tableNameSuggested}
-              </li>
-            )}
-            {validation.invalidColumns.length > 0 && (
-              <li>
-                {t("table.namingWarningColumns", { count: validation.invalidColumns.length })}
-              </li>
-            )}
-          </ul>
+              </span>
+            ) : null}
+            {validation.hasInvalidTableName && validation.invalidColumns.length > 0 ? " · " : null}
+            {validation.invalidColumns.length > 0 ? t("table.namingWarningColumns", { count: validation.invalidColumns.length }) : null}
+          </div>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-[24px] border border-white/70 bg-white/84 shadow-[0_18px_60px_-34px_hsl(var(--workspace-shadow)/0.3)]">
+      <div className="overflow-hidden bg-background">
         {compactMode ? (
           <div>
-            <div className={cn(COMPACT_TABLE_GRID_CLASS, "border-b border-border/70 bg-[hsl(var(--panel-muted)/0.92)] py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground")}>
+            <div className={cn(COMPACT_TABLE_GRID_CLASS, "border-b border-border bg-muted/20 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground")}>
               <div>No.</div>
               <div>{t("table.logicalName")}</div>
               <div>{t("table.physicalName")}</div>
@@ -206,7 +196,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                   key={index}
                   className={cn(
                     COMPACT_TABLE_GRID_CLASS,
-                    "items-start border-b border-border/70 py-2.5 text-xs transition-colors hover:bg-[hsl(var(--panel-muted)/0.62)]",
+                    "items-start border-b border-border py-2.5 text-xs transition-colors hover:bg-muted/20",
                   )}
                 >
                   <div className="pt-0.5 font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
@@ -223,18 +213,11 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                         <span className="truncate">{col.logicalName || "-"}</span>
                       </span>
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <Badge variant="secondary" className="font-mono text-[10px] uppercase font-bold tracking-wider">
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                         {toTypeDisplay(col)}
-                      </Badge>
-                      {col.notNull && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] font-semibold text-[#f87171] border-[#f87171]/40 bg-[#f87171]/10"
-                        >
-                          {t("table.notNull")}
-                        </Badge>
-                      )}
+                      </span>
+                      {col.notNull && <Badge variant="outline" className="text-red-700 dark:text-red-300">{t("table.notNull")}</Badge>}
                     </div>
                   </div>
                   <div
@@ -258,7 +241,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className={cn(TABLE_COLUMN_GRID_CLASS, "border-b border-border/70 bg-[hsl(var(--panel-muted)/0.92)] py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground")}>
+              <div className={cn(TABLE_COLUMN_GRID_CLASS, "border-b border-border bg-muted/20 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground")}>
                 <div>No.</div>
                 <div></div>
                 <div>{t("table.logicalName")}</div>
@@ -273,7 +256,7 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                     key={index}
                   className={cn(
                       TABLE_COLUMN_GRID_CLASS,
-                      "items-center border-b border-border/70 py-2.5 text-xs transition-colors hover:bg-[hsl(var(--panel-muted)/0.62)]",
+                      "items-center border-b border-border py-2.5 text-xs transition-colors hover:bg-muted/20",
                     )}
                   >
                     <div className="font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
@@ -299,17 +282,15 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                         </div>
                       )}
                     </div>
-                    <div>
-                      <Badge variant="secondary" className="font-mono text-[10px] uppercase font-bold tracking-wider">
-                        {col.dataType}
-                      </Badge>
+                    <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      {toTypeDisplay(col)}
                     </div>
                     <div className="font-mono text-xs">{col.size}</div>
                     <div className="text-center">
                       {col.notNull ? (
-                        <span className="inline-block w-2 h-2 rounded-full bg-red-400" title={t("table.notNull")} />
+                        <Badge variant="outline" className="px-1.5 text-red-700 dark:text-red-300" title={t("table.notNull")}>NN</Badge>
                       ) : (
-                        <span className="inline-block w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700" title={t("table.nullable")} />
+                        <Badge variant="outline" className="px-1.5 text-muted-foreground" title={t("table.nullable")}>NULL</Badge>
                       )}
                     </div>
                   </div>
@@ -343,6 +324,7 @@ export function TablePreview({
   const [tableFilterQuery, setTableFilterQuery] = useState("");
   const [columnFilterQuery, setColumnFilterQuery] = useState("");
   const [showFilterBar, setShowFilterBar] = useState(false);
+  const [isTableSelectOpen, setIsTableSelectOpen] = useState(false);
   const contentContainerRef = useRef<HTMLDivElement | null>(null);
   const [isCompactColumns, setIsCompactColumns] = useState(false);
   const [lastSelectedTableByScope, setLastSelectedTableByScope] = useState<StoredTableSelections>(() =>
@@ -363,11 +345,34 @@ export function TablePreview({
     [selectionScopeKey, sheetName],
   );
 
+  const deferredTableFilterQuery = useDeferredValue(tableFilterQuery);
+  const deferredColumnFilterQuery = useDeferredValue(columnFilterQuery);
+
+  const handleFilterInputFocus = useCallback(() => {
+    setIsTableSelectOpen(false);
+  }, []);
+
+  const handleFilterInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    setIsTableSelectOpen(false);
+  }, []);
+
+  const handleTableFilterChange = useCallback((value: string) => {
+    setIsTableSelectOpen(false);
+    setTableFilterQuery(value);
+  }, []);
+
+  const handleColumnFilterChange = useCallback((value: string) => {
+    setIsTableSelectOpen(false);
+    setColumnFilterQuery(value);
+  }, []);
+
   useEffect(() => {
     setCurrentTableIndex(0);
     setTableFilterQuery("");
     setColumnFilterQuery("");
     setShowFilterBar(false);
+    setIsTableSelectOpen(false);
   }, [fileId, sheetName]);
 
   useEffect(() => {
@@ -391,8 +396,8 @@ export function TablePreview({
   }, [tableList, onTablesLoaded]);
 
   const filteredEntries = useMemo(() => {
-    const query = tableFilterQuery.trim().toLowerCase();
-    const columnRangeFilter = extractColumnRangeFromInput(columnFilterQuery);
+    const query = deferredTableFilterQuery.trim().toLowerCase();
+    const columnRangeFilter = extractColumnRangeFromInput(deferredColumnFilterQuery);
 
     return tableList
       .map((table, absoluteIndex) => ({ table, absoluteIndex }))
@@ -415,7 +420,7 @@ export function TablePreview({
 
         return true;
       });
-  }, [tableList, tableFilterQuery, columnFilterQuery]);
+  }, [deferredColumnFilterQuery, deferredTableFilterQuery, tableList]);
 
   const hasActiveFilters = tableFilterQuery.trim().length > 0 || columnFilterQuery.trim().length > 0;
 
@@ -549,13 +554,11 @@ export function TablePreview({
   }, []);
 
   if (!fileId || !sheetName) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/80">
-          <AlertTriangle className="w-8 h-8 text-muted-foreground/50" />
-        </div>
+      return (
+        <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
+        <AlertTriangle className="mb-3 h-8 w-8 text-muted-foreground/50" />
         <p className="text-sm font-medium text-foreground">{t("table.selectSheet")}</p>
-        <p className="mt-1 text-xs">先锁定工作表，再进入表结构预览。</p>
+        <p className="mt-1 text-xs">先选择工作表。</p>
       </div>
     );
   }
@@ -563,19 +566,17 @@ export function TablePreview({
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-        <Loader2 className="w-8 h-8 animate-spin mb-4 text-primary" />
-        <p>{t("table.parsing")}</p>
+        <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm">{t("table.parsing")}</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
-        <div className="w-12 h-12 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4 text-red-500">
-          <AlertTriangle className="w-6 h-6" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">{t("table.invalidDefinition")}</h3>
+      <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center p-8 text-center">
+        <AlertTriangle className="mb-3 h-8 w-8 text-red-500" />
+        <h3 className="mb-2 text-base font-semibold text-foreground">{t("table.invalidDefinition")}</h3>
         <p className="text-muted-foreground text-sm">
           {translatedError?.description || t("table.parseError")}
         </p>
@@ -586,22 +587,22 @@ export function TablePreview({
   if (tableList.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
-        <AlertTriangle className="mb-4 h-8 w-8 opacity-50" />
+        <AlertTriangle className="mb-3 h-8 w-8 opacity-50" />
         <p className="text-sm">{t("table.noTables")}</p>
-        <p className="mt-1 text-xs">这个工作表还没有形成可预览的表定义。</p>
+        <p className="mt-1 text-xs">当前工作表没有可预览的表定义。</p>
       </div>
     );
   }
 
   if (filteredEntries.length === 0) {
     return (
-      <div className="flex flex-col h-full bg-background/40">
-        <div className="space-y-2 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-md">
+      <div className="flex h-full flex-col bg-background">
+        <div className="space-y-2 border-b border-border bg-background px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex-1 min-w-[220px]">
-              <p className="section-kicker">Table Preview</p>
-              <p className="mt-1 truncate text-sm text-muted-foreground">
-                {t("table.tablesFound", { count: tableList.length })} <span className="font-medium text-foreground">{sheetName}</span>
+            <div className="min-w-[220px] flex-1">
+              <div className="text-sm font-semibold text-foreground">表预览</div>
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{sheetName}</span> · {t("table.tablesFound", { count: tableList.length })}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -623,18 +624,22 @@ export function TablePreview({
                 <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input
                   value={tableFilterQuery}
-                  onChange={(event) => setTableFilterQuery(event.target.value)}
+                  onChange={(event) => handleTableFilterChange(event.target.value)}
                   placeholder={t("ddl.searchTables")}
-                  className="h-7 pl-8 text-xs"
+                  className="h-8 pl-8 text-xs"
+                  onFocus={handleFilterInputFocus}
+                  onKeyDown={handleFilterInputKeyDown}
                 />
               </div>
               <div className="relative w-[96px] sm:w-[108px] shrink-0">
                 <Input
                   value={columnFilterQuery}
-                  onChange={(event) => setColumnFilterQuery(event.target.value)}
+                  onChange={(event) => handleColumnFilterChange(event.target.value)}
                   placeholder="B-E"
-                  className="h-7 text-xs px-2.5"
+                  className="h-8 text-xs px-2.5"
                   title={t("ddl.filterByColumn")}
+                  onFocus={handleFilterInputFocus}
+                  onKeyDown={handleFilterInputKeyDown}
                 />
               </div>
               {hasActiveFilters ? (
@@ -654,28 +659,28 @@ export function TablePreview({
           )}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
-          <AlertTriangle className="w-8 h-8 mb-4 opacity-50" />
+          <AlertTriangle className="mb-3 h-8 w-8 opacity-50" />
           <p className="text-sm">{t("search.noResults")}</p>
-          <p className="mt-1 text-xs">试试清空筛选条件，或者回到工作表列表重新选择范围。</p>
+          <p className="mt-1 text-xs">清空筛选后再试。</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-[linear-gradient(180deg,hsl(var(--panel-muted)/0.48),transparent_24%)]">
-      <div className="space-y-2 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-md">
+    <div className="flex h-full flex-col bg-background">
+      <div className="space-y-2 border-b border-border bg-background px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex-1 min-w-[220px]">
-            <p className="section-kicker">Table Preview</p>
-            <p className="mt-1 truncate text-sm text-muted-foreground">
-              {t("table.tablesFound", { count: filteredEntries.length })} <span className="font-medium text-foreground">{sheetName}</span>
+          <div className="min-w-[220px] flex-1">
+            <div className="text-sm font-semibold text-foreground">表预览</div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{sheetName}</span> · {t("table.tablesFound", { count: filteredEntries.length })}
               {tableList.length > 0 && filteredEntries.length !== tableList.length && (
                 <span className="ml-2 text-[11px] text-muted-foreground">({filteredEntries.length}/{tableList.length})</span>
               )}
             </p>
             {tablesWithNamingWarnings > 0 && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">
+              <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
                 {t("table.namingWarningSummary", { count: tablesWithNamingWarnings })}
               </p>
             )}
@@ -711,9 +716,11 @@ export function TablePreview({
               <Select
                 value={currentTableIndex.toString()}
                 onValueChange={(value) => setCurrentTableIndex(Number.parseInt(value, 10))}
+                open={isTableSelectOpen}
+                onOpenChange={setIsTableSelectOpen}
               >
                 <SelectTrigger className={cn(
-                  "max-w-[60vw] h-8 shrink-0 rounded-full border-[color:var(--button-outline)] bg-white/86 text-xs shadow-sm hover:bg-accent/80",
+                  "max-w-[60vw] h-8 shrink-0 rounded-sm border border-border bg-background text-xs",
                   isCompactColumns ? "w-[180px] min-w-[130px] sm:w-[210px] sm:min-w-[150px]" : "w-[220px] min-w-[140px] sm:w-[270px] sm:min-w-[170px]",
                 )}>
                   <SelectValue />
@@ -733,9 +740,7 @@ export function TablePreview({
                         <div className="flex items-center gap-2">
                           <span className="truncate">{getTableDisplayName(table, idx)}</span>
                           {hasNameIssues && (
-                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                              {t("table.namingWarningBadge")}
-                            </Badge>
+                            <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
                           )}
                         </div>
                       </SelectItem>
@@ -759,7 +764,7 @@ export function TablePreview({
                 <ChevronRight className="w-4 h-4" />
               </Button>
 
-              <span className="text-[11px] text-muted-foreground ml-1 shrink-0 hidden sm:inline">
+              <span className="ml-1 shrink-0 hidden text-[11px] text-muted-foreground sm:inline">
                 {currentVisiblePosition} / {filteredEntries.length}
               </span>
             </div>
@@ -767,23 +772,27 @@ export function TablePreview({
         </div>
 
         {(showFilterBar || hasActiveFilters) && (
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/10 px-3 py-2">
             <div className="relative w-full max-w-[360px]">
               <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 value={tableFilterQuery}
-                onChange={(event) => setTableFilterQuery(event.target.value)}
+                onChange={(event) => handleTableFilterChange(event.target.value)}
                 placeholder={t("ddl.searchTables")}
-                className="h-7 pl-8 text-xs"
+                className="h-8 pl-8 text-xs"
+                onFocus={handleFilterInputFocus}
+                onKeyDown={handleFilterInputKeyDown}
               />
             </div>
             <div className="relative w-[96px] sm:w-[108px] shrink-0">
               <Input
                 value={columnFilterQuery}
-                onChange={(event) => setColumnFilterQuery(event.target.value)}
+                onChange={(event) => handleColumnFilterChange(event.target.value)}
                 placeholder="B-E"
-                className="h-7 text-xs px-2.5"
+                className="h-8 text-xs px-2.5"
                 title={t("ddl.filterByColumn")}
+                onFocus={handleFilterInputFocus}
+                onKeyDown={handleFilterInputKeyDown}
               />
             </div>
             {hasActiveFilters ? (
@@ -799,11 +808,14 @@ export function TablePreview({
                 <X className="w-3.5 h-3.5" />
               </Button>
             ) : null}
+            <span className="text-[10px] text-muted-foreground">
+              {hasActiveFilters ? "筛选已应用" : "表名 / 列区间"}
+            </span>
           </div>
         )}
       </div>
 
-      <div ref={contentContainerRef} className="flex-1 overflow-auto px-4 py-4 md:px-5 md:py-5">
+      <div ref={contentContainerRef} className="flex-1 overflow-auto px-3 py-3 md:px-4 md:py-4">
         {currentTable && <SingleTablePreview table={currentTable} compactMode={isCompactColumns} />}
       </div>
     </div>

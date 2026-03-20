@@ -194,8 +194,8 @@ export function DbSnapshotCompareWorkspace({
   const runCompare = async () => {
     if (!compareInput) {
       toast({
-        title: "Snapshot Compare",
-        description: "请先完整选择左右两侧的连接、database 和来源。",
+        title: "快照对比",
+        description: "请先完整选择左右两侧的连接、数据库和来源。",
         variant: "destructive",
       });
       return;
@@ -205,12 +205,12 @@ export function DbSnapshotCompareWorkspace({
       const result = await compareMutation.mutateAsync(compareInput);
       setArtifact(result);
       toast({
-        title: "Snapshot Compare",
+        title: "快照对比",
         description: `${result.context.left.label} -> ${result.context.right.label}`,
       });
     } catch (error) {
       toast({
-        title: "Snapshot Compare",
+        title: "快照对比",
         description: error instanceof Error ? error.message : "比较失败。",
         variant: "destructive",
       });
@@ -226,12 +226,12 @@ export function DbSnapshotCompareWorkspace({
       setLastReportFormat(format);
       triggerDownload(result.fileName, result.content, result.mimeType);
       toast({
-        title: "Snapshot Compare",
+        title: "快照对比",
         description: `${format.toUpperCase()} 报告已生成。`,
       });
     } catch (error) {
       toast({
-        title: "Snapshot Compare",
+        title: "快照对比",
         description: error instanceof Error ? error.message : "导出报告失败。",
         variant: "destructive",
       });
@@ -251,7 +251,7 @@ export function DbSnapshotCompareWorkspace({
     databases: ReturnType<typeof useDbDatabases>,
     history: ReturnType<typeof useDbHistory>,
   ) => (
-    <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-4">
+    <div className="space-y-3 border border-border bg-background p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</div>
       <Select
         value={side.connectionId ? String(side.connectionId) : ""}
@@ -279,7 +279,7 @@ export function DbSnapshotCompareWorkspace({
         onValueChange={(value) => setSide((current) => ({ ...current, databaseName: value, snapshotHash: null }))}
         disabled={!side.connectionId}
       >
-        <SelectTrigger className="bg-background"><SelectValue placeholder="选择 database" /></SelectTrigger>
+      <SelectTrigger className="bg-background"><SelectValue placeholder="选择数据库" /></SelectTrigger>
         <SelectContent>
           {(databases.data ?? []).map((database) => (
             <SelectItem key={database.name} value={database.name}>
@@ -297,8 +297,8 @@ export function DbSnapshotCompareWorkspace({
       >
         <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="live">live</SelectItem>
-          <SelectItem value="snapshot">snapshot</SelectItem>
+          <SelectItem value="live">实时库</SelectItem>
+          <SelectItem value="snapshot">历史快照</SelectItem>
         </SelectContent>
       </Select>
 
@@ -309,8 +309,8 @@ export function DbSnapshotCompareWorkspace({
         >
           <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="latest_snapshot">使用最近 snapshot</SelectItem>
-            <SelectItem value="refresh_live">比较前刷新 live</SelectItem>
+            <SelectItem value="latest_snapshot">使用最近快照</SelectItem>
+            <SelectItem value="refresh_live">比较前刷新实时库</SelectItem>
           </SelectContent>
         </Select>
       ) : (
@@ -319,13 +319,13 @@ export function DbSnapshotCompareWorkspace({
           onValueChange={(value) => setSide((current) => ({ ...current, snapshotHash: value }))}
           disabled={!side.connectionId || !side.databaseName}
         >
-          <SelectTrigger className="bg-background"><SelectValue placeholder="选择 snapshot" /></SelectTrigger>
+          <SelectTrigger className="bg-background"><SelectValue placeholder="选择快照" /></SelectTrigger>
           <SelectContent>
             {(history.data?.entries ?? [])
               .filter((entry) => entry.snapshot)
               .map((entry) => (
                 <SelectItem key={entry.scanEvent.id} value={entry.snapshot!.snapshotHash}>
-                  {entry.snapshot!.snapshotHash.slice(0, 12)} · {entry.scanEvent.createdAt ?? "unknown"}
+                  {entry.snapshot!.snapshotHash.slice(0, 12)} · {entry.scanEvent.createdAt ?? "未知时间"}
                 </SelectItem>
               ))}
           </SelectContent>
@@ -335,30 +335,30 @@ export function DbSnapshotCompareWorkspace({
   );
 
   return (
-    <Card className="border-border/70">
-      <CardHeader className="space-y-3">
+    <Card className="border-border">
+      <CardHeader className="space-y-3 border-b border-border pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base">Snapshot Compare</CardTitle>
+            <CardTitle className="text-base">快照对比</CardTitle>
             <CardDescription>
-              任意选择左右两侧的 snapshot / live 来源，得到稳定 compare artifact，并导出 Markdown 或 JSON 报告。
+              任意选择左右两侧的快照 / 实时来源，得到稳定对比结果，并导出 Markdown 或 JSON 报告。
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">AI / MCP friendly</Badge>
+            <Badge variant="outline">适合 AI / MCP</Badge>
             <Badge variant="outline">Markdown + JSON</Badge>
-            <Badge variant="secondary">last export {lastReportFormat}</Badge>
+            <Badge variant="secondary">上次导出 {lastReportFormat}</Badge>
           </div>
         </div>
 
         <div className="grid gap-3 xl:grid-cols-[1fr_auto_1fr_auto]">
-          {renderSideCard("left", left, setLeft, leftDatabases, leftHistory)}
+          {renderSideCard("左侧", left, setLeft, leftDatabases, leftHistory)}
           <div className="flex items-center justify-center">
             <Button type="button" variant="outline" size="icon" onClick={swapSides} aria-label="swap-snapshot-compare-sides">
               <ArrowRightLeft className="h-4 w-4" />
             </Button>
           </div>
-          {renderSideCard("right", right, setRight, rightDatabases, rightHistory)}
+          {renderSideCard("右侧", right, setRight, rightDatabases, rightHistory)}
           <div className="flex items-center">
             <Button onClick={runCompare} disabled={!compareInput || compareMutation.isPending}>
               {compareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
@@ -371,11 +371,11 @@ export function DbSnapshotCompareWorkspace({
       <CardContent>
         {artifact ? (
           <div className="mb-4 flex flex-wrap gap-2">
-            <Badge variant="secondary">added {artifact.summary.addedTables}</Badge>
-            <Badge variant="secondary">removed {artifact.summary.removedTables}</Badge>
-            <Badge variant="secondary">changed {artifact.summary.changedTables}</Badge>
+            <Badge variant="secondary">新增 {artifact.summary.addedTables}</Badge>
+            <Badge variant="secondary">移除 {artifact.summary.removedTables}</Badge>
+            <Badge variant="secondary">变化 {artifact.summary.changedTables}</Badge>
             <Badge variant={artifact.summary.blockingCount > 0 ? "destructive" : "outline"}>
-              blockers {artifact.summary.blockingCount}
+              阻断 {artifact.summary.blockingCount}
             </Badge>
             <Badge variant="outline">
               {artifact.context.left.snapshotHash.slice(0, 8)} {"->"} {artifact.context.right.snapshotHash.slice(0, 8)}
@@ -384,7 +384,7 @@ export function DbSnapshotCompareWorkspace({
         ) : null}
 
         <div className="grid min-h-[560px] gap-4 xl:grid-cols-[0.9fr_1fr_1fr]">
-          <Card className="border-border/70">
+          <Card className="border-border">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">差异树</CardTitle>
               <CardDescription>默认整库比较，再聚焦到单表。</CardDescription>
@@ -392,7 +392,7 @@ export function DbSnapshotCompareWorkspace({
             <CardContent>
               <ScrollArea className="h-[460px] pr-3">
                 {!artifact ? (
-                  <div className="text-sm text-muted-foreground">先运行一次 Snapshot Compare。</div>
+                  <div className="text-sm text-muted-foreground">先运行一次快照对比。</div>
                 ) : artifact.tableChanges.length === 0 ? (
                   <div className="text-sm text-muted-foreground">当前两侧没有结构差异。</div>
                 ) : (
@@ -401,10 +401,10 @@ export function DbSnapshotCompareWorkspace({
                       key={change.entityKey}
                       type="button"
                       className={cn(
-                        "mb-3 w-full rounded-2xl border px-3 py-3 text-left",
+                        "mb-3 w-full border px-3 py-3 text-left",
                         selectedTableKey === change.entityKey
                           ? "border-primary/70 bg-primary/10"
-                          : "border-border/60 bg-background",
+                          : "border-border bg-background",
                       )}
                       onClick={() => setSelectedTableKey(change.entityKey)}
                     >
@@ -415,7 +415,7 @@ export function DbSnapshotCompareWorkspace({
                         </Badge>
                       </div>
                       <div className="mt-2 text-xs text-muted-foreground">
-                        columns {change.columnChanges.length} · fields {change.changedFields.length}
+                        列 {change.columnChanges.length} · 字段 {change.changedFields.length}
                       </div>
                     </button>
                   ))
@@ -424,10 +424,10 @@ export function DbSnapshotCompareWorkspace({
             </CardContent>
           </Card>
 
-          <Card className="border-border/70">
+          <Card className="border-border">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">详情</CardTitle>
-              <CardDescription>稳定 compare artifact 的表级 / 字段级明细。</CardDescription>
+              <CardDescription>稳定对比结果的表级 / 字段级明细。</CardDescription>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[460px] pr-3">
@@ -435,7 +435,7 @@ export function DbSnapshotCompareWorkspace({
                   <div className="text-sm text-muted-foreground">从左侧选一张表查看详细差异。</div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border/60 bg-background p-4">
+                    <div className="border border-border bg-background p-4">
                       <div className="text-lg font-semibold">{getTableName(focusedChange)}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {focusedChange.changedFields.length > 0 ? (
@@ -448,8 +448,8 @@ export function DbSnapshotCompareWorkspace({
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-border/60 bg-background p-4">
-                      <div className="mb-3 text-sm font-semibold">字段变化</div>
+                    <div className="border border-border bg-background p-4">
+                      <div className="mb-3 text-sm font-semibold">列变化</div>
                       <div className="space-y-3">
                         {focusedChange.columnChanges.length === 0 ? (
                           <div className="text-sm text-muted-foreground">这张表没有列级差异。</div>
@@ -460,7 +460,7 @@ export function DbSnapshotCompareWorkspace({
                               columnChange.dbColumn?.name ??
                               columnChange.entityKey;
                             return (
-                              <div key={columnChange.entityKey} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                              <div key={columnChange.entityKey} className="border border-border bg-muted/20 p-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="text-sm font-semibold">{columnName}</div>
                                   <Badge variant={columnChange.blockers.length > 0 ? "destructive" : "outline"}>
@@ -468,7 +468,7 @@ export function DbSnapshotCompareWorkspace({
                                   </Badge>
                                 </div>
                                 <div className="mt-2 text-xs text-muted-foreground">
-                                  {columnChange.changedFields.join(", ") || "no field detail"}
+                                  {columnChange.changedFields.join(", ") || "没有字段细节"}
                                 </div>
                               </div>
                             );
@@ -482,13 +482,13 @@ export function DbSnapshotCompareWorkspace({
             </CardContent>
           </Card>
 
-          <Card className="border-border/70">
+          <Card className="border-border">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">导出与上下文</CardTitle>
               <CardDescription>摘要先行，再导出 Markdown / JSON 给审阅或 MCP。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <div className="border border-border bg-muted/20 p-4">
                 <div className="text-sm font-semibold">当前上下文</div>
                 <div className="mt-2 text-sm text-muted-foreground">
                   {artifact ? `${artifact.context.left.label} -> ${artifact.context.right.label}` : "先执行比较"}
@@ -496,8 +496,8 @@ export function DbSnapshotCompareWorkspace({
               </div>
 
               {artifact?.warnings.length ? (
-                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
-                  <div className="mb-2 text-sm font-semibold">Warnings</div>
+                <div className="border border-amber-500/40 bg-amber-500/10 p-4">
+                  <div className="mb-2 text-sm font-semibold">提示</div>
                   <div className="space-y-2">
                     {artifact.warnings.map((warning) => (
                       <div key={`${warning.side ?? "compare"}:${warning.code}`} className="text-sm">
@@ -509,8 +509,8 @@ export function DbSnapshotCompareWorkspace({
               ) : null}
 
               {artifact?.blockers.length ? (
-                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
-                  <div className="mb-2 text-sm font-semibold">Blockers</div>
+                <div className="border border-red-500/30 bg-red-500/10 p-4">
+                  <div className="mb-2 text-sm font-semibold">阻断项</div>
                   <div className="space-y-2">
                     {artifact.blockers.slice(0, 8).map((blocker) => (
                       <div key={`${blocker.entityKey}:${blocker.code}`} className="text-sm">
@@ -542,13 +542,13 @@ export function DbSnapshotCompareWorkspace({
                 </Button>
               </div>
 
-              <div className="rounded-2xl border border-border/60 bg-background p-4">
+              <div className="border border-border bg-background p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                   <Download className="h-4 w-4" />
                   task-friendly JSON
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  JSON 会保留 source / target / compare context / summary / table changes / column changes / blockers / warnings / stable ids。
+                  JSON 会保留来源 / 目标 / 对比上下文 / 汇总 / 表变化 / 列变化 / 阻断 / 提示 / 稳定 ID。
                 </div>
               </div>
             </CardContent>

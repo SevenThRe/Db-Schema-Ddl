@@ -106,10 +106,10 @@ export function DbSchemaGraph({
       position: node.position,
       data: {
         label: (
-          <div className={`min-w-[220px] rounded-2xl border p-3 ${node.highlighted ? "border-primary bg-primary/10" : node.changed ? "border-amber-500 bg-amber-500/10" : "border-border bg-background"}`}>
+          <div className={`min-w-[220px] border p-3 ${node.highlighted ? "border-primary bg-primary/10" : node.changed ? "border-amber-500 bg-amber-500/10" : "border-border bg-background"}`}>
             <div className="text-sm font-semibold">{node.label}</div>
             <div className="mt-2 text-xs text-muted-foreground">
-              columns {node.columnCount} · fk {node.foreignKeyCount}
+              列 {node.columnCount} · FK {node.foreignKeyCount}
             </div>
           </div>
         ),
@@ -145,28 +145,28 @@ export function DbSchemaGraph({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.95fr_1.25fr]">
-      <Card className="border-border/70">
+      <Card className="border-border">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">ER Graph Controls</CardTitle>
+          <CardTitle className="text-sm">关系图控制</CardTitle>
           <CardDescription>整库关系图，高亮变更表，并支持按表聚焦。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{selectedConnection?.name ?? "未选连接"}</Badge>
-            <Badge variant="outline">{selectedConnection?.lastSelectedDatabase ?? "未选 database"}</Badge>
+            <Badge variant="outline">{selectedConnection?.lastSelectedDatabase ?? "未选数据库"}</Badge>
             <Badge variant="secondary">{selectedFileName ?? "未选文件"}</Badge>
           </div>
 
           <Select value={mode} onValueChange={(value: DbGraphRequest["mode"]) => setMode(value)}>
             <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="full">完整 database</SelectItem>
+              <SelectItem value="full">全库</SelectItem>
               <SelectItem value="changed">变更表 + 邻接关系</SelectItem>
               <SelectItem value="selection">勾选表聚焦</SelectItem>
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-3">
+          <div className="flex items-center gap-3 border border-dashed border-border bg-muted/20 px-3 py-3">
             <Checkbox checked={includeNeighbors} onCheckedChange={(checked) => setIncludeNeighbors(checked === true)} />
             <span className="text-sm text-muted-foreground">包含相邻关联表</span>
           </div>
@@ -174,7 +174,7 @@ export function DbSchemaGraph({
           <ScrollArea className="h-[420px] pr-3">
             <div className="space-y-2">
               {availableTables.map((tableName) => (
-                <label key={tableName} className="flex items-center gap-3 rounded-xl border border-border/60 bg-background px-3 py-2 text-sm">
+                <label key={tableName} className="flex items-center gap-3 border border-border bg-background px-3 py-2 text-sm">
                   <Checkbox checked={selectedTables.includes(tableName)} onCheckedChange={(checked) => toggleTable(tableName, checked === true)} />
                   <span className="truncate">{tableName}</span>
                 </label>
@@ -184,15 +184,15 @@ export function DbSchemaGraph({
         </CardContent>
       </Card>
 
-      <Card className="border-border/70">
+      <Card className="border-border">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Full Database Graph</CardTitle>
+          <CardTitle className="text-sm">全库关系图</CardTitle>
           <CardDescription>默认展示整库关系，变更表会在图中高亮。</CardDescription>
         </CardHeader>
         <CardContent className="h-[760px]">
           {!request ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              先选择连接和 database，图视图才会显示。
+              先选择连接和数据库，图视图才会显示。
             </div>
           ) : (
             <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} elementsSelectable>

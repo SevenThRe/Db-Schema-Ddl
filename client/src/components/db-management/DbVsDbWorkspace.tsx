@@ -42,8 +42,8 @@ const elk = new ELK();
 type ResultFilter = "all" | "changed" | "blocking" | "rename";
 
 const TABLE_ACTION_LABELS: Record<string, string> = {
-  added: "source 新增",
-  removed: "target 多出",
+  added: "来源新增",
+  removed: "目标多出",
   modified: "已修改",
   rename_suggest: "rename 建议",
   renamed: "rename 已确认",
@@ -204,7 +204,7 @@ export function DbVsDbWorkspace({
         label: (
           <div
             className={cn(
-              "min-w-[210px] rounded-2xl border p-3",
+              "min-w-[210px] border p-3",
               node.highlighted
                 ? "border-primary bg-primary/10"
                 : node.changed
@@ -214,7 +214,7 @@ export function DbVsDbWorkspace({
           >
             <div className="text-sm font-semibold">{node.label}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              columns {node.columnCount} · fk {node.foreignKeyCount}
+              列 {node.columnCount} · FK {node.foreignKeyCount}
             </div>
           </div>
         ),
@@ -270,8 +270,8 @@ export function DbVsDbWorkspace({
   const runCompare = async () => {
     if (!sourceConnectionId || !targetConnectionId || !sourceDatabaseName || !targetDatabaseName) {
       toast({
-        title: "DB vs DB",
-        description: "请先完整选择 source 和 target。",
+        title: "库对库",
+        description: "请先完整选择来源和目标。",
         variant: "destructive",
       });
       return;
@@ -297,12 +297,12 @@ export function DbVsDbWorkspace({
       setCompareResult(result);
       setPreviewResult(null);
       toast({
-        title: "DB vs DB",
+        title: "库对库",
         description: `已比较 ${result.context.sourceConnectionName}/${result.context.sourceDatabaseName} -> ${result.context.targetConnectionName}/${result.context.targetDatabaseName}`,
       });
     } catch (error) {
       toast({
-        title: "DB vs DB",
+        title: "库对库",
         description: error instanceof Error ? error.message : "比较失败。",
         variant: "destructive",
       });
@@ -341,7 +341,7 @@ export function DbVsDbWorkspace({
       setPreviewResult(null);
     } catch (error) {
       toast({
-        title: "Rename Review",
+        title: "命名确认",
         description: error instanceof Error ? error.message : "rename 决策应用失败。",
         variant: "destructive",
       });
@@ -368,39 +368,39 @@ export function DbVsDbWorkspace({
       setCompareResult(result.compareResult);
     } catch (error) {
       toast({
-        title: "Directional Preview",
-        description: error instanceof Error ? error.message : "生成方向性 preview 失败。",
+        title: "方向预览",
+        description: error instanceof Error ? error.message : "生成方向预览失败。",
         variant: "destructive",
       });
     }
   };
 
   return (
-    <Card className="border-border/70">
-      <CardHeader className="space-y-3">
+    <Card className="border-border">
+      <CardHeader className="space-y-3 border-b border-border pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base">DB vs DB Compare</CardTitle>
+            <CardTitle className="text-base">库对库比较</CardTitle>
             <CardDescription>
-              先整库比较，再筛选表；同时联动差异树、方向性 SQL preview 和关系图高亮。
+              先整库比较，再筛选表；同时联动差异树、方向 SQL 预览和关系图高亮。
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">默认整库 compare</Badge>
+            <Badge variant="outline">默认整库比较</Badge>
             <Badge variant="outline">
-              table {policy?.tableRenameAutoAcceptThreshold ?? "manual"}
+              表命名 {policy?.tableRenameAutoAcceptThreshold ?? "手动"}
             </Badge>
             <Badge variant="outline">
-              column {policy?.columnRenameAutoAcceptThreshold ?? "manual"}
+              字段命名 {policy?.columnRenameAutoAcceptThreshold ?? "手动"}
             </Badge>
           </div>
         </div>
 
-        <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/25 p-4 xl:grid-cols-[1fr_auto_1fr_auto_auto]">
-          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">source</div>
+        <div className="grid gap-3 border border-border bg-muted/25 p-4 xl:grid-cols-[1fr_auto_1fr_auto_auto]">
+          <div className="space-y-3 border border-border bg-background p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">来源</div>
             <Select value={sourceConnectionId ? String(sourceConnectionId) : ""} onValueChange={(value) => setSourceConnectionId(Number(value))}>
-              <SelectTrigger className="bg-background"><SelectValue placeholder="选择 source 连接" /></SelectTrigger>
+              <SelectTrigger className="bg-background"><SelectValue placeholder="选择来源连接" /></SelectTrigger>
               <SelectContent>
                 {connections.map((connection) => (
                   <SelectItem key={connection.id} value={String(connection.id)}>{connection.name}</SelectItem>
@@ -408,16 +408,16 @@ export function DbVsDbWorkspace({
               </SelectContent>
             </Select>
             <Select value={sourceDatabaseName ?? ""} onValueChange={setSourceDatabaseName} disabled={!sourceConnectionId}>
-              <SelectTrigger className="bg-background"><SelectValue placeholder="选择 source database" /></SelectTrigger>
+              <SelectTrigger className="bg-background"><SelectValue placeholder="选择来源数据库" /></SelectTrigger>
               <SelectContent>
                 {(sourceDatabases.data ?? []).map((database) => (
                   <SelectItem key={database.name} value={database.name}>{database.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <label className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-3 border border-dashed border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
               <Checkbox checked={refreshSourceSchema} onCheckedChange={(checked) => setRefreshSourceSchema(checked === true)} />
-              刷新 source schema
+              刷新来源库
             </label>
           </div>
 
@@ -427,10 +427,10 @@ export function DbVsDbWorkspace({
             </Button>
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">target</div>
+          <div className="space-y-3 border border-border bg-background p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">目标</div>
             <Select value={targetConnectionId ? String(targetConnectionId) : ""} onValueChange={(value) => setTargetConnectionId(Number(value))}>
-              <SelectTrigger className="bg-background"><SelectValue placeholder="选择 target 连接" /></SelectTrigger>
+              <SelectTrigger className="bg-background"><SelectValue placeholder="选择目标连接" /></SelectTrigger>
               <SelectContent>
                 {connections.map((connection) => (
                   <SelectItem key={connection.id} value={String(connection.id)}>{connection.name}</SelectItem>
@@ -438,30 +438,30 @@ export function DbVsDbWorkspace({
               </SelectContent>
             </Select>
             <Select value={targetDatabaseName ?? ""} onValueChange={setTargetDatabaseName} disabled={!targetConnectionId}>
-              <SelectTrigger className="bg-background"><SelectValue placeholder="选择 target database" /></SelectTrigger>
+              <SelectTrigger className="bg-background"><SelectValue placeholder="选择目标数据库" /></SelectTrigger>
               <SelectContent>
                 {(targetDatabases.data ?? []).map((database) => (
                   <SelectItem key={database.name} value={database.name}>{database.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <label className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-3 border border-dashed border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
               <Checkbox checked={refreshTargetSchema} onCheckedChange={(checked) => setRefreshTargetSchema(checked === true)} />
-              刷新 target schema
+              刷新目标库
             </label>
           </div>
 
           <div className="flex items-center">
             <Button onClick={runCompare} disabled={compareMutation.isPending}>
               {compareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GitCompareArrows className="mr-2 h-4 w-4" />}
-              Compare
+              开始比较
             </Button>
           </div>
 
           <div className="flex items-center">
             <Button variant="secondary" onClick={generatePreview} disabled={!compareResult || previewSql.isPending}>
               {previewSql.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Waypoints className="mr-2 h-4 w-4" />}
-              Directional Preview
+              方向预览
             </Button>
           </div>
         </div>
@@ -470,11 +470,11 @@ export function DbVsDbWorkspace({
       <CardContent>
         {compareResult ? (
           <div className="mb-4 flex flex-wrap gap-2">
-            <Badge variant="secondary">added {compareResult.summary.addedTables}</Badge>
-            <Badge variant="secondary">removed {compareResult.summary.removedTables}</Badge>
-            <Badge variant="secondary">changed {compareResult.summary.changedTables}</Badge>
+            <Badge variant="secondary">新增 {compareResult.summary.addedTables}</Badge>
+            <Badge variant="secondary">移除 {compareResult.summary.removedTables}</Badge>
+            <Badge variant="secondary">变化 {compareResult.summary.changedTables}</Badge>
             <Badge variant={compareResult.summary.blockingCount > 0 ? "destructive" : "outline"}>
-              blockers {compareResult.summary.blockingCount}
+              阻断 {compareResult.summary.blockingCount}
             </Badge>
             <Badge variant={compareResult.summary.pendingRenameConfirmations > 0 ? "destructive" : "outline"}>
               rename 待确认 {compareResult.summary.pendingRenameConfirmations}
@@ -483,7 +483,7 @@ export function DbVsDbWorkspace({
         ) : null}
 
         <div className="grid min-h-[620px] gap-4 xl:grid-cols-[0.9fr_1fr_1.1fr]">
-          <Card className="min-h-0 border-border/70">
+          <Card className="min-h-0 border-border">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -507,7 +507,7 @@ export function DbVsDbWorkspace({
             <CardContent className="min-h-0">
               <ScrollArea className="h-[500px] pr-3">
                 {!compareResult ? (
-                  <div className="text-sm text-muted-foreground">先运行整库 compare。</div>
+                  <div className="text-sm text-muted-foreground">先运行整库比较。</div>
                 ) : filteredTableChanges.length === 0 ? (
                   <div className="text-sm text-muted-foreground">当前筛选下没有表。</div>
                 ) : (
@@ -518,8 +518,8 @@ export function DbVsDbWorkspace({
                         key={change.entityKey}
                         type="button"
                         className={cn(
-                          "mb-3 w-full rounded-2xl border px-3 py-3 text-left",
-                          selectedTableName === label ? "border-primary/70 bg-primary/10" : "border-border/60 bg-background",
+                          "mb-3 w-full border px-3 py-3 text-left",
+                          selectedTableName === label ? "border-primary/70 bg-primary/10" : "border-border bg-background",
                         )}
                         onClick={() => setSelectedTableName(label)}
                       >
@@ -530,7 +530,7 @@ export function DbVsDbWorkspace({
                           </Badge>
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          fields {change.changedFields.length} · columns {change.columnChanges.length}
+                          字段 {change.changedFields.length} · 列 {change.columnChanges.length}
                         </div>
                       </button>
                     );
@@ -540,12 +540,12 @@ export function DbVsDbWorkspace({
             </CardContent>
           </Card>
 
-          <Card className="min-h-0 border-border/70">
+          <Card className="min-h-0 border-border">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-sm">方向性 Preview</CardTitle>
-                  <CardDescription>让 target 追上 source，需要改什么。</CardDescription>
+                  <CardTitle className="text-sm">方向预览</CardTitle>
+                  <CardDescription>让目标追上来源，需要改什么。</CardDescription>
                 </div>
                 <Button size="sm" variant="outline" onClick={applyRenameReview} disabled={reviewRenames.isPending || !compareResult}>
                   {reviewRenames.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -555,21 +555,21 @@ export function DbVsDbWorkspace({
             </CardHeader>
             <CardContent className="min-h-0 space-y-4">
               {compareResult?.renameSuggestions.length ? (
-                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
+                <div className="border border-amber-500/40 bg-amber-500/10 p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                     <ShieldAlert className="h-4 w-4" />
-                    Rename / 等价建议
+                    命名 / 等价建议
                   </div>
                   <div className="space-y-3">
                     {compareResult.renameSuggestions.map((suggestion) => (
-                      <div key={suggestion.entityKey} className="rounded-xl border border-border/60 bg-background/80 p-3">
+                      <div key={suggestion.entityKey} className="border border-border bg-background/80 p-3">
                         <div className="text-sm">
                           {suggestion.entityType === "table"
                             ? `${suggestion.tableNameBefore} -> ${suggestion.tableNameAfter}`
                             : `${suggestion.tableNameBefore}.${suggestion.columnNameBefore} -> ${suggestion.tableNameAfter}.${suggestion.columnNameAfter}`}
                         </div>
                         <div className="mt-2 flex items-center gap-3">
-                          <Badge variant="secondary">confidence {(suggestion.confidence * 100).toFixed(0)}%</Badge>
+                          <Badge variant="secondary">置信度 {(suggestion.confidence * 100).toFixed(0)}%</Badge>
                           <Select
                             value={renameDecisions[suggestion.entityKey] ?? suggestion.decision}
                             onValueChange={(value: DbRenameDecision) =>
@@ -595,12 +595,12 @@ export function DbVsDbWorkspace({
                   <div className="text-sm text-muted-foreground">从左侧选择一张表，查看差异和 SQL 方向。</div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border/60 bg-background p-4">
+                    <div className="border border-border bg-background p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-lg font-semibold">{tableLabel(focusedChange)}</div>
                           <div className="text-sm text-muted-foreground">
-                            source {compareResult?.context.sourceDatabaseName} {"->"} target {compareResult?.context.targetDatabaseName}
+                            来源 {compareResult?.context.sourceDatabaseName} {"->"} 目标 {compareResult?.context.targetDatabaseName}
                           </div>
                         </div>
                         <Badge variant={tableHasBlocking(focusedChange) ? "destructive" : "outline"}>
@@ -618,29 +618,29 @@ export function DbVsDbWorkspace({
                       </div>
                       <div className="mt-4 space-y-2">
                         {[...focusedChange.blockers, ...focusedChange.columnChanges.flatMap((column) => column.blockers)].map((blocker) => (
-                          <div key={`${blocker.entityKey}:${blocker.code}`} className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
+                          <div key={`${blocker.entityKey}:${blocker.code}`} className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
                             {blocker.message}
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-border/60 bg-background p-4">
-                      <div className="mb-3 text-sm font-semibold">Directional SQL / DDL preview</div>
+                    <div className="border border-border bg-background p-4">
+                      <div className="mb-3 text-sm font-semibold">方向 SQL / DDL 预览</div>
                       {!previewResult ? (
                         <div className="text-sm text-muted-foreground">
-                          点击上方 `Directional Preview` 生成 source {"->"} target 的 SQL/DDL 风格预览。
+                          点击上方“方向预览”，生成来源 {"->"} 目标的 SQL/DDL 预览。
                         </div>
                       ) : previewResult.blocked ? (
                         <div className="text-sm text-red-300">
-                          当前还有阻断项，preview 已识别但不会生成可执行 SQL。
+                          当前还有阻断项，预览已识别但不会生成可执行 SQL。
                         </div>
                       ) : (
                         <div className="space-y-3">
                           {previewResult.artifacts
                             .filter((artifact) => !selectedTableName || artifact.tableName === selectedTableName)
                             .map((artifact) => (
-                              <div key={artifact.artifactName} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                              <div key={artifact.artifactName} className="border border-border bg-muted/20 p-3">
                                 <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                   {artifact.artifactName}
                                 </div>
@@ -656,11 +656,11 @@ export function DbVsDbWorkspace({
             </CardContent>
           </Card>
 
-          <Card className="min-h-0 border-border/70">
+          <Card className="min-h-0 border-border">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-sm">Graph Linkage</CardTitle>
+                  <CardTitle className="text-sm">关系联动</CardTitle>
                   <CardDescription>整库关系图，高亮变更表，并联动当前筛选。</CardDescription>
                 </div>
                 <Network className="h-4 w-4 text-muted-foreground" />
@@ -669,7 +669,7 @@ export function DbVsDbWorkspace({
             <CardContent className="h-[540px]">
               {!graphRequest ? (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  先运行 compare，图才会联动显示。
+                  先运行比较，图才会联动显示。
                 </div>
               ) : (
                 <ReactFlow nodes={graphNodes} edges={graphEdges} fitView nodesDraggable={false} elementsSelectable>

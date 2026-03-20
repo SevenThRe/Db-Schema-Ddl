@@ -356,7 +356,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
   if (!fileId || !sheetName) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
-        <Grid3X3 className="w-10 h-10 mb-4 opacity-20" />
+        <Grid3X3 className="mb-3 h-8 w-8 opacity-20" />
         <p className="text-sm">{t("spreadsheet.status.selectSheet")}</p>
       </div>
     );
@@ -365,7 +365,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mb-3 text-primary" />
+        <Loader2 className="mb-3 h-6 w-6 animate-spin text-primary" />
         <p className="text-sm">{t("spreadsheet.status.loading")}</p>
       </div>
     );
@@ -381,15 +381,14 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Toolbar */}
-      <div className="px-3 py-1.5 border-b border-border/60 bg-background/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="shrink-0 border-b border-border bg-background px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <MousePointerSquareDashed className="w-3.5 h-3.5" />
           <span>{t("spreadsheet.status.dragHint")}</span>
         </div>
         <div className="flex items-center gap-2">
           {selection && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+            <span className="border border-border bg-muted/20 px-1.5 py-0.5 font-mono text-[10px] text-foreground">
               {rangeLabel(selection)}
             </span>
           )}
@@ -400,7 +399,6 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
         </div>
       </div>
 
-      {/* Grid */}
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-auto select-none"
@@ -420,7 +418,7 @@ export function SpreadsheetViewer({ fileId, sheetName, onRegionParsed }: Spreads
             <div
               className={cn(
                 "pointer-events-none absolute border border-primary/60 bg-primary/15",
-                isDragging ? "shadow-[0_0_0_1px_rgba(59,130,246,0.35)]" : "",
+                isDragging ? "shadow-[0_0_0_1px_rgba(59,130,246,0.22)]" : "",
               )}
               style={{
                 left: selectionRect.left,

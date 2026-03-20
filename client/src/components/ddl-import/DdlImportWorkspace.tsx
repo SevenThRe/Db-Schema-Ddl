@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   Database,
   Files,
@@ -31,14 +30,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 interface DdlImportWorkspaceProps {
-  onBack: () => void;
   onActivateFile?: (fileId: number) => void;
 }
 
 const ISSUE_STYLES: Record<DdlImportIssue["severity"], string> = {
-  blocking: "border-red-500/40 bg-red-500/10 text-red-100",
-  confirm: "border-amber-500/40 bg-amber-500/10 text-amber-100",
-  info: "border-sky-500/40 bg-sky-500/10 text-sky-100",
+  blocking: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-200",
+  confirm: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200",
+  info: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-200",
 };
 
 const SOURCE_OPTIONS: Array<{
@@ -52,7 +50,7 @@ const SOURCE_OPTIONS: Array<{
   {
     mode: "mysql-paste",
     label: "粘贴 SQL",
-    description: "主入口，适合直接粘贴 MySQL CREATE TABLE DDL。",
+    description: "主入口，适合直接粘贴 MySQL 建表 DDL。",
     dialect: "mysql",
     upload: false,
   },
@@ -65,23 +63,23 @@ const SOURCE_OPTIONS: Array<{
   },
   {
     mode: "mysql-bundle",
-    label: "上传 SQL bundle",
-    description: "结构导向的多语句 bundle，不是任意 SQL 执行器。",
+    label: "上传 SQL 导入包",
+    description: "结构导向的多语句导入包，不是任意 SQL 执行器。",
     dialect: "mysql",
     upload: true,
     bundle: true,
   },
   {
     mode: "oracle-paste",
-    label: "Oracle subset 粘贴",
-    description: "只支持 documented first-cut subset，不追 full parity。",
+    label: "Oracle 子集粘贴",
+    description: "只支持首批可识别子集，不追求完整兼容。",
     dialect: "oracle",
     upload: false,
   },
   {
     mode: "oracle-file",
-    label: "Oracle subset 文件",
-    description: "上传 Oracle subset DDL 文件，继续走同一条审阅/导出链路。",
+    label: "Oracle 子集文件",
+    description: "上传 Oracle 子集 DDL 文件，继续走同一条审阅/导出链路。",
     dialect: "oracle",
     upload: true,
   },
@@ -100,7 +98,6 @@ function buildPreviewRequest(args: {
 }
 
 export function DdlImportWorkspace({
-  onBack,
   onActivateFile,
 }: DdlImportWorkspaceProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -171,7 +168,7 @@ export function DdlImportWorkspace({
       setSelectedTableNames(new Set());
     } catch (error) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: error instanceof Error ? error.message : "无法读取 SQL 文件。",
         variant: "destructive",
       });
@@ -193,7 +190,7 @@ export function DdlImportWorkspace({
     const trimmedSql = sqlText.trim();
     if (!trimmedSql) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: "请先提供 SQL 内容，再根据当前来源模式预览导入。",
         variant: "destructive",
       });
@@ -210,12 +207,12 @@ export function DdlImportWorkspace({
       );
       setPreviewResult(result);
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: `已按 ${result.dialect.toUpperCase()} ${result.sourceMode} 解析 ${result.catalog.tables.length} 张表。`,
       });
     } catch (error) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: error instanceof Error ? error.message : "DDL 预览失败。",
         variant: "destructive",
       });
@@ -241,7 +238,7 @@ export function DdlImportWorkspace({
 
     if (!selectedTemplateId) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: "请先选择导出的官方模板。",
         variant: "destructive",
       });
@@ -250,7 +247,7 @@ export function DdlImportWorkspace({
 
     if (selectedTableNames.size === 0) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: "请至少勾选一张已解析的表。",
         variant: "destructive",
       });
@@ -259,7 +256,7 @@ export function DdlImportWorkspace({
 
     if (hasBlockingIssues) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: "当前仍有阻断项，先处理后才能导出。",
         variant: "destructive",
       });
@@ -268,7 +265,7 @@ export function DdlImportWorkspace({
 
     if (needsLossyConfirmation && !allowLossyExport) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: "当前存在有损导出项，请先确认后再继续。",
         variant: "destructive",
       });
@@ -286,14 +283,13 @@ export function DdlImportWorkspace({
       });
 
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: `已生成 ${result.file.originalName}，并加入文件列表。`,
       });
       onActivateFile?.(result.file.id);
-      onBack();
     } catch (error) {
       toast({
-        title: "DDL Import",
+        title: "DDL 导入",
         description: error instanceof Error ? error.message : "导出 XLSX 失败。",
         variant: "destructive",
       });
@@ -302,29 +298,20 @@ export function DdlImportWorkspace({
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
-      <div className="border-b border-border/60 bg-background/95 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
+      <div className="border-b border-border bg-background px-3 py-2">
+        <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-7 px-2" onClick={onBack}>
-                <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                返回
-              </Button>
-              <Badge variant="outline" className="h-6 px-2 text-[10px] uppercase">
-                Phase 3
-              </Badge>
+              <div className="text-sm font-semibold text-foreground">DDL 导入</div>
+              <Badge variant="outline">导入</Badge>
             </div>
-            <h2 className="mt-2 text-base font-semibold">DDL Import to XLSX</h2>
-            <p className="text-xs text-muted-foreground">
-              把 MySQL DDL、SQL bundle 或 Oracle subset 导入到同一条 canonical 审阅与官方模板导出工作流。
-            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">导入、审阅、导出。</p>
           </div>
 
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="h-8"
               onClick={() => handleOpenUploadPicker()}
             >
               <Upload className="mr-1.5 h-3.5 w-3.5" />
@@ -332,7 +319,6 @@ export function DdlImportWorkspace({
             </Button>
             <Button
               size="sm"
-              className="h-8"
               onClick={handlePreview}
               disabled={previewMutation.isPending}
             >
@@ -352,26 +338,26 @@ export function DdlImportWorkspace({
       />
 
       <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[1.1fr_1fr_0.9fr]">
-        <section className="min-h-0 border-r border-border/60">
-          <div className="border-b border-border/60 px-4 py-3">
+        <section className="min-h-0 border-r border-border">
+          <div className="border-b border-border px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold">导入来源</h3>
-                <p className="text-xs text-muted-foreground">同一工作区支持粘贴 SQL、上传 SQL 文件和结构导向 SQL bundle。</p>
+                <p className="text-xs text-muted-foreground">支持粘贴 SQL、上传 SQL 文件和结构导向导入包。</p>
               </div>
-              <Badge variant="outline" className="text-[10px] uppercase">
+              <Badge variant="outline" className="uppercase">
                 {sourceConfig.dialect}
               </Badge>
             </div>
-            <div className="mt-3 grid gap-2">
+            <div className="mt-2 border border-border">
               {SOURCE_OPTIONS.map((option) => (
                 <button
                   key={option.mode}
                   type="button"
-                  className={`rounded-xl border px-3 py-2 text-left transition ${
+                  className={`w-full border-b border-border px-3 py-2 text-left transition last:border-b-0 ${
                     sourceMode === option.mode
-                      ? "border-primary/60 bg-primary/10"
-                      : "border-border/70 bg-muted/10 hover:bg-muted/20"
+                      ? "bg-primary/10"
+                      : "bg-background hover:bg-muted/20"
                   }`}
                   onClick={() => {
                     setSourceMode(option.mode);
@@ -384,14 +370,17 @@ export function DdlImportWorkspace({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">{option.label}</span>
-                    {option.bundle ? <Files className="h-3.5 w-3.5 text-muted-foreground" /> : null}
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      {option.bundle ? <Files className="h-3.5 w-3.5" /> : null}
+                      <span>{option.upload ? "文件" : "粘贴"}</span>
+                    </div>
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">{option.description}</p>
                 </button>
               ))}
             </div>
             {sourceFileName ? (
-              <div className="mt-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+              <div className="mt-2 border border-border bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
                 当前文件: {sourceFileName}
               </div>
             ) : null}
@@ -412,16 +401,16 @@ export function DdlImportWorkspace({
           </div>
         </section>
 
-        <section className="min-h-0 border-r border-border/60">
-          <div className="border-b border-border/60 px-4 py-3">
+        <section className="min-h-0 border-r border-border">
+          <div className="border-b border-border px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold">结构审阅</h3>
                 <p className="text-xs text-muted-foreground">默认全选所有解析出的表，导出前可以缩小范围。</p>
               </div>
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
                 <Database className="h-3.5 w-3.5" />
-                {previewResult ? `${previewResult.catalog.tables.length} tables / ${previewResult.dialect}` : "等待预览"}
+                {previewResult ? `${previewResult.catalog.tables.length} 张表 / ${previewResult.dialect.toUpperCase()}` : "等待预览"}
               </div>
             </div>
           </div>
@@ -437,7 +426,6 @@ export function DdlImportWorkspace({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
                     onClick={() => setSelectedTableNames(new Set(previewResult.selectableTableNames))}
                   >
                     全选
@@ -445,7 +433,6 @@ export function DdlImportWorkspace({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
                     onClick={() => setSelectedTableNames(new Set())}
                   >
                     清空
@@ -456,8 +443,8 @@ export function DdlImportWorkspace({
                 </div>
 
                 {selectableTables.map((table) => (
-                  <div key={table.name} className="rounded-xl border border-border/70 bg-background">
-                    <div className="flex items-start gap-3 border-b border-border/60 px-3 py-3">
+                  <div key={table.name} className="border border-border bg-background">
+                    <div className="flex items-start gap-3 border-b border-border px-3 py-3">
                       <Checkbox
                         checked={selectedTableNames.has(table.name)}
                         onCheckedChange={(checked) => handleToggleTable(table.name, checked === true)}
@@ -465,22 +452,22 @@ export function DdlImportWorkspace({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="truncate font-semibold">{table.name}</div>
-                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                            {table.columns.length} cols
+                          <Badge variant="outline">
+                            {table.columns.length} 列
                           </Badge>
                           {table.foreignKeys.length > 0 ? (
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                            <Badge variant="outline">
                               FK {table.foreignKeys.length}
                             </Badge>
                           ) : null}
                           {table.indexes.length > 0 ? (
-                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                            IDX {table.indexes.length}
-                          </Badge>
+                            <Badge variant="outline">
+                              IDX {table.indexes.length}
+                            </Badge>
                           ) : null}
                         </div>
                         {table.comment ? (
-                          <p className="mt-1 text-xs text-muted-foreground">{table.comment}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{table.comment}</p>
                         ) : null}
                       </div>
                     </div>
@@ -501,10 +488,10 @@ export function DdlImportWorkspace({
                             ) : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            {!column.nullable ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">NN</Badge> : null}
-                            {column.primaryKey ? <Badge className="h-5 px-1.5 text-[10px]">PK</Badge> : null}
-                            {column.autoIncrement ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">AI</Badge> : null}
-                            {column.defaultValue ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">DEFAULT</Badge> : null}
+                            {!column.nullable ? <Badge variant="secondary">NN</Badge> : null}
+                            {column.primaryKey ? <Badge>PK</Badge> : null}
+                            {column.autoIncrement ? <Badge variant="outline">AI</Badge> : null}
+                            {column.defaultValue ? <Badge variant="outline">DEFAULT</Badge> : null}
                           </div>
                         </div>
                       ))}
@@ -516,29 +503,29 @@ export function DdlImportWorkspace({
           </ScrollArea>
         </section>
 
-        <section className="min-h-0 bg-slate-950/95 text-slate-100">
-          <div className="border-b border-slate-800/80 px-4 py-3">
+        <section className="min-h-0 bg-background text-foreground">
+          <div className="border-b border-border px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold">问题与导出</h3>
-                <p className="text-xs text-slate-400">不受支持项会直接拦截导出，有损项需要明确确认。</p>
+                <p className="text-xs text-muted-foreground">不受支持项会拦截导出，有损项需要明确确认。</p>
               </div>
-              <FileSpreadsheet className="h-4 w-4 text-slate-400" />
+              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
             </div>
           </div>
           <div className="flex h-[calc(100%-77px)] flex-col">
-            <div className="grid grid-cols-3 gap-2 border-b border-slate-800/80 px-4 py-3">
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-center">
-                <div className="text-[10px] text-slate-300">Blocking</div>
-                <div className="text-lg font-semibold text-red-200">{summary.blockingCount}</div>
+            <div className="grid grid-cols-3 gap-2 border-b border-border px-3 py-3">
+              <div className="border border-red-500/30 bg-red-500/10 p-2 text-center">
+                <div className="text-[10px] text-muted-foreground">阻断</div>
+                <div className="text-lg font-semibold text-red-700 dark:text-red-200">{summary.blockingCount}</div>
               </div>
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center">
-                <div className="text-[10px] text-slate-300">Confirm</div>
-                <div className="text-lg font-semibold text-amber-200">{summary.confirmCount}</div>
+              <div className="border border-amber-500/30 bg-amber-500/10 p-2 text-center">
+                <div className="text-[10px] text-muted-foreground">确认</div>
+                <div className="text-lg font-semibold text-amber-700 dark:text-amber-200">{summary.confirmCount}</div>
               </div>
-              <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-center">
-                <div className="text-[10px] text-slate-300">Info</div>
-                <div className="text-lg font-semibold text-sky-200">{summary.infoCount}</div>
+              <div className="border border-sky-500/30 bg-sky-500/10 p-2 text-center">
+                <div className="text-[10px] text-muted-foreground">提示</div>
+                <div className="text-lg font-semibold text-sky-700 dark:text-sky-200">{summary.infoCount}</div>
               </div>
             </div>
 
@@ -548,7 +535,7 @@ export function DdlImportWorkspace({
                   previewResult.issues.map((issue) => (
                     <div
                       key={issue.entityKey}
-                      className={`rounded-xl border px-3 py-3 text-xs ${ISSUE_STYLES[issue.severity]}`}
+                      className={`border px-3 py-3 text-xs ${ISSUE_STYLES[issue.severity]}`}
                     >
                       <div className="flex items-start gap-2">
                         {issue.severity === "blocking" ? (
@@ -573,32 +560,32 @@ export function DdlImportWorkspace({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100">
+                  <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-700 dark:text-emerald-100">
                     当前没有检测到阻断项或有损项，可以直接导出官方模板。
                   </div>
                 )}
                 {previewResult?.dialect === "oracle" ? (
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-xs text-slate-300">
-                    Oracle support is subset-based. 高级 identity、tablespace/storage、virtual column、partition 等结构会显式标记为不受支持或有损项。
+                  <div className="border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    Oracle 当前按子集规则处理。identity、tablespace/storage、virtual column、partition 等结构会标记为不支持或有损项。
                   </div>
                 ) : null}
                 {previewResult?.sourceMode === "mysql-bundle" ? (
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-xs text-slate-300">
-                    SQL bundle 只用于结构导向 reverse import，不会把任意 SQL 当作可执行迁移脚本处理。
+                  <div className="border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    SQL 导入包只用于结构导向反向导入，不会把任意 SQL 当作可执行迁移脚本处理。
                   </div>
                 ) : null}
               </div>
             </ScrollArea>
 
-            <div className="border-t border-slate-800/80 px-4 py-4">
+            <div className="border-t border-border px-3 py-4">
               <div className="space-y-3">
                 <div>
-                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-400">Template</div>
+                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">模板</div>
                   <Select
-                  value={selectedTemplateId}
-                  onValueChange={(value) => setSelectedTemplateId(value as WorkbookTemplateVariantId)}
-                >
-                    <SelectTrigger className="border-slate-700 bg-slate-900 text-slate-100">
+                    value={selectedTemplateId}
+                    onValueChange={(value) => setSelectedTemplateId(value as WorkbookTemplateVariantId)}
+                  >
+                    <SelectTrigger>
                       <SelectValue placeholder="选择官方模板" />
                     </SelectTrigger>
                     <SelectContent>
@@ -609,13 +596,13 @@ export function DdlImportWorkspace({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-muted-foreground">
                     第一次需要明确选择模板；之后会记住你上次成功导出的选择。
                   </p>
                 </div>
 
                 {needsLossyConfirmation ? (
-                  <label className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  <label className="flex items-start gap-2 border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-100">
                     <Checkbox
                       checked={allowLossyExport}
                       onCheckedChange={(checked) => setAllowLossyExport(checked === true)}
@@ -642,7 +629,7 @@ export function DdlImportWorkspace({
                 </Button>
 
                 {hasBlockingIssues ? (
-                  <div className="text-[11px] text-red-300">
+                  <div className="text-[11px] text-red-600 dark:text-red-300">
                     当前还有阻断项，所以导出按钮会保持禁用。
                   </div>
                 ) : null}

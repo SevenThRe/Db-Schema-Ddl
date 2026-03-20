@@ -71,7 +71,7 @@ export function ExtensionInstallDialog({
         <DialogHeader className="space-y-2">
           <div className="flex items-center gap-2">
             <DialogTitle>安装官方扩展</DialogTitle>
-            <Badge variant="outline" className="text-[10px]">官方扩展</Badge>
+            <Badge variant="outline">官方扩展</Badge>
           </div>
           <DialogDescription>
             DB 管理以可选扩展方式交付。基础安装包默认不包含这部分能力，按需下载安装后即可启用。
@@ -79,9 +79,9 @@ export function ExtensionInstallDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-xl border border-border/70 bg-muted/25 p-4 space-y-3">
+          <div className="border border-border bg-muted/25 p-4 space-y-3">
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
+              <div className="mt-0.5 rounded-sm bg-primary/10 p-2 text-primary">
                 <ShieldCheck className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1 space-y-1">
@@ -95,21 +95,21 @@ export function ExtensionInstallDialog({
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <div className="border border-border bg-background px-3 py-2">
                 <div className="text-muted-foreground">版本</div>
                 <div className="mt-1 font-medium text-foreground">{catalog?.version ?? "未获取"}</div>
               </div>
-              <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <div className="border border-border bg-background px-3 py-2">
                 <div className="text-muted-foreground">大小</div>
                 <div className="mt-1 font-medium text-foreground">{formatPackageSize(catalog?.package?.size)}</div>
               </div>
-              <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <div className="border border-border bg-background px-3 py-2">
                 <div className="text-muted-foreground">兼容性</div>
                 <div className="mt-1 font-medium text-foreground">
                   {catalog?.compatibilityStatus === "incompatible" ? "需要更新主程序" : "可安装"}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <div className="border border-border bg-background px-3 py-2">
                 <div className="text-muted-foreground">更新摘要</div>
                 <div className="mt-1 font-medium text-foreground line-clamp-2">
                   {catalog?.summary ?? "安装后可直接进入 DB 管理模块。"}
@@ -119,7 +119,7 @@ export function ExtensionInstallDialog({
           </div>
 
           {inProgress ? (
-            <div className="rounded-xl border border-border/70 bg-background p-4 space-y-3">
+            <div className="border border-border bg-background p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 {stageLabel(stage)}

@@ -575,7 +575,7 @@ export function DdlGenerator({
   onSelectedTableNamesChange,
   onOpenImportWorkspace,
 }: DdlGeneratorProps) {
-  const CONTROL_BUTTON_CLASS = "h-7 text-[11px]";
+  const CONTROL_BUTTON_CLASS = "h-8 rounded-sm text-[11px]";
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1299,11 +1299,11 @@ export function DdlGenerator({
     if (skippedInvalidTableIndexes.size > 0) {
       toast({
         title: t("ddl.missingTypePartialSelectionTitle", {
-          defaultValue: "Partial table selection applied",
+          defaultValue: "已应用部分表选择",
         }),
         description: t("ddl.missingTypePartialSelectionDescription", {
           defaultValue:
-            "{{selectedCount}} table(s) will continue, {{skippedCount}} invalid table(s) will be skipped.",
+            "将继续处理 {{selectedCount}} 张表，并跳过 {{skippedCount}} 张无效表。",
           selectedCount: patchedTables.length,
           skippedCount: skippedInvalidTableIndexes.size,
         }),
@@ -1844,11 +1844,11 @@ export function DdlGenerator({
     if (hasNameFixBlockingIssues) {
       toast({
         title: t("ddl.nameFix.toastApplyFailedTitle"),
-        description: `Apply is blocked because preview found ${
+        description: `当前无法执行，因为预览发现 ${
           nameFixPreviewResult?.summary.blockingConflictCount ?? 0
-        } blocking conflict(s) and ${
+        } 个阻断冲突，以及 ${
           nameFixPreviewResult?.summary.unresolvedSourceRefCount ?? 0
-        } unresolved sourceRef item(s).`,
+        } 个未解决的 sourceRef 项。`,
         variant: "destructive",
       });
       return;
@@ -1963,22 +1963,21 @@ export function DdlGenerator({
 
     return (
       <div className="flex h-full flex-col bg-background">
-        <div className="border-b border-border/60 bg-background/80 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <Code className="h-3.5 w-3.5 text-primary" />
-            <h3 className="text-xs font-semibold uppercase tracking-wide" data-testid="text-ddl-header">
-              {t("ddl.output")}
+        <div className="border-b border-border bg-background px-3 py-2">
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground" data-testid="text-ddl-header">
+              <Code className="h-4 w-4 text-muted-foreground" />
+              DDL
             </h3>
           </div>
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-          <Database className="h-12 w-12 opacity-25" />
-          <div>
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center text-muted-foreground">
+          <div className="max-w-sm">
             <p className="text-sm font-medium text-foreground">当前没有可生成 DDL 的表。</p>
-            <p className="mt-1 text-xs">你仍然可以直接进入 DDL Import，把 MySQL DDL 反向生成官方 XLSX 模板。</p>
+            <p className="mt-2 text-xs">选择工作表后可生成 SQL，也可以直接使用 DDL 导入。</p>
           </div>
-          <Button size="sm" onClick={onOpenImportWorkspace}>
-            DDL Import
+          <Button size="sm" variant="outline" className="rounded-sm px-4" onClick={onOpenImportWorkspace}>
+            DDL 导入
           </Button>
         </div>
       </div>
@@ -1986,118 +1985,123 @@ export function DdlGenerator({
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div className="px-3 py-2 border-b border-border/60 bg-background/80 flex items-center justify-between gap-2 flex-wrap">
-        <div className="min-w-0 flex items-center gap-2">
-          <Code className="w-3.5 h-3.5 text-primary" />
-          <h3 className="font-semibold text-xs tracking-wide uppercase" data-testid="text-ddl-header">{t("ddl.output")}</h3>
-          {exportMode === "per-table" && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {t("ddl.selected")}: {effectiveSelectedTableNames.size}
-            </Badge>
-          )}
-          {tablesWithNameIssues.length > 0 && (
-            <Badge variant="destructive" className="h-5 text-[10px]">
-              {t("ddl.namingWarningsFound", { count: tablesWithNameIssues.length })}
-            </Badge>
-          )}
-        </div>
+    <div className="flex h-full flex-col bg-background">
+      <div className="border-b border-border bg-background px-3 py-2">
+        <div className="space-y-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Code className="h-4 w-4 text-muted-foreground" />
+            <h3 className="shrink-0 whitespace-nowrap text-sm font-semibold text-foreground" data-testid="text-ddl-header">DDL</h3>
+          </div>
 
-        <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
-          {onOpenImportWorkspace ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onOpenImportWorkspace}
-              className="h-7 text-[11px] px-2.5 shrink-0"
-            >
-              DDL Import
-            </Button>
-          ) : null}
-          <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
-            <SelectTrigger className="w-[92px] sm:w-[100px] h-7 text-[11px] shrink-0" data-testid="select-dialect">
-              <SelectValue placeholder="Dialect" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mysql" data-testid="option-mysql">MySQL</SelectItem>
-              <SelectItem value="oracle" data-testid="option-oracle">Oracle</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+            {onOpenImportWorkspace ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onOpenImportWorkspace}
+                className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
+              >
+                <span className="hidden xl:inline">DDL 导入</span>
+                <span className="xl:hidden">导入</span>
+              </Button>
+            ) : null}
+            <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
+              <SelectTrigger className="h-8 w-[98px] shrink-0 rounded-sm bg-background text-[11px] sm:w-[104px]" data-testid="select-dialect">
+                <SelectValue placeholder="Dialect" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mysql" data-testid="option-mysql">MySQL</SelectItem>
+                <SelectItem value="oracle" data-testid="option-oracle">Oracle</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
-            <SelectTrigger className="w-[106px] sm:w-[118px] h-7 text-[11px] shrink-0" data-testid="select-export-mode">
-              <SelectValue placeholder="Export Mode" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="single" data-testid="option-single">Single File</SelectItem>
-              <SelectItem value="per-table" data-testid="option-per-table">Per Table (ZIP)</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
+              <SelectTrigger className="h-8 w-[116px] shrink-0 rounded-sm bg-background text-[11px] sm:w-[124px]" data-testid="select-export-mode">
+                <SelectValue placeholder="导出模式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="single" data-testid="option-single">Single File</SelectItem>
+                <SelectItem value="per-table" data-testid="option-per-table">Per Table (ZIP)</SelectItem>
+              </SelectContent>
+            </Select>
 
             <Button
               size="sm"
               onClick={handleGenerate}
               disabled={isPending || isGeneratingByReference}
-              className="h-7 text-[11px] font-semibold shadow-sm px-2.5 shrink-0"
+              className="h-8 shrink-0 rounded-sm px-3 text-[11px] font-semibold"
               data-testid="button-generate"
             >
               {isPending || isGeneratingByReference ? t("ddl.generating") : (
                 <>
-                  {t("ddl.generate")} <ArrowRight className="w-3 h-3 ml-1" />
+                  {t("ddl.generate")} <ArrowRight className="ml-1 h-3 w-3" />
                 </>
               )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={openSyncNameFixDialog}
-            className="h-7 text-[11px] px-2.5 shrink-0"
-          >
-            <WandSparkles className="w-3 h-3 mr-1" />
-            {t("ddl.nameFix.button")}
-          </Button>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={openSyncNameFixDialog}
+              className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
+            >
+              <WandSparkles className="mr-1 h-3 w-3" />
+              {t("ddl.nameFix.button")}
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden relative group bg-slate-950/95">
+      <div className="relative flex-1 overflow-hidden bg-background">
         {!generatedDdl ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-            <Database className="w-12 h-12 mb-4 opacity-20" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-muted-foreground">
+            <div className="flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-muted/20">
+              <Database className="h-6 w-6 opacity-60" />
+            </div>
             {generationError ? (
-              <div className="max-w-[90%] rounded-md border border-red-500/40 bg-red-500/10 p-4 text-left">
-                <p className="text-sm font-semibold text-red-200">{t("ddl.generationFailed")}</p>
-                <pre className="mt-2 whitespace-pre-wrap text-xs text-red-100/90">{generationError}</pre>
+              <div className="mt-4 max-w-[90%] border border-red-500/30 bg-red-500/5 p-4 text-left">
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300">{t("ddl.generationFailed")}</p>
+                <pre className="mt-2 whitespace-pre-wrap text-xs text-red-700/90 dark:text-red-200/90">{generationError}</pre>
               </div>
             ) : (
-              <p className="text-sm">{t("ddl.readyToGenerate")}</p>
+              <div className="mt-4 max-w-sm text-center">
+                <p className="text-sm font-medium text-foreground">{t("ddl.readyToGenerate")}</p>
+              </div>
             )}
           </div>
         ) : (
-          <div className="h-full flex flex-col">
-            <div className="px-3 py-2 flex justify-end gap-1.5 border-b border-slate-800/70">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleExport}
-                className={`${CONTROL_BUTTON_CLASS} shadow-sm bg-white/10 text-white border-none backdrop-blur-sm`}
-                data-testid="button-export"
-              >
-                <Download className="w-3.5 h-3.5 mr-1" />
-                <span className="hidden sm:inline">{t("ddl.export")}</span>
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={copyToClipboard}
-                className={`${CONTROL_BUTTON_CLASS} shadow-sm bg-white/10 text-white border-none backdrop-blur-sm`}
-                data-testid="button-copy"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
-                <span className="hidden sm:inline">{copied ? t("ddl.copied") : t("ddl.copy")}</span>
-              </Button>
+          <div className="flex h-full flex-col bg-background">
+            <div className="flex justify-between gap-3 border-b border-border px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Output</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {currentTable?.physicalTableName || sheetName || "当前对象"} · {dialect.toUpperCase()}
+                </p>
+              </div>
+              <div className="flex justify-end gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  className={`${CONTROL_BUTTON_CLASS} rounded-sm`}
+                  data-testid="button-export"
+                >
+                  <Download className="mr-1 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{t("ddl.export")}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyToClipboard}
+                  className={`${CONTROL_BUTTON_CLASS} rounded-sm`}
+                  data-testid="button-copy"
+                >
+                  {copied ? <Check className="mr-1 h-3.5 w-3.5" /> : <Copy className="mr-1 h-3.5 w-3.5" />}
+                  <span className="hidden sm:inline">{copied ? t("ddl.copied") : t("ddl.copy")}</span>
+                </Button>
+              </div>
             </div>
             <div className="flex-1 overflow-auto custom-scrollbar">
-              <pre className="p-4 font-mono text-[12px] text-slate-200 leading-relaxed selection:bg-primary/30" data-testid="text-ddl-output">
+              <pre className="p-4 font-mono text-[12px] leading-relaxed text-foreground selection:bg-primary/20" data-testid="text-ddl-output">
                 <code>
                   {highlightedDdlTokens.map((token, tokenIndex) => (
                     <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
@@ -2119,7 +2123,7 @@ export function DdlGenerator({
             nameFixBatchModeTriggerRef.current?.focus({ preventScroll: true });
           }}
         >
-          <DialogHeader className="px-4 py-3 border-b border-border/60 shrink-0">
+          <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <WandSparkles className="w-4 h-4 text-primary" />
               {t("ddl.nameFix.dialogTitle")}
@@ -2136,7 +2140,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.batchModeLabel")}
                   helpText={t("ddl.nameFix.helpBatchMode", {
-                    defaultValue: "Choose whether to run on current file, selected files, or all uploaded files.",
+                    defaultValue: "选择只处理当前文件、指定文件，还是全部已上传文件。",
                   })}
                 />
                 <Select value={nameFixBatchMode} onValueChange={(value) => setNameFixBatchMode(value as NameFixBatchMode)}>
@@ -2155,7 +2159,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.scopeLabel")}
                   helpText={t("ddl.nameFix.helpScope", {
-                    defaultValue: "Select the sheet scope for analysis. In multi-file mode this is fixed to all sheets.",
+                    defaultValue: "选择分析时使用的工作表范围。多文件模式下会固定为全部工作表。",
                   })}
                 />
                 <Select
@@ -2186,7 +2190,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.applyModeLabel")}
                   helpText={t("ddl.nameFix.helpApplyMode", {
-                    defaultValue: "copy keeps original files. overwrite replaces files directly. replace_download prepares downloadable replacements.",
+                    defaultValue: "复制会保留原文件，覆盖会直接替换文件，下载替换会生成可下载的替换结果。",
                   })}
                 />
                 <Select value={nameFixApplyMode} onValueChange={(value) => setNameFixApplyMode(value as NameFixMode)}>
@@ -2213,7 +2217,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.conflictStrategyLabel")}
                   helpText={t("ddl.nameFix.helpConflictStrategy", {
-                    defaultValue: "How to resolve duplicate names generated after normalization.",
+                    defaultValue: "当规范化后出现重名时，决定如何处理。",
                   })}
                 />
                 <Select value={nameFixConflictStrategy} onValueChange={(value) => setNameFixConflictStrategy(value as NameFixConflictStrategy)}>
@@ -2234,7 +2238,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.reservedWordStrategyLabel")}
                   helpText={t("ddl.nameFix.helpReservedWordStrategy", {
-                    defaultValue: "Choose how to handle SQL reserved words in table or column names.",
+                    defaultValue: "选择如何处理表名或字段名里的 SQL 保留字。",
                   })}
                 />
                 <Select value={nameFixReservedWordStrategy} onValueChange={(value) => setNameFixReservedWordStrategy(value as ReservedWordStrategy)}>
@@ -2255,7 +2259,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.lengthOverflowStrategyLabel")}
                   helpText={t("ddl.nameFix.helpLengthOverflowStrategy", {
-                    defaultValue: "Choose how to handle names longer than the identifier length limit.",
+                    defaultValue: "选择如何处理超过标识符长度限制的名称。",
                   })}
                 />
                 <Select value={nameFixLengthOverflowStrategy} onValueChange={(value) => setNameFixLengthOverflowStrategy(value as LengthOverflowStrategy)}>
@@ -2276,7 +2280,7 @@ export function DdlGenerator({
                 <NameFixLabelWithHelp
                   label={t("ddl.nameFix.maxIdentifierLengthLabel")}
                   helpText={t("ddl.nameFix.helpMaxIdentifierLength", {
-                    defaultValue: "MySQL commonly uses 64. Set this to your target database identifier limit.",
+                    defaultValue: "MySQL 常见限制是 64。这里填写你的目标数据库标识符长度限制。",
                   })}
                 />
                 <Input
@@ -2298,9 +2302,9 @@ export function DdlGenerator({
             </div>
 
             {nameFixBatchMode === "selected_files" && (
-              <div className="rounded-md border p-3 space-y-2">
+              <div className="border border-border p-3 space-y-2">
                 <div className="text-sm font-semibold">{t("ddl.nameFix.fileQueueTitle")}</div>
-                <ScrollArea className="h-[120px] border rounded-md p-2">
+                <ScrollArea className="h-[120px] border border-border p-2">
                   <div className="space-y-1.5">
                     {sortedUploadedFilesForNameFix.length === 0 ? (
                       <div className="text-xs text-muted-foreground">{t("ddl.nameFix.noUploadedFiles")}</div>
@@ -2313,7 +2317,7 @@ export function DdlGenerator({
                           : "v1/1";
                         const hashLabel = versionMeta?.shortHash || (file.fileHash ?? "").slice(0, 8) || "n/a";
                         return (
-                          <label key={file.id} className="flex items-start gap-2 text-xs cursor-pointer rounded border p-2">
+                          <label key={file.id} className="flex items-start gap-2 border border-border p-2 text-xs cursor-pointer">
                             <Checkbox
                               checked={checked}
                               onCheckedChange={(value) => toggleNameFixFileSelection(file.id, value === true)}
@@ -2337,9 +2341,9 @@ export function DdlGenerator({
             )}
 
             {nameFixBatchMode === "current_file" && nameFixScope === "selected_sheets" && (
-              <div className="rounded-md border p-3 space-y-2">
+              <div className="border border-border p-3 space-y-2">
                 <div className="text-sm font-semibold">{t("ddl.nameFix.sheetSelectorTitle")}</div>
-                <ScrollArea className="h-[120px] border rounded-md p-2">
+                <ScrollArea className="h-[120px] border border-border p-2">
                   <div className="space-y-1.5">
                     {availableSheetNames.length === 0 ? (
                       <div className="text-xs text-muted-foreground">{t("ddl.nameFix.noSheetsAvailable")}</div>
@@ -2366,9 +2370,9 @@ export function DdlGenerator({
             )}
 
             {shouldShowNameFixTableFilter && (
-              <div className="rounded-md border p-3 space-y-2">
+              <div className="border border-border p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Table filter (current sheet)</div>
+                  <div className="text-sm font-semibold">当前工作表筛选</div>
                   <div className="text-[11px] text-muted-foreground">
                     {nameFixSelectedTableIndexes.size} / {nameFixCurrentSheetTableCount}
                   </div>
@@ -2401,13 +2405,13 @@ export function DdlGenerator({
                   </Button>
                 </div>
 
-                <ScrollArea className="h-[140px] border rounded-md p-2">
+                <ScrollArea className="h-[140px] border border-border p-2">
                   <div className="space-y-1.5">
                     {nameFixFilteredCurrentSheetTables.length === 0 ? (
                       <div className="text-xs text-muted-foreground">{t("search.noResults")}</div>
                     ) : (
                       nameFixFilteredCurrentSheetTables.map(({ table, tableIndex }: { table: TableInfo; tableIndex: number }) => (
-                        <label key={`${tableIndex}-${table.physicalTableName}`} className="flex items-start gap-2 text-xs cursor-pointer rounded border p-2">
+                        <label key={`${tableIndex}-${table.physicalTableName}`} className="flex items-start gap-2 border border-border p-2 text-xs cursor-pointer">
                           <Checkbox
                             checked={nameFixSelectedTableIndexes.has(tableIndex)}
                             onCheckedChange={(value) => toggleNameFixTableSelection(tableIndex, value === true)}
@@ -2426,7 +2430,7 @@ export function DdlGenerator({
 
                 {isNameFixPartialTableSelection && (
                   <div className="text-[11px] text-muted-foreground">
-                    Partial table selection applied to current-sheet preview/apply.
+                    已对当前工作表启用部分表选择，预览和执行都会按此范围处理。
                   </div>
                 )}
               </div>
@@ -2441,7 +2445,7 @@ export function DdlGenerator({
             </div>
           </div>
 
-          <DialogFooter className="px-4 py-3 border-t border-border/60 gap-2 flex-wrap shrink-0">
+          <DialogFooter className="px-4 py-3 border-t border-border gap-2 flex-wrap shrink-0">
             <Button variant="outline" className="h-8 text-xs" onClick={() => setShowSyncNameFixDialog(false)}>
               {t("ddl.nameFix.close")}
             </Button>
@@ -2547,7 +2551,7 @@ export function DdlGenerator({
 
             {/* 按列快速筛选 */}
             {availableColumns.length > 1 && (
-              <div className="flex flex-wrap items-center gap-2 p-3 bg-muted/30 rounded-md border">
+              <div className="flex flex-wrap items-center gap-2 border border-border bg-muted/30 p-3">
                 <span className="text-xs font-medium text-muted-foreground">{t("ddl.filterByColumn")}:</span>
                 {availableColumns.map(column => {
                   const columnTables = tables?.filter((t: TableInfo) => getColumnLetter(t) === column) || [];
@@ -2569,7 +2573,7 @@ export function DdlGenerator({
               </div>
             )}
 
-            <ScrollArea className="h-[400px] border rounded-md p-4">
+            <ScrollArea className="h-[400px] border border-border p-4">
               <div className="space-y-2">
                 {filteredAndSortedTables && filteredAndSortedTables.length > 0 ? (
                   filteredAndSortedTables.map((table) => {
@@ -2667,7 +2671,7 @@ export function DdlGenerator({
         }}
       >
         <DialogContent className="max-w-2xl w-[min(92vw,860px)] p-0 overflow-hidden">
-          <DialogHeader className="px-4 py-3 border-b border-border/60">
+          <DialogHeader className="px-4 py-3 border-b border-border">
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               {t("ddl.namingFixDialogTitle")}
@@ -2677,7 +2681,7 @@ export function DdlGenerator({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="px-4 py-2 border-b border-border/60 bg-muted/20 flex flex-wrap items-center gap-2">
+          <div className="px-4 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -2705,7 +2709,7 @@ export function DdlGenerator({
                 invalidNameFixEntries.map(({ key, table, validation }) => (
                   <div
                     key={`${key}-${table.physicalTableName}`}
-                    className="flex items-start gap-3 p-2.5 rounded-md border border-border/70 bg-background"
+                    className="flex items-start gap-3 border border-border bg-background p-2.5"
                   >
                     <Checkbox
                       checked={nameFixCandidateKeys.has(key)}
@@ -2731,7 +2735,7 @@ export function DdlGenerator({
                         })}
                       </div>
                       <div className="grid grid-cols-1 gap-1">
-                        <div className="rounded border border-border/60 bg-muted/30 px-2 py-1">
+                        <div className="border border-border bg-muted/30 px-2 py-1">
                           <div className="text-[10px] text-muted-foreground mb-0.5">Current</div>
                           <div className="text-[10px] font-mono break-all whitespace-normal">
                             {validation.tableNameCurrent || "(empty)"}
@@ -2762,7 +2766,7 @@ export function DdlGenerator({
             </div>
           </ScrollArea>
 
-          <DialogFooter className="px-4 py-3 border-t border-border/60 gap-2 sm:gap-0">
+          <DialogFooter className="px-4 py-3 border-t border-border gap-2 sm:gap-0">
             <Button variant="outline" onClick={cancelNameFix}>
               {t("common.cancel")}
             </Button>
@@ -2795,14 +2799,14 @@ export function DdlGenerator({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="rounded-md border border-amber-400/40 bg-amber-500/5 p-2 text-xs text-amber-800 dark:text-amber-300">
+            <div className="border border-amber-400/40 bg-amber-500/5 p-2 text-xs text-amber-800 dark:text-amber-300">
               {t("ddl.missingTypeSelectionHint", {
                 defaultValue:
-                  "Select the invalid tables you want to fill manually. Unselected invalid tables will be skipped.",
+                  "选择要手动补全的无效表。未选中的无效表会被跳过。",
               })}
               <span className="ml-1 font-semibold">
                 {t("ddl.missingTypeSelectionStats", {
-                  defaultValue: "(selected issues: {{selected}} / total issues: {{total}})",
+                  defaultValue: "（已选问题: {{selected}} / 总问题: {{total}}）",
                   selected: missingTypeSelectedIssueCount,
                   total: missingDataTypeIssues.length,
                 })}
@@ -2830,12 +2834,12 @@ export function DdlGenerator({
               </Button>
             </div>
 
-            <ScrollArea className="h-[360px] border rounded-md p-3">
+            <ScrollArea className="h-[360px] border border-border p-3">
               <div className="space-y-3">
                 {groupedMissingDataTypeIssues.map((group) => (
                   <div
                     key={group.groupKey}
-                    className="rounded-md border bg-muted/20 overflow-hidden"
+                    className="border border-border bg-muted/20 overflow-hidden"
                   >
                     <div className="px-3 py-2 border-b bg-muted/40 flex items-start gap-2">
                       <Checkbox
@@ -2857,7 +2861,7 @@ export function DdlGenerator({
                         {!missingTypeSelectedTableIndexes.has(group.tableIndex) && (
                           <div className="text-[10px] text-amber-700 dark:text-amber-300 mt-1">
                             {t("ddl.missingTypeSkippedTableHint", {
-                              defaultValue: "This invalid table will be skipped.",
+                              defaultValue: "这张无效表会被跳过。",
                             })}
                           </div>
                         )}
@@ -2868,7 +2872,7 @@ export function DdlGenerator({
                       {group.issues.map((issue) => (
                         <div
                           key={issue.key}
-                          className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-2 p-2 rounded-md border bg-background/70"
+                          className="grid grid-cols-1 gap-2 border border-border bg-background/70 p-2 md:grid-cols-[1fr_220px]"
                         >
                           <div className="min-w-0">
                             <div className="text-xs text-muted-foreground font-mono truncate">
@@ -2966,22 +2970,22 @@ export function DdlGenerator({
 
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-md border p-2">
+              <div className="border border-border p-2">
                 <div className="text-xs text-muted-foreground">{t("ddl.exportSummarySelected")}</div>
                 <div className="text-lg font-semibold">{zipExportSummary.selectedCount}</div>
               </div>
-              <div className="rounded-md border p-2">
+              <div className="border border-border p-2">
                 <div className="text-xs text-muted-foreground">{t("ddl.exportSummaryGenerated")}</div>
                 <div className="text-lg font-semibold text-emerald-600">{zipExportSummary.successCount}</div>
               </div>
-              <div className="rounded-md border p-2">
+              <div className="border border-border p-2">
                 <div className="text-xs text-muted-foreground">{t("ddl.exportSummarySkipped")}</div>
                 <div className="text-lg font-semibold text-amber-600">{zipExportSummary.skippedCount}</div>
               </div>
             </div>
 
             {zipExportSummary.skippedCount > 0 && (
-              <div className="rounded-md border p-3 space-y-2">
+              <div className="border border-border p-3 space-y-2">
                 <div className="text-sm font-medium">{t("ddl.exportSummarySkippedTablesTitle")}</div>
                 {zipExportSummary.skippedTables.length > 0 ? (
                   <ScrollArea className="h-[140px]">

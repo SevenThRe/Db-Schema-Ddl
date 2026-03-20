@@ -1,6 +1,8 @@
 import { autoUpdater } from 'electron-updater';
 import { BrowserWindow, ipcMain, app } from 'electron';
 
+const GITHUB_RELEASES_URL = 'https://github.com/SevenThRe/Db-Schema-Ddl/releases';
+
 /**
  * 自動更新の初期化
  * GitHub Releases をベースにした自動更新機能を設定
@@ -134,6 +136,7 @@ async function checkForUpdates() {
       updateAvailable,
       currentVersion,
       latestVersion: candidateVersion || currentVersion,
+      releaseUrl: GITHUB_RELEASES_URL,
     };
   } catch (err) {
     console.error('Failed to check for updates:', err);
@@ -142,6 +145,7 @@ async function checkForUpdates() {
       updateAvailable: false,
       currentVersion: app.getVersion(),
       latestVersion: app.getVersion(),
+      releaseUrl: GITHUB_RELEASES_URL,
       message: err instanceof Error ? err.message : String(err),
     };
   }
