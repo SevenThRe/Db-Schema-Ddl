@@ -330,6 +330,7 @@ export function TablePreview({
   const [lastSelectedTableByScope, setLastSelectedTableByScope] = useState<StoredTableSelections>(() =>
     readStoredTableSelections(),
   );
+  const restoredSelectionScopeRef = useRef<string | null>(null);
   const selectionScopeKey = useMemo(() => {
     const normalizedMemoryKey = (selectionMemoryKey || "").trim();
     if (normalizedMemoryKey) {
@@ -344,6 +345,9 @@ export function TablePreview({
     () => buildTableSelectionStorageKey(selectionScopeKey, sheetName),
     [selectionScopeKey, sheetName],
   );
+  const rememberedTableName = tableSelectionStorageKey
+    ? lastSelectedTableByScope[tableSelectionStorageKey] ?? null
+    : null;
 
   const deferredTableFilterQuery = useDeferredValue(tableFilterQuery);
   const deferredColumnFilterQuery = useDeferredValue(columnFilterQuery);
@@ -373,6 +377,7 @@ export function TablePreview({
     setColumnFilterQuery("");
     setShowFilterBar(false);
     setIsTableSelectOpen(false);
+    restoredSelectionScopeRef.current = null;
   }, [fileId, sheetName]);
 
   useEffect(() => {
@@ -450,26 +455,41 @@ export function TablePreview({
       return;
     }
 
-    const rememberedTableName = lastSelectedTableByScope[tableSelectionStorageKey];
+    if (restoredSelectionScopeRef.current === tableSelectionStorageKey) {
+      return;
+    }
+
     if (!rememberedTableName) {
+      restoredSelectionScopeRef.current = tableSelectionStorageKey;
       return;
     }
 
     const normalizedRemembered = rememberedTableName.trim().toLowerCase();
     if (!normalizedRemembered) {
+      restoredSelectionScopeRef.current = tableSelectionStorageKey;
       return;
     }
 
     const targetIndex = tableList.findIndex((table) => {
       return (table.physicalTableName || "").trim().toLowerCase() === normalizedRemembered;
     });
-    if (targetIndex >= 0 && targetIndex !== currentTableIndex) {
-      setCurrentTableIndex(targetIndex);
+    if (targetIndex < 0) {
+      restoredSelectionScopeRef.current = tableSelectionStorageKey;
+      return;
     }
-  }, [currentTableIndex, lastSelectedTableByScope, tableList, tableSelectionStorageKey]);
+
+    restoredSelectionScopeRef.current = tableSelectionStorageKey;
+    setCurrentTableIndex((previousIndex) => {
+      const currentPhysicalTableName = (tableList[previousIndex]?.physicalTableName || "").trim().toLowerCase();
+      return currentPhysicalTableName === normalizedRemembered ? previousIndex : targetIndex;
+    });
+  }, [rememberedTableName, tableList, tableSelectionStorageKey]);
 
   useEffect(() => {
     if (!tableSelectionStorageKey || !currentTable) {
+      return;
+    }
+    if (restoredSelectionScopeRef.current !== tableSelectionStorageKey) {
       return;
     }
 

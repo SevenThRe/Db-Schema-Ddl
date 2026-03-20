@@ -31,6 +31,8 @@ attached_assets/*
 # Claude Code / OMC runtime state
 .omc/
 .mcp.json
+.codex-runtime/
+output/
 
 # OS
 Thumbs.db

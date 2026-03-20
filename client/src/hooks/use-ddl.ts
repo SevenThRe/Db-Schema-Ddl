@@ -19,6 +19,7 @@ import {
   type SchemaDiffAlterPreviewRequest,
 } from "@shared/schema";
 import { parseApiErrorResponse } from "@/lib/api-error";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
 const TASK_POLL_INTERVAL_MS = 500;
 
@@ -137,54 +138,24 @@ export function useTask(taskId: string | null) {
 export function useFiles() {
   return useQuery({
     queryKey: [api.files.list.path],
-    queryFn: async () => {
-      const data = await fetchJson(api.files.list.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch files",
-      });
-      return api.files.list.responses[200].parse(data);
-    },
+    queryFn: async () => await desktopBridge.files.list(),
   });
 }
 
 export function useWorkbookTemplates() {
   return useQuery({
     queryKey: [api.files.listTemplates.path],
-    queryFn: async () => {
-      const data = await fetchJson(api.files.listTemplates.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch workbook templates",
-      });
-      return api.files.listTemplates.responses[200].parse(data) as WorkbookTemplateVariant[];
-    },
+    queryFn: async () => await desktopBridge.files.listTemplates(),
   });
 }
 
 export function useUploadFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (formData: FormData) => {
-      return fetchJson<UploadedFile & { taskId?: string; processing?: boolean }>(
-        api.files.upload.path,
-        {
-          code: "REQUEST_FAILED",
-          message: "Failed to upload file",
-        },
-        {
-          method: api.files.upload.method,
-          body: formData,
-          // Don't set Content-Type header manually for FormData, browser does it with boundary
-        },
-      );
+    mutationFn: async (file: File) => {
+      return await desktopBridge.files.upload(file);
     },
     onSuccess: (data) => {
-      if (isProcessingTaskReference(data)) {
-        startTaskPolling(data.taskId, () => {
-          void queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
-        });
-        return;
-      }
-
       void queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
     },
   });
@@ -193,18 +164,8 @@ export function useUploadFile() {
 export function useCreateWorkbookFromTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (request: CreateWorkbookFromTemplateRequest) => {
-      const data = await fetchJson(api.files.createFromTemplate.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to create workbook from template",
-      }, {
-        method: api.files.createFromTemplate.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
-
-      return api.files.createFromTemplate.responses[201].parse(data) as CreateWorkbookFromTemplateResponse;
-    },
+    mutationFn: async (request: CreateWorkbookFromTemplateRequest) =>
+      await desktopBridge.files.createFromTemplate(request),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [api.files.list.path] });
     },
@@ -218,12 +179,7 @@ export function useSheets(fileId: number | null) {
     queryKey: [api.files.getSheets.path, fileId],
     queryFn: async () => {
       if (!fileId) return [];
-      const url = buildUrl(api.files.getSheets.path, { id: fileId });
-      const data = await fetchJson(url, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch sheets",
-      });
-      return api.files.getSheets.responses[200].parse(await resolveDeferredTaskResult(data));
+      return await desktopBridge.files.getSheets(fileId);
     },
     enabled: !!fileId,
   });
@@ -234,12 +190,7 @@ export function useSearchIndex(fileId: number | null) {
     queryKey: [api.files.getSearchIndex.path, fileId],
     queryFn: async () => {
       if (!fileId) return [];
-      const url = buildUrl(api.files.getSearchIndex.path, { id: fileId });
-      const data = await fetchJson(url, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch search index",
-      });
-      return api.files.getSearchIndex.responses[200].parse(data);
+      return await desktopBridge.files.getSearchIndex(fileId);
     },
     enabled: !!fileId,
   });
@@ -252,12 +203,7 @@ export function useTableInfo(fileId: number | null, sheetName: string | null) {
     queryKey: [api.files.getTableInfo.path, fileId, sheetName],
     queryFn: async () => {
       if (!fileId || !sheetName) return null;
-      const url = buildUrl(api.files.getTableInfo.path, { id: fileId, sheetName });
-      const data = await fetchJson(url, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch table info",
-      });
-      return api.files.getTableInfo.responses[200].parse(await resolveDeferredTaskResult(data));
+      return await desktopBridge.files.getTableInfo(fileId, sheetName);
     },
     enabled: !!fileId && !!sheetName,
     retry: false, // Don't retry if sheet is invalid
@@ -266,18 +212,7 @@ export function useTableInfo(fileId: number | null, sheetName: string | null) {
 
 export function useGenerateDdl() {
   return useMutation({
-    mutationFn: async (data: GenerateDdlRequest) => {
-      const response = await fetchJson(api.ddl.generate.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to generate DDL",
-      }, {
-        method: api.ddl.generate.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      return api.ddl.generate.responses[200].parse(response);
-    },
+    mutationFn: async (data: GenerateDdlRequest) => await desktopBridge.ddl.generate(data),
   });
 }
 
@@ -326,12 +261,7 @@ export function useExportWorkbookFromDdl() {
 export function useDeleteFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (fileId: number) => {
-      return fetchJson(`/api/files/${fileId}`, {
-        code: "REQUEST_FAILED",
-        message: "Failed to delete file",
-      }, { method: "DELETE" });
-    },
+    mutationFn: async (fileId: number) => await desktopBridge.files.remove(fileId),
     onMutate: async (fileId: number) => {
       await queryClient.cancelQueries({ queryKey: [api.files.list.path] });
       const previousFiles = queryClient.getQueryData<UploadedFile[]>([api.files.list.path]) ?? [];
@@ -375,13 +305,7 @@ export function useSheetData(fileId: number | null, sheetName: string | null) {
     queryKey: ["sheetData", fileId, sheetName],
     queryFn: async () => {
       if (!fileId || !sheetName) return null;
-      return fetchJson<any[][]>(
-        `/api/files/${fileId}/sheets/${encodeURIComponent(sheetName)}/data`,
-        {
-          code: "REQUEST_FAILED",
-          message: "Failed to fetch sheet data",
-        },
-      );
+      return await desktopBridge.files.getSheetData(fileId, sheetName);
     },
     enabled: !!fileId && !!sheetName,
     retry: false,
@@ -400,26 +324,7 @@ export function useParseRegion() {
       endRow: number;
       startCol: number;
       endCol: number;
-    }) => {
-      return fetchJson<TableInfo[]>(
-        `/api/files/${params.fileId}/parse-region`,
-        {
-          code: "REQUEST_FAILED",
-          message: "Failed to parse region",
-        },
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sheetName: params.sheetName,
-            startRow: params.startRow,
-            endRow: params.endRow,
-            startCol: params.startCol,
-            endCol: params.endCol,
-          }),
-        },
-      );
-    },
+    }) => await desktopBridge.files.parseRegion(params),
   });
 }
 
@@ -428,30 +333,14 @@ export function useParseRegion() {
 export function useSettings() {
   return useQuery({
     queryKey: [api.settings.get.path],
-    queryFn: async () => {
-      const data = await fetchJson(api.settings.get.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to fetch settings",
-      });
-      return api.settings.get.responses[200].parse(data);
-    },
+    queryFn: async () => await desktopBridge.settings.get(),
   });
 }
 
 export function useUpdateSettings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (settings: DdlSettings) => {
-      const data = await fetchJson(api.settings.update.path, {
-        code: "REQUEST_FAILED",
-        message: "Failed to update settings",
-      }, {
-        method: api.settings.update.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
-      return api.settings.update.responses[200].parse(data);
-    },
+    mutationFn: async (settings: DdlSettings) => await desktopBridge.settings.update(settings),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.settings.get.path] });
     },

@@ -28,7 +28,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { parseApiErrorResponse, translateApiError } from "@/lib/api-error";
+import { translateApiError } from "@/lib/api-error";
+import { desktopBridge } from "@/lib/desktop-bridge";
 import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import {
   formatLogicalPhysicalName,
@@ -399,31 +400,15 @@ function buildZipDownloadFilename(
   return `ddl_${dialect}_${safeSheetName}_${timestamp}.zip`;
 }
 
-function parseFilenameFromContentDisposition(contentDisposition: string | null): string | null {
-  if (!contentDisposition) {
-    return null;
-  }
-
-  const utf8Match = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1].trim());
-    } catch {
-      // fallback to plain filename
-    }
-  }
-
-  const quotedMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i);
-  if (quotedMatch?.[1]) {
-    return quotedMatch[1].trim();
-  }
-
-  const plainMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
-  if (plainMatch?.[1]) {
-    return plainMatch[1].trim();
-  }
-
-  return null;
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function toDdlTablePayload(table: TableInfo): TableInfo {
@@ -576,6 +561,9 @@ export function DdlGenerator({
   onOpenImportWorkspace,
 }: DdlGeneratorProps) {
   const CONTROL_BUTTON_CLASS = "h-8 rounded-sm text-[11px]";
+  const desktopCapabilities = desktopBridge.getCapabilities();
+  const supportsNameFix = desktopCapabilities.features.nameFix;
+  const supportsDirectNameFixWrite = desktopCapabilities.runtime === "electron";
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -629,7 +617,6 @@ export function DdlGenerator({
   const missingTypeResolverRef = useRef<((tables: TableInfo[] | null) => void) | null>(null);
   const nameFixBatchModeTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const isElectron = typeof window !== "undefined" && Boolean(window.electronAPI);
   const { data: uploadedFiles = [] } = useFiles();
   const { data: availableSheets = [] } = useSheets(fileId);
   const { data: autoTables } = useTableInfo(fileId, sheetName);
@@ -822,18 +809,18 @@ export function DdlGenerator({
     setNameFixLengthOverflowStrategy(settings.nameFixLengthOverflowStrategy);
     setNameFixMaxIdentifierLength(settings.nameFixMaxIdentifierLength);
     const preferredMode = settings.nameFixDefaultMode;
-    if (!isElectron) {
+    if (!supportsDirectNameFixWrite) {
       setNameFixApplyMode("replace_download");
       return;
     }
     setNameFixApplyMode(preferredMode === "replace_download" ? "copy" : preferredMode);
-  }, [settings, isElectron]);
+  }, [settings, supportsDirectNameFixWrite]);
 
   useEffect(() => {
-    if (!isElectron && nameFixApplyMode !== "replace_download") {
+    if (!supportsDirectNameFixWrite && nameFixApplyMode !== "replace_download") {
       setNameFixApplyMode("replace_download");
     }
-  }, [isElectron, nameFixApplyMode]);
+  }, [nameFixApplyMode, supportsDirectNameFixWrite]);
 
   useEffect(() => {
     if (fileId) {
@@ -1373,29 +1360,14 @@ export function DdlGenerator({
 
       try {
         setIsGeneratingByReference(true);
-        const response = await fetch(api.ddl.generateByReference.path, {
-          method: api.ddl.generateByReference.method,
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fileId,
-            sheetName,
-            selectedTableIndexes: [sourceTableIndex],
-            tableOverrides,
-            dialect,
-            settings,
-          }),
+        const data = await desktopBridge.ddl.generateByReference({
+          fileId,
+          sheetName,
+          selectedTableIndexes: [sourceTableIndex],
+          tableOverrides,
+          dialect,
+          settings,
         });
-
-        if (!response.ok) {
-          throw await parseApiErrorResponse(response, {
-            code: "REQUEST_FAILED",
-            message: "Failed to generate DDL",
-          });
-        }
-
-        const data = api.ddl.generateByReference.responses[200].parse(await response.json());
         setGeneratedDdl(data.ddl);
         setGeneratedTables(tablesForGeneration);
         setGenerationError(null);
@@ -1479,21 +1451,15 @@ export function DdlGenerator({
     }
 
     try {
-      let exportPath: string = api.ddl.exportZip.path;
-      let exportBody: Record<string, unknown> = {
-        tables: tablesForExport.map(toDdlTablePayload),
-        dialect,
-        settings,
-        tolerantMode: true,
-        includeErrorReport: true,
-      };
+      const fallbackSheetNameHint = sheetName ?? deriveSheetNameHintFromTables(tablesForExport);
+      const fallbackZipFilename = buildZipDownloadFilename(dialect, fallbackSheetNameHint);
+      let exportResult: Awaited<ReturnType<typeof desktopBridge.ddl.exportZip>> | null = null;
 
       const canUseReferenceMode = fileId != null && sheetName != null;
       if (canUseReferenceMode) {
         const resolvedEntries = alignEntriesWithResolvedTables(nameFixedEntries, tablesForExport);
         if (resolvedEntries.length === tablesForExport.length && resolvedEntries.length > 0) {
-          exportPath = api.ddl.exportZipByReference.path;
-          exportBody = {
+          exportResult = await desktopBridge.ddl.exportZipByReference({
             fileId,
             sheetName,
             selectedTableIndexes: resolvedEntries.map((entry) => entry.sourceIndex),
@@ -1502,56 +1468,23 @@ export function DdlGenerator({
             settings,
             tolerantMode: true,
             includeErrorReport: true,
-          };
+          });
         }
       }
 
-      const response = await fetch(exportPath, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(exportBody),
-      });
-
-      if (!response.ok) {
-        throw await parseApiErrorResponse(response, {
-          code: "REQUEST_FAILED",
-          message: "Failed to generate ZIP",
+      if (!exportResult) {
+        exportResult = await desktopBridge.ddl.exportZip({
+          tables: tablesForExport.map(toDdlTablePayload),
+          dialect,
+          settings,
+          tolerantMode: true,
+          includeErrorReport: true,
         });
       }
-
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get("Content-Disposition");
-      const serverFilename = parseFilenameFromContentDisposition(contentDisposition);
-      const fallbackSheetNameHint = sheetName ?? deriveSheetNameHintFromTables(tablesForExport);
-      const zipFilename = serverFilename ?? buildZipDownloadFilename(dialect, fallbackSheetNameHint);
-      const skippedCount = Number(response.headers.get("X-Zip-Export-Skipped-Count") || "0");
-      const successCount = Number(
-        response.headers.get("X-Zip-Export-Success-Count") || String(tablesForExport.length),
-      );
-      const skippedTablesHeader = response.headers.get("X-Zip-Export-Skipped-Tables");
-      let skippedTables: string[] = [];
-      if (skippedTablesHeader) {
-        try {
-          const parsed = JSON.parse(decodeURIComponent(skippedTablesHeader));
-          if (Array.isArray(parsed)) {
-            skippedTables = parsed
-              .map((item) => String(item ?? "").trim())
-              .filter((item) => item.length > 0);
-          }
-        } catch {
-          // ignore invalid header payload
-        }
-      }
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = zipFilename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const successCount = exportResult.successCount > 0 ? exportResult.successCount : tablesForExport.length;
+      const skippedCount = exportResult.skippedCount;
+      const skippedTables = exportResult.skippedTables;
+      downloadBlob(exportResult.blob, exportResult.fileName || fallbackZipFilename);
 
       toast({
         title: t("ddl.exported"),
@@ -1728,7 +1661,7 @@ export function DdlGenerator({
     setNameFixSelectedTableIndexes(new Set((tables ?? []).map((_: TableInfo, index: number) => index)));
     setNameFixTableFilterQuery("");
     setNameFixApplyMode((previousMode) => {
-      if (!isElectron) {
+      if (!supportsDirectNameFixWrite) {
         return "replace_download";
       }
       return previousMode === "replace_download" ? "copy" : previousMode;
@@ -1854,7 +1787,7 @@ export function DdlGenerator({
       return;
     }
 
-    if (nameFixApplyMode === "overwrite" && !isElectron) {
+    if (nameFixApplyMode === "overwrite" && !supportsDirectNameFixWrite) {
       toast({
         title: t("ddl.nameFix.toastOverwriteUnavailableTitle"),
         description: t("ddl.nameFix.toastOverwriteUnavailableDescription"),
@@ -2038,15 +1971,17 @@ export function DdlGenerator({
                 </>
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={openSyncNameFixDialog}
-              className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
-            >
-              <WandSparkles className="mr-1 h-3 w-3" />
-              {t("ddl.nameFix.button")}
-            </Button>
+            {supportsNameFix ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openSyncNameFixDialog}
+                className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
+              >
+                <WandSparkles className="mr-1 h-3 w-3" />
+                {t("ddl.nameFix.button")}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2115,7 +2050,8 @@ export function DdlGenerator({
         )}
       </div>
 
-      <Dialog open={showSyncNameFixDialog} onOpenChange={setShowSyncNameFixDialog}>
+      {supportsNameFix ? (
+        <Dialog open={showSyncNameFixDialog} onOpenChange={setShowSyncNameFixDialog}>
         <DialogContent
           className="w-[min(96vw,1100px)] max-w-5xl max-h-[92vh] p-0 overflow-hidden flex flex-col"
           onOpenAutoFocus={(event) => {
@@ -2198,7 +2134,7 @@ export function DdlGenerator({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {isElectron ? (
+                    {supportsDirectNameFixWrite ? (
                       <>
                         <SelectItem value="copy">{t("ddl.nameFix.applyModeCopy")}</SelectItem>
                         <SelectItem value="overwrite">{t("ddl.nameFix.applyModeOverwrite")}</SelectItem>
@@ -2208,7 +2144,7 @@ export function DdlGenerator({
                     )}
                   </SelectContent>
                 </Select>
-                {!isElectron && (
+                {!supportsDirectNameFixWrite && (
                   <p className="text-[11px] text-muted-foreground">{t("ddl.nameFix.browserReplaceDownloadHint")}</p>
                 )}
               </div>
@@ -2467,7 +2403,7 @@ export function DdlGenerator({
                 !nameFixPreviewResult
                 || isApplyingNameFix
                 || nameFixRunningStep !== "idle"
-                || (nameFixApplyMode === "overwrite" && !isElectron)
+                || (nameFixApplyMode === "overwrite" && !supportsDirectNameFixWrite)
                 || hasNameFixBlockingIssues
               }
             >
@@ -2487,7 +2423,8 @@ export function DdlGenerator({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+        </Dialog>
+      ) : null}
 
       {/* 表格选择对话框 (ZIP 模式) */}
       <Dialog open={showTableSelector} onOpenChange={setShowTableSelector}>

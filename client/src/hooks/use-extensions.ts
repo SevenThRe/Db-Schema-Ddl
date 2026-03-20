@@ -8,6 +8,7 @@ import type {
   ExtensionLifecycleState,
 } from "@shared/schema";
 import { parseApiErrorResponse } from "@/lib/api-error";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
 type RequestFailureFallback = {
   code: "REQUEST_FAILED";
@@ -70,15 +71,20 @@ async function callElectronExtension<T>(
 }
 
 export function useExtensions() {
+  const capabilities = desktopBridge.getCapabilities();
   return useQuery({
     queryKey: [api.extensions.list.path],
     queryFn: async () => {
+      if (!capabilities.features.extensions) {
+        return [] as ExtensionHostState[];
+      }
       const data = await fetchJson(api.extensions.list.path, {
         code: "REQUEST_FAILED",
         message: "Failed to fetch extensions",
       });
       return api.extensions.list.responses[200].parse(data);
     },
+    enabled: capabilities.features.extensions,
     refetchInterval: (query) => {
       const extensions = query.state.data as ExtensionHostState[] | undefined;
       return extensions?.some((extension) => shouldPollLifecycle(extension)) ? 1000 : false;
@@ -87,9 +93,13 @@ export function useExtensions() {
 }
 
 export function useExtension(extensionId: ExtensionId) {
+  const capabilities = desktopBridge.getCapabilities();
   return useQuery({
     queryKey: extensionQueryKey(extensionId),
     queryFn: async () => {
+      if (!capabilities.features.extensions) {
+        return null;
+      }
       const url = buildUrl(api.extensions.get.path, { id: extensionId });
       const data = await fetchJson(url, {
         code: "REQUEST_FAILED",
@@ -97,6 +107,7 @@ export function useExtension(extensionId: ExtensionId) {
       });
       return api.extensions.get.responses[200].parse(data);
     },
+    enabled: capabilities.features.extensions,
     refetchInterval: (query) => {
       const extension = query.state.data as ExtensionHostState | undefined;
       return shouldPollLifecycle(extension) ? 1000 : false;
@@ -105,9 +116,13 @@ export function useExtension(extensionId: ExtensionId) {
 }
 
 export function useExtensionCatalog(extensionId: ExtensionId) {
+  const capabilities = desktopBridge.getCapabilities();
   return useQuery({
     queryKey: [api.extensions.catalog.path, extensionId],
     queryFn: async () => {
+      if (!capabilities.features.extensions) {
+        return null;
+      }
       const url = buildUrl(api.extensions.catalog.path, { id: extensionId });
       const data = await fetchJson(url, {
         code: "REQUEST_FAILED",
@@ -115,13 +130,18 @@ export function useExtensionCatalog(extensionId: ExtensionId) {
       });
       return api.extensions.catalog.responses[200].parse(data);
     },
+    enabled: capabilities.features.extensions,
   });
 }
 
 export function useExtensionLifecycle(extensionId: ExtensionId) {
+  const capabilities = desktopBridge.getCapabilities();
   return useQuery({
     queryKey: [api.extensions.lifecycle.path, extensionId],
     queryFn: async () => {
+      if (!capabilities.features.extensions) {
+        return null;
+      }
       const url = buildUrl(api.extensions.lifecycle.path, { id: extensionId });
       const data = await fetchJson(url, {
         code: "REQUEST_FAILED",
@@ -129,6 +149,7 @@ export function useExtensionLifecycle(extensionId: ExtensionId) {
       });
       return api.extensions.lifecycle.responses[200].parse(data);
     },
+    enabled: capabilities.features.extensions,
     refetchInterval: (query) => {
       const lifecycle = query.state.data as ExtensionLifecycleState | null | undefined;
       return lifecycle && ACTIVE_LIFECYCLE_STAGES.has(lifecycle.stage) ? 1000 : false;

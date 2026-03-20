@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { DB_MANAGEMENT_EXTENSION_ID, type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
@@ -125,6 +126,7 @@ function getSheetName(sheet: unknown): string | null {
 }
 
 export default function Dashboard() {
+  const desktopCapabilities = desktopBridge.getCapabilities();
   const [isDbManagementTestMode] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -192,6 +194,21 @@ export default function Dashboard() {
   const { mutateAsync: startExtensionInstall, isPending: isStartInstallPending } = useStartExtensionInstall();
   const { t } = useTranslation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!desktopCapabilities.features.dbManagement && activeModule === "db-management") {
+      setActiveModule("workspace");
+    }
+    if (!desktopCapabilities.features.ddlImport && activeModule === "ddl-import") {
+      setActiveModule("workspace");
+    }
+  }, [activeModule, desktopCapabilities.features.dbManagement, desktopCapabilities.features.ddlImport]);
+
+  useEffect(() => {
+    if (!desktopCapabilities.features.schemaDiff && viewMode === "diff") {
+      setViewMode("auto");
+    }
+  }, [desktopCapabilities.features.schemaDiff, viewMode]);
 
   const emitDesktopSmokeSignal = useCallback(
     (message: string) => {
@@ -649,10 +666,12 @@ export default function Dashboard() {
                 <Grid3X3 className="w-3 h-3" />
                 {t("view.spreadsheet")}
               </TabsTrigger>
-              <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-sm px-3 text-[11px] font-medium">
-                <Sparkles className="w-3 h-3" />
-                Diff
-              </TabsTrigger>
+              {desktopCapabilities.features.schemaDiff ? (
+                <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-sm px-3 text-[11px] font-medium">
+                  <Sparkles className="w-3 h-3" />
+                  Diff
+                </TabsTrigger>
+              ) : null}
             </TabsList>
           </Tabs>
 
@@ -714,8 +733,22 @@ export default function Dashboard() {
             sheetName={selectedSheet}
             onRegionParsed={handleRegionParsed}
           />
-        ) : (
+        ) : desktopCapabilities.features.schemaDiff ? (
           <SchemaDiffPanel fileId={selectedFileId} sheetName={selectedSheet} />
+        ) : (
+          <TablePreview
+            fileId={selectedFileId}
+            sheetName={selectedSheet}
+            selectionMemoryKey={selectedFileMemoryKey}
+            onTablesLoaded={handleTablesLoaded}
+            jumpToPhysicalTableName={
+              tableJumpRequest && selectedSheet === tableJumpRequest.sheetName
+                ? tableJumpRequest.physicalTableName
+                : null
+            }
+            jumpToken={tableJumpRequest?.token ?? 0}
+            onCurrentTableChange={handleCurrentTableChange}
+          />
         )}
       </div>
     </div>
@@ -758,24 +791,28 @@ export default function Dashboard() {
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   定义
                 </Button>
-                <Button
-                  variant={activeModule === "db-management" ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 rounded-sm px-3 text-[11px]"
-                  onClick={handleDbManagementEntryClick}
-                >
-                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                  数据库
-                </Button>
-                <Button
-                  variant={activeModule === "ddl-import" ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 rounded-sm px-3 text-[11px]"
-                  onClick={() => setActiveModule("ddl-import")}
-                >
-                  <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
-                  DDL 导入
-                </Button>
+                {desktopCapabilities.features.dbManagement ? (
+                  <Button
+                    variant={activeModule === "db-management" ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 rounded-sm px-3 text-[11px]"
+                    onClick={handleDbManagementEntryClick}
+                  >
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                    数据库
+                  </Button>
+                ) : null}
+                {desktopCapabilities.features.ddlImport ? (
+                  <Button
+                    variant={activeModule === "ddl-import" ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 rounded-sm px-3 text-[11px]"
+                    onClick={() => setActiveModule("ddl-import")}
+                  >
+                    <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
+                    DDL 导入
+                  </Button>
+                ) : null}
               </div>
               <div className="hidden h-4 w-px bg-border lg:block" />
               <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -788,7 +825,7 @@ export default function Dashboard() {
                 <LayoutPanelLeft className="h-3.5 w-3.5" />
                 {layoutLabel}
               </span>
-              <UpdateNotifier />
+              {desktopCapabilities.features.updater ? <UpdateNotifier /> : null}
             </div>
           </div>
         </header>
@@ -800,6 +837,7 @@ export default function Dashboard() {
             dbManagementState={dbManagementExtension ?? null}
             dbManagementSelected={activeModule === "db-management"}
             onSelectDbManagement={handleDbManagementEntryClick}
+            showDbManagement={desktopCapabilities.features.dbManagement}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="overflow-hidden border-r border-border"
@@ -807,9 +845,9 @@ export default function Dashboard() {
 
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden bg-background">
-              {activeModule === "ddl-import" ? (
+              {desktopCapabilities.features.ddlImport && activeModule === "ddl-import" ? (
                 renderDdlImportWorkspace()
-              ) : activeModule === "db-management" &&
+              ) : desktopCapabilities.features.dbManagement && activeModule === "db-management" &&
                 (dbManagementExtension?.status === "enabled" || canBypassOfficialExtensionGate) ? (
                 renderDbManagementWorkspace()
               ) : isCompactLayout ? (
@@ -829,7 +867,9 @@ export default function Dashboard() {
                         currentTable={viewMode === "auto" ? currentTable : null}
                         selectedTableNames={selectedTableNames}
                         onSelectedTableNamesChange={setSelectedTableNames}
-                        onOpenImportWorkspace={() => setActiveModule("ddl-import")}
+                        onOpenImportWorkspace={
+                          desktopCapabilities.features.ddlImport ? () => setActiveModule("ddl-import") : undefined
+                        }
                       />
                     </ResizablePanel>
                   </ResizablePanelGroup>
@@ -875,7 +915,9 @@ export default function Dashboard() {
                       currentTable={viewMode === "auto" ? currentTable : null}
                       selectedTableNames={selectedTableNames}
                       onSelectedTableNamesChange={setSelectedTableNames}
-                      onOpenImportWorkspace={() => setActiveModule("ddl-import")}
+                      onOpenImportWorkspace={
+                        desktopCapabilities.features.ddlImport ? () => setActiveModule("ddl-import") : undefined
+                      }
                     />
                   </ResizablePanel>
                 </ResizablePanelGroup>
@@ -893,42 +935,46 @@ export default function Dashboard() {
         onSelectTable={handleSelectTable}
       />
 
-      <ExtensionInstallDialog
-        open={installDialogOpen}
-        onOpenChange={setInstallDialogOpen}
-        extension={dbManagementExtension ?? null}
-        isPending={isInstallFlowPending || isStartInstallPending || isActivationPending || isRefreshCatalogPending}
-        onInstall={openOfficialExtensionFlow}
-        onActivate={triggerExtensionActivation}
-        onRefreshCatalog={refreshOfficialExtensionCatalog}
-      />
+      {desktopCapabilities.features.extensions ? (
+        <ExtensionInstallDialog
+          open={installDialogOpen}
+          onOpenChange={setInstallDialogOpen}
+          extension={dbManagementExtension ?? null}
+          isPending={isInstallFlowPending || isStartInstallPending || isActivationPending || isRefreshCatalogPending}
+          onInstall={openOfficialExtensionFlow}
+          onActivate={triggerExtensionActivation}
+          onRefreshCatalog={refreshOfficialExtensionCatalog}
+        />
+      ) : null}
 
-      <ExtensionStatusDialog
-        open={statusDialogOpen}
-        onOpenChange={setStatusDialogOpen}
-        extension={dbManagementExtension ?? null}
-        isPending={
-          isEnableMutationPending ||
-          isInstallFlowPending ||
-          isActivationPending ||
-          isRefreshCatalogPending ||
-          isStartInstallPending
-        }
-        primaryActionLabel={
-          dbManagementExtension?.updateAvailable || dbManagementExtension?.status === "incompatible"
-            ? "更新扩展"
-            : dbManagementExtension?.lifecycle?.stage === "failed"
-              ? "重新安装"
-              : "启用并重启"
-        }
-        onPrimaryAction={
-          dbManagementExtension?.updateAvailable ||
-          dbManagementExtension?.status === "incompatible" ||
-          dbManagementExtension?.lifecycle?.stage === "failed"
-            ? openOfficialExtensionFlow
-            : handleEnableAndActivateExtension
-        }
-      />
+      {desktopCapabilities.features.extensions ? (
+        <ExtensionStatusDialog
+          open={statusDialogOpen}
+          onOpenChange={setStatusDialogOpen}
+          extension={dbManagementExtension ?? null}
+          isPending={
+            isEnableMutationPending ||
+            isInstallFlowPending ||
+            isActivationPending ||
+            isRefreshCatalogPending ||
+            isStartInstallPending
+          }
+          primaryActionLabel={
+            dbManagementExtension?.updateAvailable || dbManagementExtension?.status === "incompatible"
+              ? "更新扩展"
+              : dbManagementExtension?.lifecycle?.stage === "failed"
+                ? "重新安装"
+                : "启用并重启"
+          }
+          onPrimaryAction={
+            dbManagementExtension?.updateAvailable ||
+            dbManagementExtension?.status === "incompatible" ||
+            dbManagementExtension?.lifecycle?.stage === "failed"
+              ? openOfficialExtensionFlow
+              : handleEnableAndActivateExtension
+          }
+        />
+      ) : null}
     </div>
   );
 }

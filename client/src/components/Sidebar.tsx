@@ -28,6 +28,7 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
 interface SidebarProps {
   selectedFileId: number | null;
@@ -35,6 +36,7 @@ interface SidebarProps {
   dbManagementState: ExtensionHostState | null;
   dbManagementSelected: boolean;
   onSelectDbManagement: () => void;
+  showDbManagement?: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
   className?: string;
@@ -46,6 +48,7 @@ export function Sidebar({
   dbManagementState,
   dbManagementSelected,
   onSelectDbManagement,
+  showDbManagement = true,
   collapsed,
   onToggleCollapse,
   className,
@@ -155,24 +158,9 @@ export function Sidebar({
 
   const uploadSelectedFile = (file?: File | null) => {
     if (!file) return;
-
-    const formData = new FormData();
-    formData.append("file", file);
-    if (typeof file.lastModified === "number" && file.lastModified > 0) {
-      formData.append("sourceModifiedAt", String(file.lastModified));
-    }
-
-    uploadFile(formData, {
-      onSuccess: (data: any) => {
-        if (data.isDuplicate) {
-          toast({
-            title: t("toast.duplicateFile"),
-            description: t("toast.duplicateFileDesc"),
-            variant: "default"
-          });
-        } else {
-          toast({ title: t("toast.fileUploaded") });
-        }
+    uploadFile(file, {
+      onSuccess: () => {
+        toast({ title: t("toast.fileUploaded") });
       },
       onError: (error) => {
         const translated = translateApiError(error, t, { includeIssues: false });
@@ -287,10 +275,8 @@ export function Sidebar({
 
   const openDocs = async () => {
     try {
-      if (window.electronAPI?.openExternal) {
-        const opened = await window.electronAPI.openExternal(docsUrl);
-        if (opened) return;
-      }
+      const opened = await desktopBridge.openExternal(docsUrl);
+      if (opened) return;
     } catch {
       // Fallback to browser navigation below.
     }
@@ -474,7 +460,7 @@ export function Sidebar({
 
         <ScrollArea className="flex-1 px-1.5 py-1.5">
           <div className="space-y-1">
-            {renderDbManagementEntry(true)}
+            {showDbManagement ? renderDbManagementEntry(true) : null}
             {isLoading ? (
               [1, 2, 3].map((item) => (
                 <div key={item} className="h-11 rounded-sm bg-muted/40 animate-pulse" />
@@ -610,7 +596,7 @@ export function Sidebar({
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="px-3 py-2 space-y-2">
-          <div>{renderDbManagementEntry(false)}</div>
+          {showDbManagement ? <div>{renderDbManagementEntry(false)}</div> : null}
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t("sidebar.definitionFiles")}

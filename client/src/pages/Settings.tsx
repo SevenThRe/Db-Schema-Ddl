@@ -20,6 +20,7 @@ import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { translateApiError } from "@/lib/api-error";
+import { desktopBridge } from "@/lib/desktop-bridge";
 import {
   MYSQL_ENGINES,
   MYSQL_CHARSETS,
@@ -78,6 +79,16 @@ export default function Settings() {
   const { mutate: updateSettings, isPending } = useUpdateSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const desktopCapabilities = desktopBridge.getCapabilities();
+  const visibleSettingsSections = SETTINGS_SECTIONS.filter((section) => {
+    if (section.id === "extensions") {
+      return desktopCapabilities.features.extensions;
+    }
+    if (section.id === "compare-policy") {
+      return desktopCapabilities.features.dbManagement;
+    }
+    return true;
+  });
 
   const [formData, setFormData] = useState<DdlSettings>({
     mysqlEngine: "InnoDB",
@@ -124,7 +135,7 @@ export default function Settings() {
   });
   const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
   const [activeSettingsSection, setActiveSettingsSection] = useState<(typeof SETTINGS_SECTIONS)[number]["id"]>(
-    SETTINGS_SECTIONS[0].id,
+    visibleSettingsSections[0]?.id ?? "ddl-options",
   );
 
   // 开发者模式状态（localStorage）
@@ -157,7 +168,7 @@ export default function Settings() {
       return;
     }
 
-    const targets = SETTINGS_SECTIONS
+    const targets = visibleSettingsSections
       .map((section) => ({
         id: section.id,
         element: document.getElementById(`settings-section-${section.id}`),
@@ -191,7 +202,7 @@ export default function Settings() {
 
     targets.forEach((target) => observer.observe(target.element));
     return () => observer.disconnect();
-  }, []);
+  }, [visibleSettingsSections]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,12 +246,10 @@ export default function Settings() {
 
   // Electron 環境でのディレクトリ選択
   const handleSelectDirectory = async (field: 'downloadPath' | 'excelReadPath') => {
-    if (window.electronAPI) {
-      const path = await window.electronAPI.selectDirectory();
-      if (path) {
-        handleChange(field, path);
-      }
-    } else {
+    const path = await desktopBridge.selectDirectory();
+    if (path) {
+      handleChange(field, path);
+    } else if (desktopCapabilities.runtime === "web") {
       toast({
         title: t("settings.notInElectron"),
         description: t("settings.notInElectronDesc"),
@@ -311,7 +320,7 @@ export default function Settings() {
                 设置
               </div>
               <nav className="flex flex-col p-1.5">
-                {SETTINGS_SECTIONS.map((section) => (
+                {visibleSettingsSections.map((section) => (
                   <a
                     key={section.id}
                     href={`#settings-section-${section.id}`}
@@ -329,12 +338,16 @@ export default function Settings() {
           </aside>
 
           <div className="min-w-0 flex-1 grid gap-4 xl:grid-cols-2">
-            <div id="settings-section-extensions" className="xl:col-span-2 scroll-mt-16">
-              <ExtensionManagementSection />
-            </div>
-            <div id="settings-section-compare-policy" className="xl:col-span-2 scroll-mt-16">
-              <DbComparePolicySection />
-            </div>
+            {desktopCapabilities.features.extensions ? (
+              <div id="settings-section-extensions" className="xl:col-span-2 scroll-mt-16">
+                <ExtensionManagementSection />
+              </div>
+            ) : null}
+            {desktopCapabilities.features.dbManagement ? (
+              <div id="settings-section-compare-policy" className="xl:col-span-2 scroll-mt-16">
+                <DbComparePolicySection />
+              </div>
+            ) : null}
 
           {/* DDL Generation Options */}
           <div id="settings-section-ddl-options" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
