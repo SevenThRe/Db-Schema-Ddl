@@ -1,40 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Check, Download, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
-type UpdateStatus = "idle" | "checking" | "current" | "available" | "error";
+type UpdateStatus = "idle" | "checking" | "current" | "available" | "downloading" | "error";
 
 const FALLBACK_RELEASE_URL = "https://github.com/SevenThRe/Db-Schema-Ddl/releases";
-const GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/SevenThRe/Db-Schema-Ddl/releases/latest";
 
 function formatVersionLabel(version?: string | null): string {
   const normalized = String(version ?? "").trim();
   if (!normalized) return "v--";
   return normalized.startsWith("v") ? normalized : `v${normalized}`;
-}
-
-function normalizeVersion(version?: string | null): number[] {
-  return String(version ?? "")
-    .trim()
-    .replace(/^v/i, "")
-    .split(/[.-]/)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((part) => Number.isFinite(part));
-}
-
-function isRemoteVersionNewer(currentVersion: string, latestVersion: string): boolean {
-  const current = normalizeVersion(currentVersion);
-  const latest = normalizeVersion(latestVersion);
-  const length = Math.max(current.length, latest.length);
-  for (let i = 0; i < length; i++) {
-    const c = current[i] ?? 0;
-    const l = latest[i] ?? 0;
-    if (l > c) return true;
-    if (l < c) return false;
-  }
-  return false;
 }
 
 interface UpdateNotifierProps {
@@ -46,7 +24,7 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [currentVersion] = useState(() => __APP_VERSION__);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
-  const [releaseUrl, setReleaseUrl] = useState(FALLBACK_RELEASE_URL);
+  const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   const hasUpdate = status === "available";
@@ -55,22 +33,30 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
     setStatus("checking");
     setErrorMessage("");
     try {
-      const response = await fetch(GITHUB_LATEST_RELEASE_API, {
-        headers: { Accept: "application/vnd.github+json" },
-      });
-      if (!response.ok) {
-        throw new Error(`暂时无法连接发布服务。(HTTP ${response.status})`);
+      const result = await desktopBridge.updater.check();
+      if (result.available && result.version) {
+        setLatestVersion(result.version);
+        setReleaseNotes(result.body ?? null);
+        setStatus("available");
+      } else {
+        setStatus("current");
       }
-      const payload = (await response.json()) as { tag_name?: string; html_url?: string };
-      const latest = payload.tag_name ?? currentVersion;
-      setLatestVersion(latest);
-      setReleaseUrl(payload.html_url ?? FALLBACK_RELEASE_URL);
-      setStatus(isRemoteVersionNewer(currentVersion, latest) ? "available" : "current");
     } catch (error) {
       setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : "无法获取更新信息。");
+      setErrorMessage(error instanceof Error ? error.message : "暂时无法连接发布服务。");
     }
-  }, [currentVersion]);
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    setStatus("downloading");
+    try {
+      await desktopBridge.updater.downloadAndInstall();
+      // ダウンロード・インストール後はアプリが再起動するので到達しない
+    } catch (error) {
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "安装失败，请手动下载。");
+    }
+  }, []);
 
   // ポップオープン時に自動チェック
   useEffect(() => {
@@ -78,15 +64,17 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
   }, [isOpen, runUpdateCheck]);
 
   const handleOpenReleasePage = useCallback(() => {
-    window.open(releaseUrl, "_blank", "noopener,noreferrer");
-  }, [releaseUrl]);
+    void desktopBridge.openExternal(FALLBACK_RELEASE_URL);
+  }, []);
 
   const statusMeta = useMemo(() => {
     switch (status) {
       case "checking":
         return { title: formatVersionLabel(currentVersion), summary: "正在检查更新…", tone: "text-muted-foreground" };
       case "available":
-        return { title: formatVersionLabel(latestVersion), summary: "检测到新版本，点击下方前往下载。", tone: "text-amber-500" };
+        return { title: formatVersionLabel(latestVersion), summary: "检测到新版本，可立即安装。", tone: "text-amber-500" };
+      case "downloading":
+        return { title: formatVersionLabel(latestVersion), summary: "正在下载并安装，完成后自动重启…", tone: "text-blue-500" };
       case "error":
         return { title: formatVersionLabel(currentVersion), summary: errorMessage || "检查失败。", tone: "text-destructive" };
       case "current":
@@ -107,7 +95,9 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
             className,
           )}
         >
-          {status === "checking" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {status === "checking" || status === "downloading"
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : null}
           {formatVersionLabel(currentVersion)}
           {hasUpdate ? (
             <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
@@ -127,7 +117,7 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
             size="icon"
             className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
             onClick={() => void runUpdateCheck()}
-            disabled={status === "checking"}
+            disabled={status === "checking" || status === "downloading"}
           >
             {status === "checking"
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -147,8 +137,26 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
           </div>
 
           {hasUpdate && latestVersion ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-              最新版本 {formatVersionLabel(latestVersion)}
+            <div className="space-y-2">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                最新版本 {formatVersionLabel(latestVersion)}
+              </div>
+              {releaseNotes ? (
+                <div className="max-h-24 overflow-y-auto rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                  {releaseNotes}
+                </div>
+              ) : null}
+              <Button
+                size="sm"
+                className="w-full h-8 text-xs"
+                onClick={() => void handleInstall()}
+                disabled={status === "downloading"}
+              >
+                {status === "downloading"
+                  ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  : <Download className="mr-1.5 h-3.5 w-3.5" />}
+                {status === "downloading" ? "安装中…" : "立即安装"}
+              </Button>
             </div>
           ) : null}
 

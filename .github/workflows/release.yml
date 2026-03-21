@@ -6,50 +6,22 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version (e.g., 1.0.0)'
-        required: true
-        type: string
       prerelease:
         description: 'Mark as pre-release'
         required: false
         type: boolean
         default: false
 
-jobs:
-  release:
-    runs-on: windows-latest
-    env:
-      LATEST_INSTALLER_NAME: DBSchemaExcel2DDL-Setup-latest.exe
+permissions:
+  contents: write
 
-    permissions:
-      contents: write
+jobs:
+  build-windows:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Determine version
-        id: version
-        shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}"
-            if (-not $version.StartsWith("v")) {
-              $version = "v$version"
-            }
-            $prerelease = "${{ inputs.prerelease }}"
-            if ([string]::IsNullOrWhiteSpace($prerelease)) {
-              $prerelease = "false"
-            }
-          } else {
-            $version = "${{ github.ref_name }}"
-            $prerelease = "false"
-          }
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "PRERELEASE=$prerelease" >> $env:GITHUB_OUTPUT
-          echo "Release version: $version"
-          echo "Pre-release: $prerelease"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,46 +29,30 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust dependency cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node dependencies
         run: npm ci
 
-      - name: Update package.json version
-        shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.VERSION }}".TrimStart("v")
-          npm version $version --no-git-tag-version --allow-same-version
-
-      - name: Build desktop artifacts
-        run: |
-          npm run build
-          npx electron-builder --win nsis --publish never
-
-      - name: Create stable latest-download alias
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem -Path dist-electron -Filter "*-Setup-*.exe" | Select-Object -First 1
-          if (-not $setup) {
-            throw "No setup exe found in dist-electron."
-          }
-          $aliasExe = Join-Path "dist-electron" "${{ env.LATEST_INSTALLER_NAME }}"
-          Copy-Item -Path $setup.FullName -Destination $aliasExe -Force
-
-          $sourceBlockmap = "$($setup.FullName).blockmap"
-          $aliasBlockmap = "$aliasExe.blockmap"
-          if (Test-Path $sourceBlockmap) {
-            Copy-Item -Path $sourceBlockmap -Destination $aliasBlockmap -Force
-          } else {
-            Write-Host "No blockmap found for $($setup.Name), skip alias blockmap."
-          }
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Build and publish Tauri release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
-          files: |
-            dist-electron/*-Setup-*.exe
-            dist-electron/*-Setup-*.exe.blockmap
-            dist-electron/latest.yml
+          tagName: ${{ github.ref_name }}
+          releaseName: 'DBSchemaExcel2DDL ${{ github.ref_name }}'
+          releaseBody: |
+            ## 安装说明
+
+            下载 `DBSchemaExcel2DDL_*_x64-setup.exe` 安装即可，已安装的用户可通过应用内更新按钮自动升级。
+          releaseDraft: false
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          includeUpdaterJson: true

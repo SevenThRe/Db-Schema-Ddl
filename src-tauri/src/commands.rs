@@ -569,3 +569,48 @@ pub async fn enum_gen_export(
     }
   }
 }
+
+// ─── 自動更新コマンド ─────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct UpdateCheckResult {
+  pub available: bool,
+  pub version: Option<String>,
+  pub body: Option<String>,
+}
+
+/// 更新の有無を確認する
+#[tauri::command]
+pub async fn update_check(app: tauri::AppHandle) -> Result<UpdateCheckResult, String> {
+  use tauri_plugin_updater::UpdaterExt;
+  match app.updater().map_err(|e| e.to_string())?.check().await {
+    Ok(Some(update)) => Ok(UpdateCheckResult {
+      available: true,
+      version: Some(update.version.clone()),
+      body: update.body.clone(),
+    }),
+    Ok(None) => Ok(UpdateCheckResult {
+      available: false,
+      version: None,
+      body: None,
+    }),
+    Err(e) => Err(e.to_string()),
+  }
+}
+
+/// 更新をダウンロードしてインストールする
+#[tauri::command]
+pub async fn update_download_and_install(app: tauri::AppHandle) -> Result<(), String> {
+  use tauri_plugin_updater::UpdaterExt;
+  let update = app
+    .updater()
+    .map_err(|e| e.to_string())?
+    .check()
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "最新バージョンです".to_string())?;
+  update
+    .download_and_install(|_, _| {}, || {})
+    .await
+    .map_err(|e| e.to_string())
+}
