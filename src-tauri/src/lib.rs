@@ -1,8 +1,13 @@
 mod commands;
 mod constants;
 mod ddl;
+mod ddl_import;
+mod ddl_import_export;
 mod excel;
 mod models;
+mod name_fix;
+mod name_fix_apply;
+pub mod schema_diff;
 mod storage;
 mod workbook_templates;
 
@@ -45,6 +50,13 @@ pub fn run() {
       commands::ddl_export_zip_by_reference,
       commands::settings_get,
       commands::settings_update,
+      commands::ddl_import_preview,
+      commands::ddl_import_export_workbook,
+      commands::name_fix_preview,
+      commands::name_fix_apply,
+      commands::diff_preview,
+      commands::diff_confirm,
+      commands::diff_alter_preview,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

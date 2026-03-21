@@ -1,9 +1,7 @@
-export type DesktopRuntime = "web" | "electron" | "tauri";
+export type DesktopRuntime = "tauri" | "web";
 
 export interface DesktopFeatureFlags {
   updater: boolean;
-  extensions: boolean;
-  dbManagement: boolean;
   ddlImport: boolean;
   nameFix: boolean;
   schemaDiff: boolean;
@@ -26,9 +24,7 @@ function detectRuntime(): DesktopRuntime {
   if (tauriGlobal.isTauri || window.__TAURI__ || window.__TAURI_INTERNALS__) {
     return "tauri";
   }
-  if (window.electronAPI) {
-    return "electron";
-  }
+
   return "web";
 }
 
@@ -40,22 +36,6 @@ export function getDesktopCapabilities(): DesktopCapabilities {
       runtime,
       features: {
         updater: false,
-        extensions: false,
-        dbManagement: false,
-        ddlImport: false,
-        nameFix: false,
-        schemaDiff: false,
-      },
-    };
-  }
-
-  if (runtime === "electron") {
-    return {
-      runtime,
-      features: {
-        updater: true,
-        extensions: true,
-        dbManagement: true,
         ddlImport: true,
         nameFix: true,
         schemaDiff: true,
@@ -67,11 +47,9 @@ export function getDesktopCapabilities(): DesktopCapabilities {
     runtime,
     features: {
       updater: true,
-      extensions: false,
-      dbManagement: false,
       ddlImport: false,
-      nameFix: true,
-      schemaDiff: true,
+      nameFix: false,
+      schemaDiff: false,
     },
   };
 }

@@ -153,6 +153,34 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         settings_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS schema_diffs (
+        id TEXT PRIMARY KEY,
+        new_file_id INTEGER NOT NULL,
+        old_file_id INTEGER NOT NULL,
+        scope TEXT NOT NULL,
+        sheet_name TEXT,
+        diff_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS diff_rename_decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        diff_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        decision TEXT NOT NULL DEFAULT 'pending',
+        confidence REAL NOT NULL DEFAULT 0.0,
+        UNIQUE(diff_id, entity_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS name_fix_plans (
+        id TEXT PRIMARY KEY,
+        file_id INTEGER NOT NULL,
+        sheet_name TEXT NOT NULL,
+        plan_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
       ",
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
@@ -172,7 +200,7 @@ fn row_to_uploaded_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<UploadedFil
   })
 }
 
-fn compute_sha256_hex(bytes: &[u8]) -> String {
+pub fn compute_sha256_hex(bytes: &[u8]) -> String {
   let mut hasher = Sha256::new();
   hasher.update(bytes);
   format!("{:x}", hasher.finalize())
@@ -662,4 +690,339 @@ pub fn get_runtime_diagnostics(app: &AppHandle) -> Result<RuntimeDiagnostics, St
     uploaded_file_count,
     settings_row_count,
   })
+}
+
+// ──────────────────────────────────────────────
+// スキーマ差分関連のストレージ操作
+// ──────────────────────────────────────────────
+
+/// 差分結果を保存する
+pub fn save_diff(
+  app: &AppHandle,
+  diff_id: &str,
+  new_file_id: i64,
+  old_file_id: i64,
+  scope: &str,
+  sheet_name: Option<&str>,
+  diff_json: &str,
+) -> Result<(), String> {
+  let (connection, _) = open_connection(app)?;
+  connection
+    .execute(
+      "INSERT OR REPLACE INTO schema_diffs (id, new_file_id, old_file_id, scope, sheet_name, diff_json, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+      params![diff_id, new_file_id, old_file_id, scope, sheet_name, diff_json, now_iso_string()],
+    )
+    .map_err(|error| storage_error("save schema diff", error))?;
+  Ok(())
+}
+
+/// 差分IDで差分JSONを取得する
+pub fn get_diff_by_id(app: &AppHandle, diff_id: &str) -> Result<Option<String>, String> {
+  let (connection, _) = open_connection(app)?;
+  connection
+    .query_row(
+      "SELECT diff_json FROM schema_diffs WHERE id = ?1",
+      [diff_id],
+      |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|error| storage_error("load schema diff by id", error))
+}
+
+/// リネーム判定を一括置換する
+/// decisions: Vec<(entity_type, entity_key, decision, confidence)>
+pub fn replace_rename_decisions(
+  app: &AppHandle,
+  diff_id: &str,
+  decisions: &[(String, String, String, f64)],
+) -> Result<(), String> {
+  let (connection, _) = open_connection(app)?;
+  connection
+    .execute(
+      "DELETE FROM diff_rename_decisions WHERE diff_id = ?1",
+      [diff_id],
+    )
+    .map_err(|error| storage_error("clear rename decisions", error))?;
+
+  let mut stmt = connection
+    .prepare(
+      "INSERT OR REPLACE INTO diff_rename_decisions (diff_id, entity_type, entity_key, decision, confidence)
+       VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+    .map_err(|error| storage_error("prepare rename decision insert", error))?;
+
+  for (entity_type, entity_key, decision, confidence) in decisions {
+    stmt
+      .execute(params![diff_id, entity_type, entity_key, decision, confidence])
+      .map_err(|error| storage_error("insert rename decision", error))?;
+  }
+  Ok(())
+}
+
+/// リネーム判定を取得する
+/// 戻り値: Vec<(entity_type, entity_key, decision)>
+pub fn get_rename_decisions(
+  app: &AppHandle,
+  diff_id: &str,
+) -> Result<Vec<(String, String, String)>, String> {
+  let (connection, _) = open_connection(app)?;
+  let mut stmt = connection
+    .prepare(
+      "SELECT entity_type, entity_key, decision FROM diff_rename_decisions WHERE diff_id = ?1",
+    )
+    .map_err(|error| storage_error("prepare rename decision query", error))?;
+
+  let rows = stmt
+    .query_map([diff_id], |row| {
+      Ok((
+        row.get::<_, String>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, String>(2)?,
+      ))
+    })
+    .map_err(|error| storage_error("query rename decisions", error))?;
+
+  let mut results = Vec::new();
+  for row in rows {
+    results.push(decode_row(row, "decode rename decision row")?);
+  }
+  Ok(results)
+}
+
+/// アップロード済みファイルのサマリ一覧を取得する
+/// 戻り値: Vec<(id, original_name, uploaded_at)>
+pub fn list_uploaded_file_summaries(
+  app: &AppHandle,
+) -> Result<Vec<(i64, String, Option<String>)>, String> {
+  let (connection, _) = open_connection(app)?;
+  let mut stmt = connection
+    .prepare("SELECT id, original_name, uploaded_at FROM uploaded_files ORDER BY id DESC")
+    .map_err(|error| storage_error("prepare uploaded file summary query", error))?;
+
+  let rows = stmt
+    .query_map([], |row| {
+      Ok((
+        row.get::<_, i64>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, Option<String>>(2)?,
+      ))
+    })
+    .map_err(|error| storage_error("query uploaded file summaries", error))?;
+
+  let mut results = Vec::new();
+  for row in rows {
+    results.push(decode_row(row, "decode uploaded file summary row")?);
+  }
+  Ok(results)
+}
+
+// ──────────────────────────────────────────────
+// 物理名修正プランのストレージ操作
+// ──────────────────────────────────────────────
+
+/// 名前修正プランをDBに保存する
+pub fn save_name_fix_plan(
+  app: &AppHandle,
+  plan_id: &str,
+  file_id: i64,
+  sheet_name: &str,
+  plan_json: &str,
+) -> Result<(), String> {
+  let (connection, _) = open_connection(app)?;
+  connection
+    .execute(
+      "INSERT OR REPLACE INTO name_fix_plans (id, file_id, sheet_name, plan_json, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5)",
+      params![plan_id, file_id, sheet_name, plan_json, now_iso_string()],
+    )
+    .map_err(|error| storage_error("save name fix plan", error))?;
+  Ok(())
+}
+
+/// プランIDで名前修正プランを取得する
+/// 戻り値: Some((file_id, sheet_name, plan_json))
+pub fn get_name_fix_plan(
+  app: &AppHandle,
+  plan_id: &str,
+) -> Result<Option<(i64, String, String)>, String> {
+  let (connection, _) = open_connection(app)?;
+  connection
+    .query_row(
+      "SELECT file_id, sheet_name, plan_json FROM name_fix_plans WHERE id = ?1",
+      [plan_id],
+      |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+    )
+    .optional()
+    .map_err(|error| storage_error("load name fix plan by id", error))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::models::DdlSettings;
+
+  // インメモリ SQLite 接続を作成し、スキーマを初期化するヘルパー
+  fn in_memory_connection() -> Connection {
+    let conn = Connection::open_in_memory().expect("in-memory connection should open");
+    initialize_schema(&conn).expect("schema should initialize");
+    conn
+  }
+
+  // Phase-1 検収テスト: ファイル名サニタイズ
+  #[test]
+  fn sanitize_file_name_preserves_normal_filename() {
+    assert_eq!(sanitize_file_name("workbook.xlsx"), "workbook.xlsx");
+    assert_eq!(sanitize_file_name("my-database-def.xlsx"), "my-database-def.xlsx");
+  }
+
+  #[test]
+  fn sanitize_file_name_replaces_forbidden_chars() {
+    let result = sanitize_file_name("file:with*forbidden?chars.xlsx");
+    assert!(!result.contains(':'), "colon must be replaced");
+    assert!(!result.contains('*'), "asterisk must be replaced");
+    assert!(!result.contains('?'), "question mark must be replaced");
+    assert!(result.ends_with(".xlsx"), "extension must be preserved");
+  }
+
+  #[test]
+  fn sanitize_file_name_returns_default_for_blank_input() {
+    assert_eq!(sanitize_file_name(""), DEFAULT_WORKBOOK_FILE_NAME);
+    assert_eq!(sanitize_file_name("   "), DEFAULT_WORKBOOK_FILE_NAME);
+  }
+
+  // Phase-1 検収テスト: 一時アップロードファイル名の正規化
+  #[test]
+  fn normalize_temp_upload_name_extracts_original_name() {
+    // 形式: <8桁16進>_<タイムスタンプ>_<元ファイル名>
+    let result = normalize_temp_upload_name("abc12345_1773000000000_database-def.xlsx");
+    assert_eq!(result, Some("database-def.xlsx".to_string()));
+  }
+
+  #[test]
+  fn normalize_temp_upload_name_rejects_invalid_format() {
+    assert_eq!(normalize_temp_upload_name("plain-filename.xlsx"), None);
+    assert_eq!(normalize_temp_upload_name(""), None);
+    // タイムスタンプが数字でない場合は無効
+    assert_eq!(normalize_temp_upload_name("abc12345_not_a_timestamp_file.xlsx"), None);
+  }
+
+  // Phase-1 検収テスト: SHA-256 ハッシュ計算
+  #[test]
+  fn compute_sha256_hex_returns_64_char_string() {
+    let hash = compute_sha256_hex(b"hello world");
+    assert_eq!(hash.len(), 64, "SHA-256 hex string must be 64 characters");
+    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "hash must be hex");
+  }
+
+  #[test]
+  fn compute_sha256_hex_is_deterministic() {
+    let hash1 = compute_sha256_hex(b"test data");
+    let hash2 = compute_sha256_hex(b"test data");
+    assert_eq!(hash1, hash2, "same input must produce same hash");
+  }
+
+  #[test]
+  fn compute_sha256_hex_differs_for_different_inputs() {
+    let hash1 = compute_sha256_hex(b"data A");
+    let hash2 = compute_sha256_hex(b"data B");
+    assert_ne!(hash1, hash2, "different inputs must produce different hashes");
+  }
+
+  // Phase-1 検収テスト: DBスキーマ初期化
+  #[test]
+  fn schema_creates_uploaded_files_table() {
+    let conn = in_memory_connection();
+    let count: i64 = conn
+      .query_row("SELECT COUNT(*) FROM uploaded_files", [], |row| row.get(0))
+      .expect("uploaded_files table must exist after schema init");
+    assert_eq!(count, 0, "table should start empty");
+  }
+
+  #[test]
+  fn schema_creates_app_settings_table() {
+    let conn = in_memory_connection();
+    let count: i64 = conn
+      .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+      .expect("app_settings table must exist after schema init");
+    assert_eq!(count, 0, "settings should start empty");
+  }
+
+  // Phase-1 検収テスト: 設定の読み書き（AppHandle なしでの SQL 直接テスト）
+  #[test]
+  fn settings_round_trip_via_sql() {
+    let conn = in_memory_connection();
+    // author_name は String 型（Option ではない）、dialect フィールドは存在しない
+    let settings = DdlSettings {
+      author_name: "テスト太郎".into(),
+      mysql_engine: "InnoDB".into(),
+      ..DdlSettings::default()
+    };
+
+    // 設定を INSERT する
+    let payload = serde_json::to_string(&settings).expect("settings should serialize");
+    conn
+      .execute(
+        "INSERT INTO app_settings (id, settings_json, updated_at) VALUES (1, ?1, '2026-01-01T00:00:00Z')",
+        [&payload],
+      )
+      .expect("settings insert should succeed");
+
+    // 設定を SELECT して復元する
+    let raw: String = conn
+      .query_row("SELECT settings_json FROM app_settings WHERE id = 1", [], |row| row.get(0))
+      .expect("settings should be readable");
+    let restored: DdlSettings =
+      serde_json::from_str(&raw).expect("stored settings should deserialize");
+
+    assert_eq!(restored.author_name, "テスト太郎");
+    assert_eq!(restored.mysql_engine, "InnoDB");
+  }
+
+  #[test]
+  fn settings_upsert_replaces_existing_value() {
+    let conn = in_memory_connection();
+
+    // 初回挿入（author_name = "初期ユーザー"）
+    let first = DdlSettings {
+      author_name: "初期ユーザー".into(),
+      ..DdlSettings::default()
+    };
+    let first_json = serde_json::to_string(&first).expect("serialize");
+    conn
+      .execute(
+        "INSERT INTO app_settings (id, settings_json, updated_at) VALUES (1, ?1, '2026-01-01T00:00:00Z')",
+        [&first_json],
+      )
+      .expect("initial insert should succeed");
+
+    // UPSERT で上書き（author_name = "更新ユーザー"）
+    let second = DdlSettings {
+      author_name: "更新ユーザー".into(),
+      ..DdlSettings::default()
+    };
+    let second_json = serde_json::to_string(&second).expect("serialize");
+    conn
+      .execute(
+        "INSERT INTO app_settings (id, settings_json, updated_at)
+         VALUES (1, ?1, '2026-01-02T00:00:00Z')
+         ON CONFLICT(id) DO UPDATE SET
+           settings_json = excluded.settings_json,
+           updated_at = excluded.updated_at",
+        [&second_json],
+      )
+      .expect("upsert should succeed");
+
+    let raw: String = conn
+      .query_row("SELECT settings_json FROM app_settings WHERE id = 1", [], |row| row.get(0))
+      .expect("settings should be readable after upsert");
+    let restored: DdlSettings = serde_json::from_str(&raw).expect("deserialize");
+    assert_eq!(restored.author_name, "更新ユーザー", "upsert should overwrite with new value");
+
+    // レコードは 1 行だけであること（重複しないこと）
+    let count: i64 = conn
+      .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+      .expect("count should succeed");
+    assert_eq!(count, 1, "upsert must not create duplicate rows");
+  }
 }

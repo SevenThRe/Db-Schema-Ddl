@@ -3,9 +3,7 @@ import {
   useApplyNameFix,
   useFiles,
   useGenerateDdl,
-  useNameFixJob,
   useNameFixPreview,
-  useRollbackNameFix,
   useSettings,
   useSheets,
   useTableInfo,
@@ -19,7 +17,6 @@ import type {
   ReservedWordStrategy,
   TableInfo,
 } from "@shared/schema";
-import { api, buildUrl } from "@shared/routes";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -560,10 +557,10 @@ export function DdlGenerator({
   onSelectedTableNamesChange,
   onOpenImportWorkspace,
 }: DdlGeneratorProps) {
-  const CONTROL_BUTTON_CLASS = "h-8 rounded-sm text-[11px]";
+  const CONTROL_BUTTON_CLASS = "h-8 rounded-md text-xs";
   const desktopCapabilities = desktopBridge.getCapabilities();
   const supportsNameFix = desktopCapabilities.features.nameFix;
-  const supportsDirectNameFixWrite = desktopCapabilities.runtime === "electron";
+  const supportsDirectNameFixWrite = desktopCapabilities.runtime === "tauri";
   const [dialect, setDialect] = useState<"mysql" | "oracle">("mysql");
   const [generatedDdl, setGeneratedDdl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -608,7 +605,6 @@ export function DdlGenerator({
   const [nameFixApplyMode, setNameFixApplyMode] = useState<NameFixMode>("copy");
   const [nameFixPreviewResult, setNameFixPreviewResult] = useState<NameFixPreviewResponse | null>(null);
   const [nameFixApplyResult, setNameFixApplyResult] = useState<NameFixApplyResultState | null>(null);
-  const [nameFixActiveJobId, setNameFixActiveJobId] = useState<string | null>(null);
   const [nameFixRunningStep, setNameFixRunningStep] = useState<"idle" | "preview" | "apply" | "rollback">("idle");
   const [generatedTables, setGeneratedTables] = useState<TableInfo[] | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -624,8 +620,6 @@ export function DdlGenerator({
   const { mutate: generate, isPending } = useGenerateDdl();
   const { mutateAsync: previewNameFix, isPending: isPreviewingNameFix } = useNameFixPreview();
   const { mutateAsync: applyNameFix, isPending: isApplyingNameFix } = useApplyNameFix();
-  const { mutateAsync: rollbackNameFix, isPending: isRollingBackNameFix } = useRollbackNameFix();
-  const { data: nameFixJobDetail } = useNameFixJob(nameFixActiveJobId);
   const { data: settings } = useSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -721,7 +715,6 @@ export function DdlGenerator({
   const hasNameFixBlockingIssues =
     (nameFixPreviewResult?.summary.blockingConflictCount ?? 0) > 0
     || (nameFixPreviewResult?.summary.unresolvedSourceRefCount ?? 0) > 0;
-  const nameFixRollbackTargetJobId = nameFixApplyResult?.jobId ?? nameFixActiveJobId;
   const effectiveSelectedTableNames = selectedTableNames ?? localSelectedTableNames;
   const groupedMissingDataTypeIssues = useMemo<MissingDataTypeIssueGroup[]>(() => {
     if (missingDataTypeIssues.length === 0) {
@@ -1294,6 +1287,7 @@ export function DdlGenerator({
           selectedCount: patchedTables.length,
           skippedCount: skippedInvalidTableIndexes.size,
         }),
+        variant: "warning",
       });
     }
 
@@ -1313,7 +1307,7 @@ export function DdlGenerator({
     toast({
       title: `DDL warnings (${warnings.length})`,
       description: remainingCount > 0 ? `${previewLines}\n... +${remainingCount} more` : previewLines,
-      variant: "default",
+      variant: "warning",
     });
   };
 
@@ -1375,6 +1369,7 @@ export function DdlGenerator({
         toast({
           title: t("ddl.generated"),
           description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
+          variant: "success",
         });
         return;
       } catch (error) {
@@ -1404,6 +1399,7 @@ export function DdlGenerator({
           toast({
             title: t("ddl.generated"),
             description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
+            variant: "success",
           });
         },
         onError: (error) => {
@@ -1492,6 +1488,7 @@ export function DdlGenerator({
           skippedCount > 0
             ? t("ddl.exportedZipPartial", { successCount, skippedCount })
             : t("ddl.exportedZip", { count: successCount }),
+        variant: "success",
       });
 
       setZipExportSummary({
@@ -1539,6 +1536,7 @@ export function DdlGenerator({
     setTimeout(() => setCopied(false), 2000);
     toast({
       title: t("ddl.copiedToClipboard"),
+      variant: "success",
     });
   };
 
@@ -1583,6 +1581,7 @@ export function DdlGenerator({
     toast({
       title: t("ddl.exported"),
       description: t("ddl.exportedAs", { filename }),
+      variant: "success",
     });
   };
 
@@ -1668,7 +1667,6 @@ export function DdlGenerator({
     });
     setNameFixPreviewResult(null);
     setNameFixApplyResult(null);
-    setNameFixActiveJobId(null);
     setShowSyncNameFixDialog(true);
   };
 
@@ -1744,8 +1742,7 @@ export function DdlGenerator({
       });
       setNameFixPreviewResult(preview);
       setNameFixApplyResult(null);
-      setNameFixActiveJobId(null);
-      toast({
+        toast({
         title: t("ddl.nameFix.toastPreviewReadyTitle"),
         description: t("ddl.nameFix.toastPreviewReadyDescription", {
           changedTableCount: preview.summary.changedTableCount,
@@ -1814,26 +1811,6 @@ export function DdlGenerator({
         changedColumnCount: applyResult.summary.changedColumnCount,
         files: applyResult.files,
       });
-      if (nameFixApplyMode === "replace_download") {
-        const firstDownloadableFile = applyResult.files.find((file) => Boolean(file.downloadToken));
-        const downloadUrl = applyResult.downloadBundleToken
-          ? buildUrl(api.nameFix.download.path, { token: applyResult.downloadBundleToken })
-          : firstDownloadableFile?.downloadToken
-          ? buildUrl(api.nameFix.download.path, { token: firstDownloadableFile.downloadToken })
-          : null;
-        if (downloadUrl) {
-          const anchor = document.createElement("a");
-          anchor.href = downloadUrl;
-          anchor.download =
-            applyResult.downloadBundleFilename
-            || firstDownloadableFile?.downloadFilename
-            || "";
-          document.body.appendChild(anchor);
-          anchor.click();
-          document.body.removeChild(anchor);
-        }
-      }
-      setNameFixActiveJobId(applyResult.jobId);
       toast({
         title: t("ddl.nameFix.toastApplyFinishedTitle"),
         description: t("ddl.nameFix.toastApplyFinishedDescription", {
@@ -1846,41 +1823,6 @@ export function DdlGenerator({
       const translated = translateApiError(error, t);
       toast({
         title: translated.title || t("ddl.nameFix.toastApplyFailedTitle"),
-        description: translated.description,
-        variant: "destructive",
-      });
-    } finally {
-      setNameFixRunningStep("idle");
-    }
-  };
-
-  const handleRunNameFixRollback = async () => {
-    const targetJobId = nameFixRollbackTargetJobId;
-    if (!targetJobId) {
-      toast({
-        title: t("ddl.nameFix.toastNoRollbackJobTitle"),
-        description: t("ddl.nameFix.toastNoRollbackJobDescription"),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setNameFixRunningStep("rollback");
-      const rollbackResult = await rollbackNameFix({
-        jobId: targetJobId,
-      });
-      toast({
-        title: rollbackResult.success
-          ? t("ddl.nameFix.toastRollbackCompletedTitle")
-          : t("ddl.nameFix.toastRollbackSkippedTitle"),
-        description: rollbackResult.message || "",
-        variant: rollbackResult.success ? "default" : "destructive",
-      });
-    } catch (error) {
-      const translated = translateApiError(error, t);
-      toast({
-        title: translated.title || t("ddl.nameFix.toastRollbackFailedTitle"),
         description: translated.description,
         variant: "destructive",
       });
@@ -1909,7 +1851,7 @@ export function DdlGenerator({
             <p className="text-sm font-medium text-foreground">当前没有可生成 DDL 的表。</p>
             <p className="mt-2 text-xs">选择工作表后可生成 SQL，也可以直接使用 DDL 导入。</p>
           </div>
-          <Button size="sm" variant="outline" className="rounded-sm px-4" onClick={onOpenImportWorkspace}>
+          <Button size="sm" variant="outline" className="rounded-md px-4" onClick={onOpenImportWorkspace}>
             DDL 导入
           </Button>
         </div>
@@ -1932,14 +1874,14 @@ export function DdlGenerator({
                 size="sm"
                 variant="outline"
                 onClick={onOpenImportWorkspace}
-                className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
+                className="h-8 shrink-0 rounded-md px-3 text-xs"
               >
                 <span className="hidden xl:inline">DDL 导入</span>
                 <span className="xl:hidden">导入</span>
               </Button>
             ) : null}
             <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
-              <SelectTrigger className="h-8 w-[98px] shrink-0 rounded-sm bg-background text-[11px] sm:w-[104px]" data-testid="select-dialect">
+              <SelectTrigger className="h-8 w-[98px] shrink-0 rounded-md bg-background text-xs sm:w-[104px]" data-testid="select-dialect">
                 <SelectValue placeholder="Dialect" />
               </SelectTrigger>
               <SelectContent>
@@ -1949,7 +1891,7 @@ export function DdlGenerator({
             </Select>
 
             <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
-              <SelectTrigger className="h-8 w-[116px] shrink-0 rounded-sm bg-background text-[11px] sm:w-[124px]" data-testid="select-export-mode">
+              <SelectTrigger className="h-8 w-[116px] shrink-0 rounded-md bg-background text-xs sm:w-[124px]" data-testid="select-export-mode">
                 <SelectValue placeholder="导出模式" />
               </SelectTrigger>
               <SelectContent>
@@ -1962,7 +1904,7 @@ export function DdlGenerator({
               size="sm"
               onClick={handleGenerate}
               disabled={isPending || isGeneratingByReference}
-              className="h-8 shrink-0 rounded-sm px-3 text-[11px] font-semibold"
+              className="h-8 shrink-0 rounded-md px-3 text-xs font-semibold"
               data-testid="button-generate"
             >
               {isPending || isGeneratingByReference ? t("ddl.generating") : (
@@ -1976,7 +1918,7 @@ export function DdlGenerator({
                 size="sm"
                 variant="outline"
                 onClick={openSyncNameFixDialog}
-                className="h-8 shrink-0 rounded-sm px-3 text-[11px]"
+                className="h-8 shrink-0 rounded-md px-3 text-xs"
               >
                 <WandSparkles className="mr-1 h-3 w-3" />
                 {t("ddl.nameFix.button")}
@@ -1989,7 +1931,7 @@ export function DdlGenerator({
       <div className="relative flex-1 overflow-hidden bg-background">
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-muted-foreground">
-            <div className="flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-muted/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border bg-muted/20">
               <Database className="h-6 w-6 opacity-60" />
             </div>
             {generationError ? (
@@ -2017,7 +1959,7 @@ export function DdlGenerator({
                   variant="outline"
                   size="sm"
                   onClick={handleExport}
-                  className={`${CONTROL_BUTTON_CLASS} rounded-sm`}
+                  className={`${CONTROL_BUTTON_CLASS} rounded-md`}
                   data-testid="button-export"
                 >
                   <Download className="mr-1 h-3.5 w-3.5" />
@@ -2027,7 +1969,7 @@ export function DdlGenerator({
                   variant="outline"
                   size="sm"
                   onClick={copyToClipboard}
-                  className={`${CONTROL_BUTTON_CLASS} rounded-sm`}
+                  className={`${CONTROL_BUTTON_CLASS} rounded-md`}
                   data-testid="button-copy"
                 >
                   {copied ? <Check className="mr-1 h-3.5 w-3.5" /> : <Copy className="mr-1 h-3.5 w-3.5" />}
@@ -2118,7 +2060,7 @@ export function DdlGenerator({
                   </SelectContent>
                 </Select>
                 {nameFixBatchMode !== "current_file" && (
-                  <p className="text-[11px] text-muted-foreground">{t("ddl.nameFix.scopeMultiFileHint")}</p>
+                  <p className="text-xs text-muted-foreground">{t("ddl.nameFix.scopeMultiFileHint")}</p>
                 )}
               </div>
 
@@ -2145,7 +2087,7 @@ export function DdlGenerator({
                   </SelectContent>
                 </Select>
                 {!supportsDirectNameFixWrite && (
-                  <p className="text-[11px] text-muted-foreground">{t("ddl.nameFix.browserReplaceDownloadHint")}</p>
+                  <p className="text-xs text-muted-foreground">{t("ddl.nameFix.browserReplaceDownloadHint")}</p>
                 )}
               </div>
 
@@ -2270,7 +2212,7 @@ export function DdlGenerator({
                     )}
                   </div>
                 </ScrollArea>
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {t("ddl.nameFix.selectedFilesCount", { count: nameFixSelectedFileIds.length })}
                 </div>
               </div>
@@ -2299,7 +2241,7 @@ export function DdlGenerator({
                     )}
                   </div>
                 </ScrollArea>
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {t("ddl.nameFix.selectedSheetsCount", { count: nameFixSelectedSheetNames.length })}
                 </div>
               </div>
@@ -2309,7 +2251,7 @@ export function DdlGenerator({
               <div className="border border-border p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold">当前工作表筛选</div>
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     {nameFixSelectedTableIndexes.size} / {nameFixCurrentSheetTableCount}
                   </div>
                 </div>
@@ -2327,14 +2269,14 @@ export function DdlGenerator({
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
-                    className="h-7 px-2 text-[11px]"
+                    className="h-7 px-2 text-xs"
                     onClick={() => toggleAllNameFixTableSelections(true)}
                   >
                     {t("common.selectAll")}
                   </Button>
                   <Button
                     variant="outline"
-                    className="h-7 px-2 text-[11px]"
+                    className="h-7 px-2 text-xs"
                     onClick={() => toggleAllNameFixTableSelections(false)}
                   >
                     {t("common.clearSelection")}
@@ -2354,7 +2296,7 @@ export function DdlGenerator({
                           />
                           <div className="min-w-0 flex-1 leading-relaxed">
                             <div className="font-mono break-all">{table.physicalTableName || "(empty)"}</div>
-                            <div className="text-[11px] text-muted-foreground break-all">
+                            <div className="text-xs text-muted-foreground break-all">
                               {formatLogicalPhysicalName(table.logicalTableName, table.physicalTableName)}
                             </div>
                           </div>
@@ -2365,7 +2307,7 @@ export function DdlGenerator({
                 </ScrollArea>
 
                 {isNameFixPartialTableSelection && (
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     已对当前工作表启用部分表选择，预览和执行都会按此范围处理。
                   </div>
                 )}
@@ -2376,7 +2318,6 @@ export function DdlGenerator({
               t={t}
               nameFixPreviewResult={nameFixPreviewResult}
               nameFixApplyResult={nameFixApplyResult}
-              nameFixJobDetail={nameFixJobDetail}
             />
             </div>
           </div>
@@ -2410,16 +2351,6 @@ export function DdlGenerator({
               {isApplyingNameFix || nameFixRunningStep === "apply"
                 ? t("ddl.nameFix.applying")
                 : t("ddl.nameFix.apply")}
-            </Button>
-            <Button
-              variant="destructive"
-              className="h-8 text-xs"
-              onClick={handleRunNameFixRollback}
-              disabled={!nameFixRollbackTargetJobId || isRollingBackNameFix || nameFixRunningStep !== "idle"}
-            >
-              {isRollingBackNameFix || nameFixRunningStep === "rollback"
-                ? t("ddl.nameFix.rollingBack")
-                : t("ddl.nameFix.rollback")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2622,7 +2553,7 @@ export function DdlGenerator({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-[11px]"
+              className="h-7 text-xs"
               onClick={() => setNameFixCandidateKeys(new Set(invalidNameFixEntries.map((entry) => entry.key)))}
             >
               {t("ddl.selectAll")}
@@ -2630,12 +2561,12 @@ export function DdlGenerator({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-[11px]"
+              className="h-7 text-xs"
               onClick={() => setNameFixCandidateKeys(new Set())}
             >
               {t("ddl.deselectAll")}
             </Button>
-            <span className="ml-auto text-[11px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {t("ddl.selected")}: {nameFixCandidateKeys.size}/{invalidNameFixEntries.length}
             </span>
           </div>
@@ -2754,7 +2685,7 @@ export function DdlGenerator({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-7 text-xs"
                 onClick={() => toggleAllMissingTypeTableSelections(true)}
               >
                 {t("common.selectAll")}
@@ -2762,7 +2693,7 @@ export function DdlGenerator({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-7 text-xs"
                 onClick={() => toggleAllMissingTypeTableSelections(false)}
               >
                 {t("common.clearSelection", {

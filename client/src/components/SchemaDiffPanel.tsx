@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useConfirmSchemaDiffRenames,
   useFiles,
-  useSchemaDiffAlterExport,
   useSchemaDiffAlterPreview,
-  useSchemaDiffHistory,
   useSchemaDiffPreview,
 } from "@/hooks/use-ddl";
 import type {
@@ -24,8 +22,9 @@ import { useToast } from "@/hooks/use-toast";
 import { parseUploadedAtMillis } from "@/components/ddl/name-fix-display-utils";
 import { translateApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Check, Download, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, Columns2, Download, List, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { DiffContent, schemaDiffToDiffEntry, type DiffViewMode, type DiffTableEntry } from "@/components/diff-viewer";
 
 interface SchemaDiffPanelProps {
   fileId: number | null;
@@ -878,11 +877,9 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { data: files } = useFiles();
-  const historyQuery = useSchemaDiffHistory(fileId);
   const previewMutation = useSchemaDiffPreview();
   const confirmMutation = useConfirmSchemaDiffRenames();
   const alterPreviewMutation = useSchemaDiffAlterPreview();
-  const alterExportMutation = useSchemaDiffAlterExport();
 
   const [selectionMode, setSelectionMode] = useState<"auto" | "manual">("auto");
   const [scope, setScope] = useState<"current_sheet" | "all_sheets">("current_sheet");
@@ -906,6 +903,8 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   const [selectedTableNodeKey, setSelectedTableNodeKey] = useState<string>("");
   const [showMetadataChanges, setShowMetadataChanges] = useState(false);
   const [hideFormattingOnly, setHideFormattingOnly] = useState(true);
+  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("side-by-side");
+  const [diffDialect, setDiffDialect] = useState<"mysql" | "oracle">("mysql");
 
   useEffect(() => {
     setPreviewResult(null);
@@ -921,12 +920,6 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     setHideFormattingOnly(true);
   }, [fileId, sheetName]);
 
-  useEffect(() => {
-    if (!historyQuery.data) {
-      return;
-    }
-    setManualOldFileId((current) => current ?? historyQuery.data?.autoRecommendedOldFileId ?? null);
-  }, [historyQuery.data]);
 
   useEffect(() => {
     if (!alterResult || alterResult.artifacts.length === 0) {
@@ -940,18 +933,9 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     );
   }, [alterResult]);
 
-  const sortedCandidates = useMemo(() => {
-    if (!historyQuery.data?.candidates) {
-      return [];
-    }
-    return [...historyQuery.data.candidates].sort((left, right) => {
-      const confidenceDelta = (right.confidence ?? 0) - (left.confidence ?? 0);
-      if (confidenceDelta !== 0) return confidenceDelta;
-      const timeDelta = parseUploadedAtMillis(right.uploadedAt) - parseUploadedAtMillis(left.uploadedAt);
-      if (timeDelta !== 0) return timeDelta;
-      return right.fileId - left.fileId;
-    });
-  }, [historyQuery.data]);
+  const sortedCandidates = useMemo((): Array<{ fileId: number; originalName: string; uploadedAt?: string; confidence?: number }> => {
+    return [];
+  }, []);
 
   const fileNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -962,15 +946,8 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   }, [files]);
 
   const historyCandidateById = useMemo(() => {
-    const map = new Map<number, { originalName: string; uploadedAt?: string }>();
-    (historyQuery.data?.candidates ?? []).forEach((candidate) => {
-      map.set(candidate.fileId, {
-        originalName: candidate.originalName,
-        uploadedAt: candidate.uploadedAt,
-      });
-    });
-    return map;
-  }, [historyQuery.data]);
+    return new Map<number, { originalName: string; uploadedAt?: string }>();
+  }, []);
 
   const comparingOldFileId = useMemo(() => {
     if (previewResult?.link.oldFileId) {
@@ -979,8 +956,8 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     if (selectionMode === "manual") {
       return manualOldFileId;
     }
-    return historyQuery.data?.autoRecommendedOldFileId ?? null;
-  }, [previewResult, selectionMode, manualOldFileId, historyQuery.data]);
+    return null;
+  }, [previewResult, selectionMode, manualOldFileId]);
 
   const comparingMode = previewResult?.link.mode ?? selectionMode;
   const comparingNewFileName = fileId ? fileNameById.get(fileId) ?? null : null;
@@ -1205,6 +1182,12 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     () => filteredTableNodes.find((item) => item.key === selectedTableNodeKey) ?? null,
     [filteredTableNodes, selectedTableNodeKey],
   );
+
+  /** 選択中テーブルのDDL差分エントリ */
+  const selectedDiffEntry = useMemo<DiffTableEntry | null>(() => {
+    if (!selectedTableNode) return null;
+    return schemaDiffToDiffEntry(selectedTableNode.tableChange, diffDialect, 0);
+  }, [selectedTableNode, diffDialect]);
 
   const resolveFriendlyFieldLabel = (fieldKey: string): string => {
     switch (fieldKey) {
@@ -1470,45 +1453,12 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     }
   };
 
-  const handleExportAlter = async () => {
-    if (!previewResult) {
-      return;
-    }
-    try {
-      const result = await alterExportMutation.mutateAsync({
-        diffId: previewResult.diffId,
-        dialect,
-        outputMode,
-        packaging,
-        splitBySheet,
-        includeUnconfirmed,
-      });
-      const timestamp = formatTimestamp();
-      const fallbackFilename =
-        packaging === "zip" ? `alter_${dialect}_${timestamp}.zip` : `alter_${dialect}_${timestamp}.sql`;
-      const filename = parseFilenameFromContentDisposition(result.contentDisposition) ?? fallbackFilename;
-
-      const url = URL.createObjectURL(result.blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: t("schemaDiff.toast.exportCompletedTitle"),
-        description: filename,
-      });
-    } catch (error) {
-      const translated = translateApiError(error, t, { includeIssues: false });
-      toast({
-        title: translated.title,
-        description: translated.description,
-        variant: "destructive",
-      });
-    }
+  const handleExportAlter = () => {
+    toast({
+      title: t("schemaDiff.toast.exportCompletedTitle"),
+      description: "Feature unavailable in desktop mode.",
+      variant: "destructive",
+    });
   };
 
   if (!fileId) {
@@ -1532,7 +1482,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2.5">
-              <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.currentComparison")}</p>
+              <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.currentComparison")}</p>
               {fileId && comparingOldFileId ? (
                 <div className="space-y-1.5 text-xs">
                   <p className="font-mono rounded border border-border/60 bg-background/80 px-2 py-1">
@@ -1580,7 +1530,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
-                <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.controls.baselineMode")}</p>
+                <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.controls.baselineMode")}</p>
                 <Select value={selectionMode} onValueChange={(value) => setSelectionMode(value as "auto" | "manual")}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
@@ -1592,7 +1542,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                 </Select>
               </div>
               <div>
-                <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.controls.scope")}</p>
+                <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.controls.scope")}</p>
                 <Select value={scope} onValueChange={(value) => setScope(value as "current_sheet" | "all_sheets")}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
@@ -1611,7 +1561,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
               </summary>
               <div className="px-3 pb-3 space-y-2">
                 <div className={cn(selectionMode !== "manual" && "opacity-50")}>
-                  <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.controls.manualBaseline")}</p>
+                  <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.controls.manualBaseline")}</p>
                   <Select
                     value={manualOldFileId ? String(manualOldFileId) : ""}
                     onValueChange={(value) => setManualOldFileId(Number(value))}
@@ -1631,7 +1581,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                 </div>
                 <div className="rounded-md border border-border/70 px-3 py-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">{t("schemaDiff.controls.forceRecompute")}</p>
+                    <p className="text-xs text-muted-foreground">{t("schemaDiff.controls.forceRecompute")}</p>
                     <Switch checked={forceRecompute} onCheckedChange={setForceRecompute} />
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-1">{t("schemaDiff.controls.forceRecomputeHint")}</p>
@@ -1640,10 +1590,8 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs"
-                  onClick={() => historyQuery.refetch()}
-                  disabled={historyQuery.isFetching}
+                  disabled={true}
                 >
-                  {historyQuery.isFetching ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
                   {t("schemaDiff.controls.refreshHistory")}
                 </Button>
               </div>
@@ -1671,10 +1619,10 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
               ) : null}
             </div>
             {scope === "current_sheet" && !sheetName ? (
-              <p className="text-[11px] text-amber-600">{t("schemaDiff.warnings.currentSheetNotSelected")}</p>
+              <p className="text-xs text-amber-600">{t("schemaDiff.warnings.currentSheetNotSelected")}</p>
             ) : null}
             {currentSheetLikelyUnmatched ? (
-              <p className="text-[11px] text-amber-600">{t("schemaDiff.warnings.sheetBaselineUnmatched")}</p>
+              <p className="text-xs text-amber-600">{t("schemaDiff.warnings.sheetBaselineUnmatched")}</p>
             ) : null}
           </CardContent>
         </Card>
@@ -1692,7 +1640,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
               <Card className="border-border/60 bg-muted/20">
                 <CardContent className="p-3 space-y-1.5">
                   <details>
-                    <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                    <summary className="cursor-pointer text-xs text-muted-foreground">
                       {t("schemaDiff.notes.title")} ({previewResult.mcpHints.nextActions.length})
                     </summary>
                     <div className="mt-2 space-y-1.5">
@@ -1724,17 +1672,17 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       <Badge variant="outline" className="text-[10px] text-muted-foreground">
                         {t("schemaDiff.rename.pendingCount", { count: renameDecisionSummary.pending })}
                       </Badge>
-                      <span className="ml-auto text-[11px] text-muted-foreground">{t("schemaDiff.rename.singleClickHint")}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{t("schemaDiff.rename.singleClickHint")}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {t("schemaDiff.rename.bulkAllLabel", { count: renameSuggestionCounts.all })}
                       </span>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-8 rounded-sm px-2 text-[11px]"
+                        className="h-8 rounded-md px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("accept", "all")}
                       >
                         {t("schemaDiff.rename.bulkAccept")}
@@ -1743,7 +1691,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("reject", "all")}
                       >
                         {t("schemaDiff.rename.bulkReject")}
@@ -1752,21 +1700,21 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("pending", "all")}
                       >
                         {t("schemaDiff.rename.bulkPending")}
                       </Button>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {t("schemaDiff.rename.bulkTableLabel", { count: renameSuggestionCounts.table })}
                       </span>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("accept", "table")}
                         disabled={renameSuggestionCounts.table === 0}
                       >
@@ -1776,7 +1724,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("reject", "table")}
                         disabled={renameSuggestionCounts.table === 0}
                       >
@@ -1786,7 +1734,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("pending", "table")}
                         disabled={renameSuggestionCounts.table === 0}
                       >
@@ -1794,14 +1742,14 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       </Button>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {t("schemaDiff.rename.bulkColumnLabel", { count: renameSuggestionCounts.column })}
                       </span>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("accept", "column")}
                         disabled={renameSuggestionCounts.column === 0}
                       >
@@ -1811,7 +1759,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("reject", "column")}
                         disabled={renameSuggestionCounts.column === 0}
                       >
@@ -1821,7 +1769,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-[11px]"
+                        className="h-7 px-2 text-xs"
                         onClick={() => applyBatchRenameDecision("pending", "column")}
                         disabled={renameSuggestionCounts.column === 0}
                       >
@@ -1855,13 +1803,13 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                           type="single"
                           value={renameDecisions[suggestion.entityKey] ?? suggestion.decision}
                           onValueChange={(value) => setSuggestionDecision(suggestion.entityKey, (value || "pending") as RenameDecisionDraft)}
-                          className="gap-0 rounded-sm border border-border/70 bg-background/80 p-0.5"
+                          className="gap-0 rounded-md border border-border/70 bg-background/80 p-0.5"
                         >
                           <ToggleGroupItem
                             value="accept"
                             variant="default"
                             size="sm"
-                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-emerald-500/15 data-[state=on]:text-emerald-700 dark:data-[state=on]:text-emerald-300"
+                            className="min-h-8 min-w-[56px] rounded-md px-2 text-xs text-muted-foreground data-[state=on]:bg-emerald-500/15 data-[state=on]:text-emerald-700 dark:data-[state=on]:text-emerald-300"
                           >
                             {t("schemaDiff.rename.accept")}
                           </ToggleGroupItem>
@@ -1869,7 +1817,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                             value="reject"
                             variant="default"
                             size="sm"
-                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-rose-500/15 data-[state=on]:text-rose-700 dark:data-[state=on]:text-rose-300"
+                            className="min-h-8 min-w-[56px] rounded-md px-2 text-xs text-muted-foreground data-[state=on]:bg-rose-500/15 data-[state=on]:text-rose-700 dark:data-[state=on]:text-rose-300"
                           >
                             {t("schemaDiff.rename.reject")}
                           </ToggleGroupItem>
@@ -1877,7 +1825,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                             value="pending"
                             variant="default"
                             size="sm"
-                            className="min-h-8 min-w-[56px] rounded-sm px-2 text-[11px] text-muted-foreground data-[state=on]:bg-sky-500/15 data-[state=on]:text-sky-700 dark:data-[state=on]:text-sky-300"
+                            className="min-h-8 min-w-[56px] rounded-md px-2 text-xs text-muted-foreground data-[state=on]:bg-sky-500/15 data-[state=on]:text-sky-700 dark:data-[state=on]:text-sky-300"
                           >
                             {t("schemaDiff.rename.pending")}
                           </ToggleGroupItem>
@@ -1887,7 +1835,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                   ))}
                   <Button
                     size="sm"
-                    className="h-8 rounded-sm text-xs"
+                    className="h-8 rounded-md text-xs"
                     onClick={handleConfirmRenames}
                     disabled={confirmMutation.isPending || previewResult.renameSuggestions.length === 0 || decidedRenameCount === 0}
                   >
@@ -1917,7 +1865,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         type="button"
                         size="sm"
                         variant={changeFilter === item.key ? "default" : "outline"}
-                        className="h-8 rounded-sm px-2 text-[10px] font-mono"
+                        className="h-8 rounded-md px-2 text-[10px] font-mono"
                         onClick={() => setChangeFilter(item.key as ChangeFilter)}
                       >
                         {item.label} {item.count}
@@ -1961,7 +1909,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <div className="rounded-md border border-border/60 px-2.5 py-2 flex items-center justify-between">
                           <div>
-                            <p className="text-[11px]">{t("schemaDiff.filters.showMetadata")}</p>
+                            <p className="text-xs">{t("schemaDiff.filters.showMetadata")}</p>
                             <p className="text-[10px] text-muted-foreground">
                               {t("schemaDiff.filters.showMetadataHint")}
                             </p>
@@ -1970,7 +1918,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                         </div>
                         <div className="rounded-md border border-border/60 px-2.5 py-2 flex items-center justify-between">
                           <div>
-                            <p className="text-[11px]">{t("schemaDiff.filters.hideFormattingOnly")}</p>
+                            <p className="text-xs">{t("schemaDiff.filters.hideFormattingOnly")}</p>
                             <p className="text-[10px] text-muted-foreground">
                               {t("schemaDiff.filters.hideFormattingOnlyHint")}
                             </p>
@@ -2003,7 +1951,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                   <div className="rounded-md border border-border/60 overflow-hidden">
                     <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
                       <div className="border-b lg:border-b-0 lg:border-r border-border/60">
-                        <div className="px-3 py-2 border-b border-border/60 text-[11px] text-muted-foreground">
+                        <div className="px-3 py-2 border-b border-border/60 text-xs text-muted-foreground">
                           {t("schemaDiff.tree.changedTables", { count: filteredTableNodes.length })}
                         </div>
                         <ScrollArea className="h-[420px]">
@@ -2088,164 +2036,48 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       </div>
 
                       <div className="min-w-0">
-                        {!selectedTableNode ? (
+                        {!selectedTableNode || !selectedDiffEntry ? (
                           <div className="h-[420px] flex items-center justify-center text-xs text-muted-foreground">
                             {t("schemaDiff.tree.selectLeftHint")}
                           </div>
                         ) : (
-                          <ScrollArea className="h-[420px]">
-                            <div className="p-3 space-y-3">
-                              {(() => {
-                                const node = selectedTableNode;
-                                const tableFieldDiffs = buildTableFieldDiffs(node.tableChange);
-                                const tablePropertyDiffs = tableFieldDiffs.filter(
-                                  (field) => field.field !== "logicalTableName" && field.field !== "physicalTableName",
-                                );
-                                const tableIdentityLines = buildIdentityRenderLines(
-                                  "table",
-                                  node.tableLabelBefore,
-                                  node.tableLabelAfter,
-                                  node.tableChange.action,
-                                );
-                                const tableTitle =
-                                  node.tableLabelBefore !== "-" &&
-                                  node.tableLabelAfter !== "-" &&
-                                  node.tableLabelBefore !== node.tableLabelAfter
-                                    ? `${node.tableLabelBefore} -> ${node.tableLabelAfter}`
-                                    : node.tableLabelAfter !== "-" ? node.tableLabelAfter : node.tableLabelBefore;
-                                return (
-                                  <>
-                                    <div className="rounded-md border border-border/60 bg-muted/20 p-2.5">
-                                      <p className="font-mono text-[11px]">diff --table a/{node.oldTablePath} b/{node.newTablePath}</p>
-                                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                        <p className="text-xs">{tableTitle}</p>
-                                        <Badge
-                                          variant="outline"
-                                          className={cn(
-                                            "text-[10px]",
-                                            node.impactGroup === "breaking"
-                                              ? "text-rose-600 border-rose-300/50"
-                                              : node.impactGroup === "non_breaking"
-                                                ? "text-sky-600 border-sky-300/50"
-                                                : "text-muted-foreground border-border/70",
-                                          )}
-                                        >
-                                          {node.impactGroup === "breaking"
-                                            ? t("schemaDiff.tree.groups.breaking")
-                                            : node.impactGroup === "non_breaking"
-                                              ? t("schemaDiff.tree.groups.nonBreaking")
-                                              : t("schemaDiff.tree.groups.metadata")}
-                                        </Badge>
-                                      </div>
-                                    </div>
-
-                                    <div className="rounded-md border border-border/60 bg-card">
-                                      <div className="px-2 py-1 border-b border-border/50 text-[10px] font-mono text-muted-foreground">
-                                        @@ table @@
-                                      </div>
-                                      <div className="px-2 py-2 space-y-1 font-mono text-[11px]">
-                                        {tableIdentityLines.map((line, lineIndex) => (
-                                          <div key={`table-identity-${lineIndex}`} className={cn("rounded px-2 py-1", renderLineTone(line))}>
-                                            {line.prefix} {toFriendlyLineText(line.text)}
-                                            {line.hint ? (
-                                              <span className="ml-2 text-[10px] opacity-80">
-                                                ({resolveHintLabel(line.hint)})
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        ))}
-                                        {tablePropertyDiffs.flatMap((field) =>
-                                          buildFieldRenderLines(field.field, field.oldValue, field.newValue, node.tableChange.action),
-                                        ).map((line, lineIndex) => (
-                                          <div key={`table-field-${lineIndex}`} className={cn("rounded px-2 py-1", renderLineTone(line))}>
-                                            {line.prefix} {toFriendlyLineText(line.text)}
-                                            {line.hint ? (
-                                              <span className="ml-2 text-[10px] opacity-80">
-                                                ({resolveHintLabel(line.hint)})
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    {node.visibleColumnChanges.map((columnChange, columnIndex) => {
-                                      const columnName = formatColumnName(columnChange, columnIndex);
-                                      const oldColumnLabel = formatColumnLabel(
-                                        columnChange.oldColumn?.logicalName,
-                                        columnChange.oldColumn?.physicalName,
-                                      );
-                                      const newColumnLabel = formatColumnLabel(
-                                        columnChange.newColumn?.logicalName,
-                                        columnChange.newColumn?.physicalName,
-                                      );
-                                      const columnTitle =
-                                        oldColumnLabel !== "-" && newColumnLabel !== "-" && oldColumnLabel !== newColumnLabel
-                                          ? `${oldColumnLabel} -> ${newColumnLabel}`
-                                          : newColumnLabel !== "-" ? newColumnLabel : oldColumnLabel;
-                                      const oldColumnPath = formatColumnPathPart(columnChange.oldColumn);
-                                      const newColumnPath = formatColumnPathPart(columnChange.newColumn);
-                                      const columnIdentityLines = buildIdentityRenderLines(
-                                        "column",
-                                        oldColumnLabel,
-                                        newColumnLabel,
-                                        columnChange.action,
-                                      );
-                                      const columnPropertyDiffs = buildColumnFieldDiffs(columnChange).filter(
-                                        (field) => field.field !== "logicalName" && field.field !== "physicalName",
-                                      );
-
-                                      return (
-                                        <div
-                                          key={`${node.key}-${columnName}-${columnIndex}`}
-                                          className="rounded-md border border-border/60 bg-card"
-                                        >
-                                          <div className="px-2 py-1 border-b border-border/50">
-                                            <div className="text-[10px] font-mono text-muted-foreground">
-                                              @@ column {columnIndex + 1} @@
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs mt-0.5">
-                                              <span className={cn("w-5 text-center font-mono font-semibold", actionTone(columnChange.action))}>
-                                                {actionMarker(columnChange.action)}
-                                              </span>
-                                              <span className="truncate">{columnTitle}</span>
-                                            </div>
-                                            <div className="text-[10px] font-mono text-muted-foreground mt-1">
-                                              diff --column a/{oldColumnPath} b/{newColumnPath}
-                                            </div>
-                                          </div>
-                                          <div className="px-2 py-2 space-y-1 font-mono text-[11px]">
-                                            {columnIdentityLines.map((line, lineIndex) => (
-                                              <div key={`${columnName}-identity-${lineIndex}`} className={cn("rounded px-2 py-1", renderLineTone(line))}>
-                                                {line.prefix} {toFriendlyLineText(line.text)}
-                                                {line.hint ? (
-                                                  <span className="ml-2 text-[10px] opacity-80">
-                                                    ({resolveHintLabel(line.hint)})
-                                                  </span>
-                                                ) : null}
-                                              </div>
-                                            ))}
-                                            {columnPropertyDiffs.flatMap((field) =>
-                                              buildFieldRenderLines(field.field, field.oldValue, field.newValue, columnChange.action),
-                                            ).map((line, lineIndex) => (
-                                              <div key={`${columnName}-field-${lineIndex}`} className={cn("rounded px-2 py-1", renderLineTone(line))}>
-                                                {line.prefix} {toFriendlyLineText(line.text)}
-                                                {line.hint ? (
-                                                  <span className="ml-2 text-[10px] opacity-80">
-                                                    ({resolveHintLabel(line.hint)})
-                                                  </span>
-                                                ) : null}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </>
-                                );
-                              })()}
+                          <div className="h-[420px] flex flex-col">
+                            {/* DDL Diff ヘッダー（テーブル情報 + モード切替 + 方言選択） */}
+                            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-slate-50 px-3 py-1.5 dark:bg-slate-800/50">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="truncate font-mono text-xs font-semibold">{selectedDiffEntry.tableName}</span>
+                                <span className="flex items-center gap-1.5 text-[10px] font-mono">
+                                  {selectedDiffEntry.addedLines > 0 ? <span className="text-green-600 dark:text-emerald-400">+{selectedDiffEntry.addedLines}</span> : null}
+                                  {selectedDiffEntry.removedLines > 0 ? <span className="text-red-600 dark:text-red-400">-{selectedDiffEntry.removedLines}</span> : null}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={diffDialect}
+                                  onChange={(e) => setDiffDialect(e.target.value as "mysql" | "oracle")}
+                                  className="h-6 rounded border border-border bg-background px-1 text-[10px]"
+                                >
+                                  <option value="mysql">MySQL</option>
+                                  <option value="oracle">Oracle</option>
+                                </select>
+                                <Button variant={diffViewMode === "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("side-by-side")} title="Side by side">
+                                  <Columns2 className="h-3 w-3" />
+                                </Button>
+                                <Button variant={diffViewMode === "unified" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("unified")} title="Unified">
+                                  <List className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </div>
-                          </ScrollArea>
+                            {/* DDL 差分コンテンツ */}
+                            <div className="flex-1 overflow-hidden">
+                              <DiffContent
+                                hunks={selectedDiffEntry.diffHunks}
+                                viewMode={diffViewMode}
+                                oldTitle={`--- a/${selectedDiffEntry.tableName}`}
+                                newTitle={`+++ b/${selectedDiffEntry.tableName}`}
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -2261,7 +2093,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 xl:grid-cols-5 gap-2">
                   <div>
-                    <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.alter.dialect")}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.dialect")}</p>
                     <Select value={dialect} onValueChange={(value) => setDialect(value as "mysql" | "oracle")}>
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
@@ -2273,7 +2105,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                     </Select>
                   </div>
                   <div>
-                    <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.alter.outputMode")}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.outputMode")}</p>
                     <Select value={outputMode} onValueChange={(value) => setOutputMode(value as "single_table" | "multi_table")}>
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
@@ -2285,7 +2117,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                     </Select>
                   </div>
                   <div>
-                    <p className="text-[11px] text-muted-foreground mb-1">{t("schemaDiff.alter.packaging")}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.packaging")}</p>
                     <Select value={packaging} onValueChange={(value) => setPackaging(value as "single_file" | "zip")}>
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
@@ -2297,11 +2129,11 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                     </Select>
                   </div>
                   <div className="rounded-md border border-border/70 px-2.5 py-1.5 flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">{t("schemaDiff.alter.splitBySheet")}</p>
+                    <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.splitBySheet")}</p>
                     <Switch checked={splitBySheet} onCheckedChange={setSplitBySheet} />
                   </div>
                   <div className="rounded-md border border-border/70 px-2.5 py-1.5 flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">{t("schemaDiff.alter.includeUnconfirmed")}</p>
+                    <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.includeUnconfirmed")}</p>
                     <Switch checked={includeUnconfirmed} onCheckedChange={setIncludeUnconfirmed} />
                   </div>
                 </div>
@@ -2316,9 +2148,9 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                     variant="outline"
                     className="h-8 text-xs"
                     onClick={handleExportAlter}
-                    disabled={alterExportMutation.isPending}
+                    disabled={false}
                   >
-                    {alterExportMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1" />}
+                    <Download className="w-3.5 h-3.5 mr-1" />
                     {t("schemaDiff.alter.export")}
                   </Button>
                 </div>
@@ -2347,7 +2179,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       value={selectedArtifact?.artifactName || ""}
                       className="h-8 text-xs bg-muted/20"
                     />
-                    <pre className="max-h-[360px] overflow-auto rounded-md border border-border/60 bg-black/[0.92] p-3 font-mono text-[11px] leading-relaxed selection:bg-primary/30">
+                    <pre className="max-h-[360px] overflow-auto rounded-md border border-border/60 bg-black/[0.92] p-3 font-mono text-xs leading-relaxed selection:bg-primary/30">
                       {selectedArtifact?.sql ? (
                         highlightedAlterTokens.map((token, tokenIndex) => (
                           <span key={`alter-sql-token-${tokenIndex}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
@@ -2366,14 +2198,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
         ) : (
           <Card className="border-border/60 border-dashed">
             <CardContent className="p-6 text-center text-muted-foreground">
-              {historyQuery.isLoading ? (
-                <div className="inline-flex items-center gap-2 text-sm">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t("schemaDiff.empty.preparingHistory")}
-                </div>
-              ) : (
-                <p className="text-sm">{t("schemaDiff.empty.runDiffHint")}</p>
-              )}
+              <p className="text-sm">{t("schemaDiff.empty.runDiffHint")}</p>
             </CardContent>
           </Card>
         )}

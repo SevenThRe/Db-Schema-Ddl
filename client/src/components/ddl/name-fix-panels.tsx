@@ -1,4 +1,3 @@
-import { api, buildUrl } from "@shared/routes";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   formatLogicalPhysicalName,
@@ -10,7 +9,6 @@ export function NameFixExecutionPanels({
   t,
   nameFixPreviewResult,
   nameFixApplyResult,
-  nameFixJobDetail,
 }: NameFixExecutionPanelsProps) {
   return (
     <>
@@ -124,17 +122,6 @@ export function NameFixExecutionPanels({
           <div className="text-xs">
             {t("ddl.nameFix.jobLabel")}: <span className="font-mono">{nameFixApplyResult.jobId}</span>
           </div>
-          {nameFixApplyResult.downloadBundleToken && (
-            <div className="text-xs">
-              <a
-                className="text-primary underline"
-                href={buildUrl(api.nameFix.download.path, { token: nameFixApplyResult.downloadBundleToken })}
-                download={nameFixApplyResult.downloadBundleFilename || undefined}
-              >
-                {t("ddl.nameFix.downloadBundleResult")}
-              </a>
-            </div>
-          )}
           <div className="text-xs">
             {t("ddl.nameFix.applySummaryLine", {
               successCount: nameFixApplyResult.successCount,
@@ -154,17 +141,6 @@ export function NameFixExecutionPanels({
                   {file.outputPath && <div>{t("ddl.nameFix.outputLabel")}: <span className="font-mono break-all">{file.outputPath}</span></div>}
                   {file.backupPath && <div>{t("ddl.nameFix.backupLabel")}: <span className="font-mono break-all">{file.backupPath}</span></div>}
                   {file.reportJsonPath && <div>{t("ddl.nameFix.reportJsonLabel")}: <span className="font-mono break-all">{file.reportJsonPath}</span></div>}
-                  {file.downloadToken && (
-                    <div>
-                      <a
-                        className="text-primary underline"
-                        href={buildUrl(api.nameFix.download.path, { token: file.downloadToken })}
-                        download={file.downloadFilename || undefined}
-                      >
-                        {t("ddl.nameFix.downloadResult")}
-                      </a>
-                    </div>
-                  )}
                   {file.error && <div className="text-red-700">{t("ddl.nameFix.errorLabel")}: {file.error}</div>}
                 </div>
               ))}
@@ -172,29 +148,6 @@ export function NameFixExecutionPanels({
           </ScrollArea>
         </div>
       )}
-
-      {nameFixJobDetail && (
-        <div className="rounded-md border p-3 space-y-2">
-          <div className="text-sm font-semibold">{t("ddl.nameFix.persistedJobTitle")}</div>
-          <div className="text-xs">
-            {t("ddl.nameFix.jobLabel")}=<span className="font-mono">{nameFixJobDetail.job.id}</span>
-            {" · "}
-            {t("ddl.nameFix.statusLabel")}=<span className="font-semibold">{nameFixJobDetail.job.status}</span>
-          </div>
-          <div className="text-xs">
-            {t("ddl.nameFix.jobChangedLine", {
-              changedTableCount: nameFixJobDetail.job.changedTableCount,
-              changedColumnCount: nameFixJobDetail.job.changedColumnCount,
-            })}
-          </div>
-          {nameFixJobDetail.job.error && (
-            <div className="text-xs text-red-700">
-              {t("ddl.nameFix.errorLabel")}: {nameFixJobDetail.job.error}
-            </div>
-          )}
-        </div>
-      )}
     </>
   );
 }
-

@@ -1,8 +1,4 @@
-import type {
-  NameFixJob,
-  NameFixJobItem,
-  NameFixPreviewResponse,
-} from "@shared/schema";
+import type { NameFixPreviewResponse } from "@shared/schema";
 
 export interface NameFixApplyResultState {
   jobId: string;
@@ -30,14 +26,8 @@ export interface NameFixApplyResultState {
   }>;
 }
 
-export interface NameFixJobDetailState {
-  job: NameFixJob;
-  items: NameFixJobItem[];
-}
-
 export interface NameFixExecutionPanelsProps {
   t: (key: string, options?: Record<string, unknown>) => string;
   nameFixPreviewResult: NameFixPreviewResponse | null;
   nameFixApplyResult: NameFixApplyResultState | null;
-  nameFixJobDetail: NameFixJobDetailState | null | undefined;
 }

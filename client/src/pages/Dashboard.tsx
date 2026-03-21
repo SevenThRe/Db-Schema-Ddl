@@ -6,26 +6,16 @@ import { DdlGenerator } from "@/components/DdlGenerator";
 import { SpreadsheetViewer } from "@/components/SpreadsheetViewer";
 import { SearchDialog } from "@/components/SearchDialog";
 import { SchemaDiffPanel } from "@/components/SchemaDiffPanel";
-import { DbManagementWorkspace } from "@/components/db-management/DbManagementWorkspace";
 import { DdlImportWorkspace } from "@/components/ddl-import/DdlImportWorkspace";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
-import { ExtensionInstallDialog } from "@/components/extensions/ExtensionInstallDialog";
-import { ExtensionStatusDialog } from "@/components/extensions/ExtensionStatusDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { FileCode2, Grid3X3, TableProperties, Search, List, LayoutPanelLeft, Loader2, Sparkles } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useFiles, useSheets } from "@/hooks/use-ddl";
-import {
-  useDisableExtension,
-  useExtension,
-  useEnableExtension,
-  useRefreshExtensionCatalog,
-  useStartExtensionInstall,
-} from "@/hooks/use-extensions";
-import { useToast } from "@/hooks/use-toast";
-import { DB_MANAGEMENT_EXTENSION_ID, type TableInfo } from "@shared/schema";
+import { type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
@@ -33,7 +23,7 @@ const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
 const LAST_SELECTED_FILE_STORAGE_KEY = "dashboard:lastSelectedFile";
 const PREVIEW_ACTION_BUTTON_CLASS =
-  "h-8 gap-1.5 shrink-0 rounded-sm border border-border bg-background px-3 text-[11px] font-medium text-muted-foreground hover:bg-muted/40";
+  "h-8 gap-1.5 shrink-0 rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground hover:bg-muted/40";
 
 type StoredSheetSelections = Record<string, string>;
 interface StoredFileSelection {
@@ -127,40 +117,21 @@ function getSheetName(sheet: unknown): string | null {
 
 export default function Dashboard() {
   const desktopCapabilities = desktopBridge.getCapabilities();
-  const [isDbManagementTestMode] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    return new URLSearchParams(window.location.search).get("db-management-test") === "1";
-  });
   const [isDdlImportTestMode] = useState(() => {
     if (typeof window === "undefined") {
       return false;
     }
     return new URLSearchParams(window.location.search).get("ddl-import-test") === "1";
   });
-  const [isDesktopSmokeMode] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    return new URLSearchParams(window.location.search).get("desktop-smoke") === "1";
-  });
-  const canBypassOfficialExtensionGate = isDesktopSmokeMode || isDbManagementTestMode;
   const [initialFileSelection] = useState<StoredFileSelection | null>(() => readStoredFileSelection());
   const initialFileSelectionRef = useRef<StoredFileSelection | null>(initialFileSelection);
-  const desktopSmokeAttemptedRef = useRef(false);
-  const desktopSmokeSignalRef = useRef({
-    requested: false,
-    ready: false,
-    blocked: false,
-  });
   const [selectedFileId, setSelectedFileId] = useState<number | null>(() => {
     const fileId = initialFileSelectionRef.current?.fileId;
     return typeof fileId === "number" ? fileId : null;
   });
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
-  const [activeModule, setActiveModule] = useState<"workspace" | "db-management" | "ddl-import">(
-    () => (isDbManagementTestMode ? "db-management" : isDdlImportTestMode ? "ddl-import" : "workspace"),
+  const [activeModule, setActiveModule] = useState<"workspace" | "ddl-import">(
+    () => (isDdlImportTestMode ? "ddl-import" : "workspace"),
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
@@ -175,49 +146,25 @@ export default function Dashboard() {
   } | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const [sheetSelectorOpen, setSheetSelectorOpen] = useState(false);
-  const [installDialogOpen, setInstallDialogOpen] = useState(false);
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
-  const [isInstallFlowPending, setIsInstallFlowPending] = useState(false);
-  const [isActivationPending, setIsActivationPending] = useState(false);
   const [lastSelectedSheetByFile, setLastSelectedSheetByFile] = useState<StoredSheetSelections>(() =>
     readStoredSheetSelections(),
   );
 
   const { data: files } = useFiles();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
-  const { data: dbManagementExtension, isLoading: isDbManagementExtensionLoading } = useExtension(
-    DB_MANAGEMENT_EXTENSION_ID,
-  );
-  const { mutateAsync: enableExtension, isPending: isEnableMutationPending } = useEnableExtension();
-  const { mutateAsync: disableExtension, isPending: isDisableMutationPending } = useDisableExtension();
-  const { mutateAsync: refreshExtensionCatalog, isPending: isRefreshCatalogPending } = useRefreshExtensionCatalog();
-  const { mutateAsync: startExtensionInstall, isPending: isStartInstallPending } = useStartExtensionInstall();
   const { t } = useTranslation();
-  const { toast } = useToast();
 
   useEffect(() => {
-    if (!desktopCapabilities.features.dbManagement && activeModule === "db-management") {
-      setActiveModule("workspace");
-    }
     if (!desktopCapabilities.features.ddlImport && activeModule === "ddl-import") {
       setActiveModule("workspace");
     }
-  }, [activeModule, desktopCapabilities.features.dbManagement, desktopCapabilities.features.ddlImport]);
+  }, [activeModule, desktopCapabilities.features.ddlImport]);
 
   useEffect(() => {
     if (!desktopCapabilities.features.schemaDiff && viewMode === "diff") {
       setViewMode("auto");
     }
   }, [desktopCapabilities.features.schemaDiff, viewMode]);
-
-  const emitDesktopSmokeSignal = useCallback(
-    (message: string) => {
-      if (isDesktopSmokeMode) {
-        console.info(`[desktop-smoke] ${message}`);
-      }
-    },
-    [isDesktopSmokeMode],
-  );
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
     setCurrentTable(table);
@@ -407,18 +354,6 @@ export default function Dashboard() {
     }
   }, [isCompactLayout]);
 
-  useEffect(() => {
-    if (activeModule !== "db-management") {
-      return;
-    }
-    if (canBypassOfficialExtensionGate) {
-      return;
-    }
-    if (dbManagementExtension?.status !== "enabled") {
-      setActiveModule("workspace");
-    }
-  }, [activeModule, canBypassOfficialExtensionGate, dbManagementExtension]);
-
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
   }, []);
@@ -496,178 +431,23 @@ export default function Dashboard() {
       ? "⌘ P"
       : "Ctrl P";
 
-  const openOfficialExtensionFlow = useCallback(async () => {
-    setIsInstallFlowPending(true);
-    try {
-      await startExtensionInstall(DB_MANAGEMENT_EXTENSION_ID);
-      toast({
-        title: "官方扩展",
-        description: "官方扩展下载已开始，安装进度会显示在当前面板中。",
-      });
-    } catch (error) {
-      toast({
-        title: "官方扩展",
-        description: error instanceof Error ? error.message : "无法开始下载官方扩展。",
-        variant: "destructive",
-      });
-    } finally {
-      setIsInstallFlowPending(false);
-    }
-  }, [startExtensionInstall, toast]);
-
-  const refreshOfficialExtensionCatalog = useCallback(async () => {
-    try {
-      await refreshExtensionCatalog(DB_MANAGEMENT_EXTENSION_ID);
-    } catch (error) {
-      toast({
-        title: "DB 管理",
-        description: error instanceof Error ? error.message : "检查扩展更新失败。",
-        variant: "destructive",
-      });
-    }
-  }, [refreshExtensionCatalog, toast]);
-
-  const triggerExtensionActivation = useCallback(async () => {
-    if (!window.electronAPI?.extensions?.activate) {
-      toast({
-        title: "DB 管理",
-        description: "当前环境暂不支持自动启用扩展，请稍后重启应用。",
-      });
-      return;
-    }
-
-    setIsActivationPending(true);
-    try {
-      await window.electronAPI.extensions.activate(DB_MANAGEMENT_EXTENSION_ID);
-    } catch (error) {
-      setIsActivationPending(false);
-      throw error;
-    }
-  }, [toast]);
-
-  const handleDbManagementEntryClick = useCallback(() => {
-    if (!canBypassOfficialExtensionGate) {
-      void refreshOfficialExtensionCatalog();
-    }
-
-    const extension = dbManagementExtension;
-    if (!extension || extension.status === "not_installed") {
-      if (canBypassOfficialExtensionGate) {
-        setActiveModule("db-management");
-        return;
-      }
-      setInstallDialogOpen(true);
-      return;
-    }
-
-    if (
-      extension.status === "disabled" ||
-      extension.status === "incompatible" ||
-      extension.updateAvailable ||
-      extension.lifecycle?.stage === "failed"
-    ) {
-      if (canBypassOfficialExtensionGate) {
-        setActiveModule("db-management");
-        return;
-      }
-      setStatusDialogOpen(true);
-      return;
-    }
-
-    setActiveModule("db-management");
-  }, [canBypassOfficialExtensionGate, dbManagementExtension, refreshOfficialExtensionCatalog]);
-
-  useEffect(() => {
-    if (!isDesktopSmokeMode || isDbManagementExtensionLoading || desktopSmokeAttemptedRef.current) {
-      return;
-    }
-
-    desktopSmokeAttemptedRef.current = true;
-    if (!desktopSmokeSignalRef.current.requested) {
-      desktopSmokeSignalRef.current.requested = true;
-      emitDesktopSmokeSignal("db-management-entry-requested");
-    }
-    handleDbManagementEntryClick();
-  }, [
-    emitDesktopSmokeSignal,
-    handleDbManagementEntryClick,
-    isDbManagementExtensionLoading,
-    isDesktopSmokeMode,
-  ]);
-
-  useEffect(() => {
-    if (!isDesktopSmokeMode || desktopSmokeSignalRef.current.ready || activeModule !== "db-management") {
-      return;
-    }
-
-    desktopSmokeSignalRef.current.ready = true;
-    emitDesktopSmokeSignal("db-management-ready");
-  }, [activeModule, emitDesktopSmokeSignal, isDesktopSmokeMode]);
-
-  useEffect(() => {
-    if (!isDesktopSmokeMode || desktopSmokeSignalRef.current.blocked) {
-      return;
-    }
-
-    if (installDialogOpen) {
-      desktopSmokeSignalRef.current.blocked = true;
-      emitDesktopSmokeSignal("db-management-blocked:not-installed");
-      return;
-    }
-
-    if (statusDialogOpen) {
-      desktopSmokeSignalRef.current.blocked = true;
-      emitDesktopSmokeSignal("db-management-blocked:status-dialog");
-    }
-  }, [emitDesktopSmokeSignal, installDialogOpen, isDesktopSmokeMode, statusDialogOpen]);
-
-  const handleEnableAndActivateExtension = useCallback(async () => {
-    try {
-      await enableExtension(DB_MANAGEMENT_EXTENSION_ID);
-      await triggerExtensionActivation();
-    } catch (error) {
-      toast({
-        title: "DB 管理",
-        description: error instanceof Error ? error.message : "启用扩展失败。",
-        variant: "destructive",
-      });
-    }
-  }, [enableExtension, toast, triggerExtensionActivation]);
-
-  const handleDisableExtension = useCallback(async () => {
-    try {
-      await disableExtension(DB_MANAGEMENT_EXTENSION_ID);
-      setActiveModule("workspace");
-      toast({
-        title: "DB 管理",
-        description: "扩展已禁用。",
-      });
-    } catch (error) {
-      toast({
-        title: "DB 管理",
-        description: error instanceof Error ? error.message : "禁用扩展失败。",
-        variant: "destructive",
-      });
-    }
-  }, [disableExtension, toast]);
-
   const renderPreviewPane = (showSheetTrigger: boolean) => (
     <div className="flex h-full min-w-0 flex-col bg-transparent">
       <div className="shrink-0 border-b border-border bg-background px-4 py-2">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex items-center gap-1.5 overflow-x-auto">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
-            <TabsList className="h-auto rounded-sm border border-border bg-muted/20 p-1">
-              <TabsTrigger value="auto" className="h-8 gap-1.5 rounded-sm px-3 text-[11px] font-medium">
+            <TabsList className="h-auto rounded-md border border-border bg-muted/20 p-1">
+              <TabsTrigger value="auto" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
                 <TableProperties className="w-3 h-3" />
                 {t("view.autoParse")}
               </TabsTrigger>
-              <TabsTrigger value="spreadsheet" className="h-8 gap-1.5 rounded-sm px-3 text-[11px] font-medium">
+              <TabsTrigger value="spreadsheet" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
                 <Grid3X3 className="w-3 h-3" />
                 {t("view.spreadsheet")}
               </TabsTrigger>
               {desktopCapabilities.features.schemaDiff ? (
-                <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-sm px-3 text-[11px] font-medium">
+                <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
                   <Sparkles className="w-3 h-3" />
                   Diff
                 </TabsTrigger>
@@ -697,7 +477,7 @@ export default function Dashboard() {
           >
             <Search className="w-3 h-3" />
             <span className="hidden sm:inline">{t("search.button") || "Search"}</span>
-            <kbd className="pointer-events-none ml-1 hidden h-5 select-none items-center rounded-sm border border-white/80 bg-white/85 px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
+            <kbd className="pointer-events-none ml-1 hidden h-5 select-none items-center rounded-md border border-white/80 bg-white/85 px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
               {searchShortcutLabel}
             </kbd>
           </Button>
@@ -754,21 +534,9 @@ export default function Dashboard() {
     </div>
   );
 
-  const renderDbManagementWorkspace = () => (
-    <DbManagementWorkspace
-      onActivateFile={(fileId) => {
-        setSelectedFileId(fileId);
-        setActiveModule("workspace");
-      }}
-      selectedFileId={selectedFileId}
-      selectedFileName={selectedFileName}
-      selectedSheet={selectedSheet}
-    />
-  );
-
   const renderDdlImportWorkspace = () => (
     <DdlImportWorkspace
-      onActivateFile={(fileId) => {
+      onActivateFile={(fileId: number) => {
         setSelectedFileId(fileId);
         setActiveModule("workspace");
       }}
@@ -785,28 +553,17 @@ export default function Dashboard() {
                 <Button
                   variant={activeModule === "workspace" ? "default" : "outline"}
                   size="sm"
-                  className="h-8 rounded-sm px-3 text-[11px]"
+                  className="h-8 rounded-md px-3 text-xs"
                   onClick={() => setActiveModule("workspace")}
                 >
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   定义
                 </Button>
-                {desktopCapabilities.features.dbManagement ? (
-                  <Button
-                    variant={activeModule === "db-management" ? "default" : "outline"}
-                    size="sm"
-                    className="h-8 rounded-sm px-3 text-[11px]"
-                    onClick={handleDbManagementEntryClick}
-                  >
-                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                    数据库
-                  </Button>
-                ) : null}
                 {desktopCapabilities.features.ddlImport ? (
                   <Button
                     variant={activeModule === "ddl-import" ? "default" : "outline"}
                     size="sm"
-                    className="h-8 rounded-sm px-3 text-[11px]"
+                    className="h-8 rounded-md px-3 text-xs"
                     onClick={() => setActiveModule("ddl-import")}
                   >
                     <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
@@ -820,12 +577,13 @@ export default function Dashboard() {
                 {selectedSheet ? ` / ${selectedSheet}` : ""}
               </p>
             </div>
-            <div className="hidden items-center gap-2 text-[11px] text-muted-foreground xl:flex">
-              <span className="inline-flex items-center gap-1.5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="hidden items-center gap-1.5 xl:inline-flex">
                 <LayoutPanelLeft className="h-3.5 w-3.5" />
                 {layoutLabel}
               </span>
               {desktopCapabilities.features.updater ? <UpdateNotifier /> : null}
+              <ThemeToggle />
             </div>
           </div>
         </header>
@@ -834,10 +592,6 @@ export default function Dashboard() {
           <Sidebar
             selectedFileId={selectedFileId}
             onSelectFile={setSelectedFileId}
-            dbManagementState={dbManagementExtension ?? null}
-            dbManagementSelected={activeModule === "db-management"}
-            onSelectDbManagement={handleDbManagementEntryClick}
-            showDbManagement={desktopCapabilities.features.dbManagement}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="overflow-hidden border-r border-border"
@@ -847,9 +601,6 @@ export default function Dashboard() {
             <div className="flex h-full min-w-0 overflow-hidden bg-background">
               {desktopCapabilities.features.ddlImport && activeModule === "ddl-import" ? (
                 renderDdlImportWorkspace()
-              ) : desktopCapabilities.features.dbManagement && activeModule === "db-management" &&
-                (dbManagementExtension?.status === "enabled" || canBypassOfficialExtensionGate) ? (
-                renderDbManagementWorkspace()
               ) : isCompactLayout ? (
                 <>
                   <ResizablePanelGroup direction="horizontal" className="flex-1">
@@ -935,46 +686,6 @@ export default function Dashboard() {
         onSelectTable={handleSelectTable}
       />
 
-      {desktopCapabilities.features.extensions ? (
-        <ExtensionInstallDialog
-          open={installDialogOpen}
-          onOpenChange={setInstallDialogOpen}
-          extension={dbManagementExtension ?? null}
-          isPending={isInstallFlowPending || isStartInstallPending || isActivationPending || isRefreshCatalogPending}
-          onInstall={openOfficialExtensionFlow}
-          onActivate={triggerExtensionActivation}
-          onRefreshCatalog={refreshOfficialExtensionCatalog}
-        />
-      ) : null}
-
-      {desktopCapabilities.features.extensions ? (
-        <ExtensionStatusDialog
-          open={statusDialogOpen}
-          onOpenChange={setStatusDialogOpen}
-          extension={dbManagementExtension ?? null}
-          isPending={
-            isEnableMutationPending ||
-            isInstallFlowPending ||
-            isActivationPending ||
-            isRefreshCatalogPending ||
-            isStartInstallPending
-          }
-          primaryActionLabel={
-            dbManagementExtension?.updateAvailable || dbManagementExtension?.status === "incompatible"
-              ? "更新扩展"
-              : dbManagementExtension?.lifecycle?.stage === "failed"
-                ? "重新安装"
-                : "启用并重启"
-          }
-          onPrimaryAction={
-            dbManagementExtension?.updateAvailable ||
-            dbManagementExtension?.status === "incompatible" ||
-            dbManagementExtension?.lifecycle?.stage === "failed"
-              ? openOfficialExtensionFlow
-              : handleEnableAndActivateExtension
-          }
-        />
-      ) : null}
     </div>
   );
 }

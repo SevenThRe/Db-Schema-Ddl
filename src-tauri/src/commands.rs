@@ -6,6 +6,8 @@ use tauri::Manager;
 use crate::{
   constants::{DEFAULT_PK_MARKER, FILE_DELETED_MESSAGE, FILE_NOT_FOUND_MESSAGE},
   ddl,
+  ddl_import,
+  ddl_import_export,
   excel,
   models::{
     workbook_template_variants, BinaryCommandResult, CreateWorkbookFromTemplateRequest,
@@ -14,6 +16,8 @@ use crate::{
     RuntimeDiagnostics, SearchIndexItem, SheetSummary, TableInfo, UploadedFileRecord,
     WorkbookTemplateVariant,
   },
+  name_fix,
+  name_fix_apply,
   storage::{self, ImportExcelInput},
   workbook_templates,
 };
@@ -58,13 +62,13 @@ fn resolve_tables_by_reference(
   table_overrides: &[(usize, TableInfo)],
 ) -> Result<Vec<TableInfo>, String> {
   let file_path = load_uploaded_file_path(app, file_id)?;
-  let parse_options = resolve_parse_options(app);
+  let parse_options = resolve_parse_options_pub(app);
   let source_tables = excel::list_table_info(Path::new(&file_path), sheet_name, &parse_options)?;
 
   ddl::select_tables_by_reference(&source_tables, selected_table_indexes, table_overrides)
 }
 
-fn resolve_parse_options(app: &tauri::AppHandle) -> excel::ParseOptions {
+pub fn resolve_parse_options_pub(app: &tauri::AppHandle) -> excel::ParseOptions {
   let settings = storage::get_settings(app).unwrap_or_default();
   excel::ParseOptions {
     max_consecutive_empty_rows: usize::try_from(settings.max_consecutive_empty_rows)
@@ -155,7 +159,7 @@ pub fn files_get_search_index(
   file_id: i64,
 ) -> Result<Vec<SearchIndexItem>, String> {
   let file_path = load_uploaded_file_path(&app, file_id)?;
-  let parse_options = resolve_parse_options(&app);
+  let parse_options = resolve_parse_options_pub(&app);
   excel::list_search_index(Path::new(&file_path), &parse_options)
 }
 
@@ -166,7 +170,7 @@ pub fn files_get_table_info(
   sheet_name: String,
 ) -> Result<Vec<TableInfo>, String> {
   let file_path = load_uploaded_file_path(&app, file_id)?;
-  let parse_options = resolve_parse_options(&app);
+  let parse_options = resolve_parse_options_pub(&app);
   excel::list_table_info(Path::new(&file_path), &sheet_name, &parse_options)
 }
 
@@ -191,7 +195,7 @@ pub fn files_parse_region(
   end_col: usize,
 ) -> Result<Vec<TableInfo>, String> {
   let file_path = load_uploaded_file_path(&app, file_id)?;
-  let parse_options = resolve_parse_options(&app);
+  let parse_options = resolve_parse_options_pub(&app);
   excel::parse_sheet_region(
     Path::new(&file_path),
     &sheet_name,
@@ -281,4 +285,215 @@ pub fn settings_get(app: tauri::AppHandle) -> Result<DdlSettings, String> {
 #[tauri::command]
 pub fn settings_update(app: tauri::AppHandle, settings: DdlSettings) -> Result<DdlSettings, String> {
   storage::update_settings(&app, &settings)
+}
+
+// ──────────────────────────────────────────────
+// Phase-2: DDL インポート
+// ──────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DdlImportPreviewCommandRequest {
+  pub source_mode: String,
+  pub sql_text: String,
+  pub file_name: Option<String>,
+}
+
+/// SQL DDL テキストを解析してプレビューレスポンスを返す
+#[tauri::command]
+pub fn ddl_import_preview(
+  request: DdlImportPreviewCommandRequest,
+) -> Result<ddl_import::DdlImportPreviewResponse, String> {
+  ddl_import::preview_ddl_import(&request.source_mode, &request.sql_text, request.file_name)
+}
+
+/// DDL カタログから Excel ワークブックを生成して DB に保存する
+#[tauri::command]
+pub fn ddl_import_export_workbook(
+  app: tauri::AppHandle,
+  request: ddl_import_export::DdlImportExportRequest,
+) -> Result<ddl_import_export::DdlImportExportResponse, String> {
+  // SQL を再パースしてカタログを取得
+  let preview = ddl_import::preview_ddl_import(
+    &request.source_mode,
+    &request.sql_text,
+    request.file_name.clone(),
+  )?;
+
+  // ブロッキングイシューがある場合は allow_lossy_export フラグを確認
+  if preview.issue_summary.blocking_count > 0 && !request.allow_lossy_export {
+    return Err(format!(
+      "DDL has {} blocking issue(s). Set allowLossyExport=true to proceed.",
+      preview.issue_summary.blocking_count,
+    ));
+  }
+
+  ddl_import_export::export_workbook_from_ddl(&app, &request, &preview.catalog, preview.issue_summary)
+}
+
+// ──────────────────────────────────────────────
+// Phase-2: 物理名修正プレビュー
+// ──────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameFixPreviewCommandRequest {
+  pub file_id: i64,
+  pub sheet_name: String,
+  pub options: name_fix::NameFixPlanOptions,
+}
+
+/// 指定ファイル・シートの TableInfo に対して名前修正プランをプレビューする
+#[tauri::command]
+pub fn name_fix_preview(
+  app: tauri::AppHandle,
+  request: NameFixPreviewCommandRequest,
+) -> Result<name_fix::NameFixPreviewResponse, String> {
+  let file_path = load_uploaded_file_path(&app, request.file_id)?;
+  let parse_options = resolve_parse_options_pub(&app);
+  let tables = excel::list_table_info(Path::new(&file_path), &request.sheet_name, &parse_options)?;
+
+  let (mappings, conflicts, decision_trace, changed_table_count, changed_column_count) =
+    name_fix::compute_name_fix_plan(&tables, &request.options);
+
+  let blocking_conflicts: Vec<name_fix::NameFixConflict> =
+    conflicts.iter().filter(|c| c.blocking).cloned().collect();
+
+  // プランID: ファイルID + シート名 + タイムスタンプで簡易的に生成
+  let plan_id = format!(
+    "plan-{}-{}-{}",
+    request.file_id,
+    request.sheet_name.len(),
+    chrono::Utc::now().timestamp_millis()
+  );
+
+  // プランを DB に保存して apply コマンドから参照できるようにする
+  let plan_json = serde_json::to_string(&mappings)
+    .map_err(|e| format!("Failed to serialize plan: {e}"))?;
+  storage::save_name_fix_plan(&app, &plan_id, request.file_id, &request.sheet_name, &plan_json)?;
+
+  Ok(name_fix::NameFixPreviewResponse {
+    file_id: request.file_id,
+    sheet_name: request.sheet_name,
+    plan_id,
+    changed_table_count,
+    changed_column_count,
+    unresolved_source_ref_count: 0,
+    blocking_conflicts,
+    conflicts,
+    decision_trace,
+    mappings,
+  })
+}
+
+// ──────────────────────────────────────────────
+// Phase-2: スキーマ差分
+// ──────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffPreviewCommandRequest {
+  pub new_file_id: i64,
+  pub old_file_id: Option<i64>,
+  #[serde(default = "default_mode")]
+  pub mode: String,
+  #[serde(default = "default_scope")]
+  pub scope: String,
+  pub sheet_name: Option<String>,
+  pub thresholds: Option<crate::schema_diff::DiffThresholds>,
+}
+
+fn default_mode() -> String { "auto".to_string() }
+fn default_scope() -> String { "all_sheets".to_string() }
+
+/// 2つの Excel ファイル間のスキーマ差分をプレビューする
+#[tauri::command]
+pub fn diff_preview(
+  app: tauri::AppHandle,
+  request: DiffPreviewCommandRequest,
+) -> Result<crate::schema_diff::DiffPreviewResponse, String> {
+  crate::schema_diff::compute_diff(
+    &app,
+    request.new_file_id,
+    request.old_file_id,
+    &request.mode,
+    &request.scope,
+    request.sheet_name.as_deref(),
+    request.thresholds,
+  )
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffConfirmCommandRequest {
+  pub diff_id: String,
+  pub decisions: Vec<crate::schema_diff::DiffRenameDecisionItem>,
+}
+
+/// リネーム候補の accept/reject 判定を確定する
+#[tauri::command]
+pub fn diff_confirm(
+  app: tauri::AppHandle,
+  request: DiffConfirmCommandRequest,
+) -> Result<crate::schema_diff::DiffConfirmResponse, String> {
+  crate::schema_diff::confirm_renames(&app, &request.diff_id, &request.decisions)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffAlterPreviewCommandRequest {
+  pub diff_id: String,
+  #[serde(default = "default_dialect")]
+  pub dialect: String,
+  #[serde(default)]
+  pub split_by_sheet: bool,
+  #[serde(default = "default_output_mode")]
+  pub output_mode: String,
+  #[serde(default)]
+  pub include_unconfirmed: bool,
+}
+
+fn default_dialect() -> String { "mysql".to_string() }
+fn default_output_mode() -> String { "alter_only".to_string() }
+
+/// 差分結果から ALTER SQL をプレビューする
+#[tauri::command]
+pub fn diff_alter_preview(
+  app: tauri::AppHandle,
+  request: DiffAlterPreviewCommandRequest,
+) -> Result<crate::schema_diff::DiffAlterPreviewResponse, String> {
+  crate::schema_diff::compute_alter_preview(
+    &app,
+    &request.diff_id,
+    &request.dialect,
+    request.split_by_sheet,
+    &request.output_mode,
+    request.include_unconfirmed,
+  )
+}
+
+// ──────────────────────────────────────────────
+// Phase-2: 物理名修正 適用
+// ──────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameFixApplyCommandRequest {
+  pub plan_id: String,
+  #[serde(default = "default_name_fix_mode")]
+  pub mode: String,
+  #[serde(default = "default_include_report")]
+  pub include_report: bool,
+}
+
+fn default_name_fix_mode() -> String { "copy".to_string() }
+fn default_include_report() -> bool { true }
+
+/// 名前修正プランを適用して修正済み xlsx を DB に保存する
+#[tauri::command]
+pub fn name_fix_apply(
+  app: tauri::AppHandle,
+  request: NameFixApplyCommandRequest,
+) -> Result<name_fix_apply::NameFixApplyResponse, String> {
+  name_fix_apply::apply_name_fix(&app, &request.plan_id, &request.mode, request.include_report)
 }

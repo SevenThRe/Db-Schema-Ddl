@@ -13,8 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ExtensionManagementSection } from "@/components/settings/ExtensionManagementSection";
-import { DbComparePolicySection } from "@/components/settings/DbComparePolicySection";
 import { Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
 import { Link } from "wouter";
 import type { DdlSettings } from "@shared/schema";
@@ -41,8 +39,6 @@ const MYSQL_BOOLEAN_MODE_OPTIONS = [
 
 const DEFAULT_PK_MARKERS = ["\u3007"];
 const SETTINGS_SECTIONS = [
-  { id: "extensions", label: "扩展管理" },
-  { id: "compare-policy", label: "对比策略" },
   { id: "ddl-options", label: "DDL" },
   { id: "mysql", label: "MySQL" },
   { id: "varchar", label: "VARCHAR" },
@@ -80,15 +76,7 @@ export default function Settings() {
   const { toast } = useToast();
   const { t } = useTranslation();
   const desktopCapabilities = desktopBridge.getCapabilities();
-  const visibleSettingsSections = SETTINGS_SECTIONS.filter((section) => {
-    if (section.id === "extensions") {
-      return desktopCapabilities.features.extensions;
-    }
-    if (section.id === "compare-policy") {
-      return desktopCapabilities.features.dbManagement;
-    }
-    return true;
-  });
+  const visibleSettingsSections = SETTINGS_SECTIONS;
 
   const [formData, setFormData] = useState<DdlSettings>({
     mysqlEngine: "InnoDB",
@@ -338,17 +326,6 @@ export default function Settings() {
           </aside>
 
           <div className="min-w-0 flex-1 grid gap-4 xl:grid-cols-2">
-            {desktopCapabilities.features.extensions ? (
-              <div id="settings-section-extensions" className="xl:col-span-2 scroll-mt-16">
-                <ExtensionManagementSection />
-              </div>
-            ) : null}
-            {desktopCapabilities.features.dbManagement ? (
-              <div id="settings-section-compare-policy" className="xl:col-span-2 scroll-mt-16">
-                <DbComparePolicySection />
-              </div>
-            ) : null}
-
           {/* DDL Generation Options */}
           <div id="settings-section-ddl-options" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
             <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.ddlOptions.title")}</h2>

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2 } from "lucide-react";
-import type { CreateWorkbookFromTemplateRequest, ExtensionHostState } from "@shared/schema";
+import type { CreateWorkbookFromTemplateRequest } from "@shared/schema";
 import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,10 +33,6 @@ import { desktopBridge } from "@/lib/desktop-bridge";
 interface SidebarProps {
   selectedFileId: number | null;
   onSelectFile: (id: number | null) => void;
-  dbManagementState: ExtensionHostState | null;
-  dbManagementSelected: boolean;
-  onSelectDbManagement: () => void;
-  showDbManagement?: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
   className?: string;
@@ -45,10 +41,6 @@ interface SidebarProps {
 export function Sidebar({
   selectedFileId,
   onSelectFile,
-  dbManagementState,
-  dbManagementSelected,
-  onSelectDbManagement,
-  showDbManagement = true,
   collapsed,
   onToggleCollapse,
   className,
@@ -160,7 +152,7 @@ export function Sidebar({
     if (!file) return;
     uploadFile(file, {
       onSuccess: () => {
-        toast({ title: t("toast.fileUploaded") });
+        toast({ title: t("toast.fileUploaded"), variant: "success" });
       },
       onError: (error) => {
         const translated = translateApiError(error, t, { includeIssues: false });
@@ -191,6 +183,7 @@ export function Sidebar({
         toast({
           title: "模板文件已创建",
           description: `${result.file.originalName} 已通过 round-trip 自检并加入文件列表。`,
+          variant: "success",
         });
       },
       onError: (error) => {
@@ -254,7 +247,7 @@ export function Sidebar({
     const deletingFileId = pendingDeleteFile.id;
     deleteFile(deletingFileId, {
       onSuccess: () => {
-        toast({ title: t("toast.fileDeleted") });
+        toast({ title: t("toast.fileDeleted"), variant: "success" });
       },
       onError: (error) => {
         const translated = translateApiError(error, t, { includeIssues: false });
@@ -291,83 +284,13 @@ export function Sidebar({
     }
   };
 
-  const dbManagementStatus = dbManagementState?.status ?? "not_installed";
-  const dbManagementBadgeLabel =
-    dbManagementState?.updateAvailable
-      ? "可更新"
-      : dbManagementState?.lifecycle?.stage === "failed"
-        ? "需重试"
-        : dbManagementStatus === "not_installed"
-      ? "扩展"
-      : dbManagementStatus === "disabled"
-        ? "已禁用"
-        : dbManagementStatus === "incompatible"
-          ? "需要更新"
-          : "官方扩展";
-
-  const dbManagementButtonClass = cn(
-    "w-full border border-transparent transition-colors",
-    dbManagementSelected && dbManagementStatus === "enabled"
-      ? "border-border bg-muted/40 text-foreground"
-      : dbManagementStatus === "not_installed"
-        ? "text-muted-foreground hover:bg-muted/20 hover:text-foreground"
-        : dbManagementStatus === "incompatible"
-          ? "text-amber-900 hover:bg-amber-500/10 dark:text-amber-200"
-          : dbManagementStatus === "disabled"
-            ? "text-foreground hover:bg-muted/20"
-            : "text-foreground hover:bg-muted/20",
-  );
-
-  const renderDbManagementEntry = (compact: boolean) => {
-    if (compact) {
-      return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onSelectDbManagement}
-              className={cn(
-                "relative flex w-full flex-col items-center gap-1 rounded-sm border px-1 py-1.5 transition-colors",
-                dbManagementButtonClass,
-              )}
-            >
-              <Database className="w-3.5 h-3.5 shrink-0" />
-              <span className="w-full text-center text-[10px] leading-tight">DB</span>
-              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary/80" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="max-w-[240px] text-xs">
-            <div className="space-y-1">
-              <div className="font-medium">DB 管理</div>
-              <div className="text-[10px] opacity-80">{dbManagementBadgeLabel}</div>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      );
-    }
-
-    return (
-      <button
-        type="button"
-        onClick={onSelectDbManagement}
-        className={cn(
-          "grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2 text-left text-xs",
-          dbManagementButtonClass,
-        )}
-      >
-        <Database className="h-4 w-4 text-muted-foreground" />
-        <span className="min-w-0 truncate text-[12px] font-medium">DB 管理</span>
-        <span className="text-[10px] text-muted-foreground">{dbManagementBadgeLabel}</span>
-      </button>
-    );
-  };
 
   const renderUploadActionMenu = (compact: boolean) => {
     if (compact) {
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-sm" disabled={isUploading}>
+            <Button variant="outline" size="icon" className="h-8 w-8 rounded-md" disabled={isUploading}>
               {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
             </Button>
           </DropdownMenuTrigger>
@@ -391,7 +314,7 @@ export function Sidebar({
           <Button
             variant="outline"
             className={cn(
-              "h-8 w-full justify-between rounded-sm border border-dashed bg-background text-[11px] transition-all hover:border-primary/50 hover:bg-muted/20",
+              "h-8 w-full justify-between rounded-md border border-dashed bg-background text-xs transition-all hover:border-primary/50 hover:bg-muted/20",
               isDragOverUpload && "border-primary bg-primary/10 text-primary",
             )}
             disabled={isUploading}
@@ -435,7 +358,7 @@ export function Sidebar({
         <div className="flex flex-col items-center gap-1.5 border-b border-border px-2 py-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-sm" aria-label={t("sidebar.expandSidebar")}>
+              <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-md" aria-label={t("sidebar.expandSidebar")}>
                 <PanelLeft className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
@@ -460,10 +383,9 @@ export function Sidebar({
 
         <ScrollArea className="flex-1 px-1.5 py-1.5">
           <div className="space-y-1">
-            {showDbManagement ? renderDbManagementEntry(true) : null}
             {isLoading ? (
               [1, 2, 3].map((item) => (
-                <div key={item} className="h-11 rounded-sm bg-muted/40 animate-pulse" />
+                <div key={item} className="h-11 rounded-md bg-muted/40 animate-pulse" />
               ))
             ) : sortedFiles.length === 0 ? (
               <div className="px-1 py-2 text-center text-[10px] text-muted-foreground leading-snug">
@@ -501,7 +423,7 @@ export function Sidebar({
                         <button
                           onClick={(e) => requestDelete(e, file.id, file.originalName)}
                           className={cn(
-                          "absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-sm transition-opacity",
+                          "absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-md transition-opacity",
                           selectedFileId === file.id
                             ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-500"
                             : "text-muted-foreground/70 hover:bg-red-500/15 hover:text-red-500",
@@ -535,7 +457,7 @@ export function Sidebar({
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-sm" onClick={openDocs}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={openDocs}>
                 <BookOpen className="w-3.5 h-3.5" />
               </Button>
             </TooltipTrigger>
@@ -544,7 +466,7 @@ export function Sidebar({
           <Tooltip>
             <TooltipTrigger asChild>
               <Link href="/settings">
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-sm">
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
                   <Settings className="w-3.5 h-3.5" />
                 </Button>
               </Link>
@@ -575,7 +497,7 @@ export function Sidebar({
             <Database className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-[13px] font-semibold text-foreground">{t("app.title")}</h2>
           </div>
-          <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-sm text-muted-foreground" aria-label={t("sidebar.collapseSidebar")}>
+          <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-md text-muted-foreground" aria-label={t("sidebar.collapseSidebar")}>
             <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
@@ -596,7 +518,6 @@ export function Sidebar({
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="px-3 py-2 space-y-2">
-          {showDbManagement ? <div>{renderDbManagementEntry(false)}</div> : null}
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t("sidebar.definitionFiles")}
@@ -610,7 +531,7 @@ export function Sidebar({
             {isLoading ? (
               <div className="flex flex-col gap-2 p-2">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-10 rounded-sm bg-muted/30 animate-pulse" />
+                  <div key={i} className="h-10 rounded-md bg-muted/30 animate-pulse" />
                 ))}
               </div>
             ) : sortedFiles.length === 0 ? (
@@ -618,7 +539,7 @@ export function Sidebar({
                 {t("sidebar.noFilesYet")}
               </div>
             ) : (
-              sortedFiles.map((file) => {
+              sortedFiles.map((file, index) => {
                 const meta = fileVersionMetaById.get(file.id);
                 const uploadedAtLabel = formatUploadedAt(file.uploadedAt);
                 return (
@@ -627,8 +548,9 @@ export function Sidebar({
                     <div
                       onMouseEnter={() => setHoverFileId(file.id)}
                       onMouseLeave={() => setHoverFileId(null)}
+                      style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}
                       className={cn(
-                        "group grid grid-cols-[minmax(0,1fr)_26px] items-center gap-1 border border-transparent transition-colors duration-150",
+                        "animate-enter group grid grid-cols-[minmax(0,1fr)_26px] items-center gap-1 border border-transparent transition-colors duration-150",
                         selectedFileId === file.id
                           ? "border-border bg-muted/40 text-foreground"
                           : "bg-background text-foreground hover:bg-muted/20"
@@ -643,7 +565,7 @@ export function Sidebar({
                           selectedFileId === file.id ? "text-foreground" : "text-muted-foreground"
                         )} />
                         <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="text-[11px] font-medium truncate leading-tight mb-0.5 flex items-center gap-1.5">
+                          <p className="text-xs font-medium truncate leading-tight mb-0.5 flex items-center gap-1.5">
                             {file.originalName}
                             {meta && meta.versionCount > 1 ? (
                               <span
@@ -669,7 +591,7 @@ export function Sidebar({
                         <button
                           onClick={(e) => requestDelete(e, file.id, file.originalName)}
                         className={cn(
-                            "h-6 w-6 flex items-center justify-center rounded-sm transition-all",
+                            "h-6 w-6 flex items-center justify-center rounded-md transition-all",
                             "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
                             hoverFileId === file.id || selectedFileId === file.id
                               ? "opacity-100"
@@ -702,12 +624,12 @@ export function Sidebar({
 
       {/* Settings and Language Switcher at the bottom */}
       <div className="space-y-1.5 border-t border-border bg-background p-2">
-        <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-sm text-xs" onClick={openDocs}>
+        <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}
         </Button>
         <Link href="/settings">
-          <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-sm text-xs">
+          <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs">
             <Settings className="w-3.5 h-3.5" />
             {t("sidebar.settings")}
           </Button>
