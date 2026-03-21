@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useSearchIndex } from "@/hooks/use-ddl";
-import { FileSpreadsheet, Table2, Search, Loader2 } from "lucide-react";
+import { FileSpreadsheet, Table2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 
@@ -57,15 +57,12 @@ export function SearchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="p-0 gap-0 max-w-2xl overflow-hidden">
         <Command className="rounded-lg border-none shadow-none">
-          <div className="flex items-center border-b px-3">
-            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-            <CommandInput
-              placeholder={t("search.placeholder") || "Search sheets and tables..."}
-              value={search}
-              onValueChange={setSearch}
-              className="border-0 focus:ring-0"
-            />
-          </div>
+          <CommandInput
+            placeholder={t("search.placeholder") || "Search sheets and tables..."}
+            value={search}
+            onValueChange={setSearch}
+            className="border-0 focus:ring-0"
+          />
           <CommandList className="max-h-[400px]">
             {isLoading ? (
               <div className="flex items-center justify-center p-8 text-muted-foreground">

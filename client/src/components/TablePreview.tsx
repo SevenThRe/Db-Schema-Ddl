@@ -33,9 +33,9 @@ const COMPACT_TABLE_GRID_CLASS =
   "grid grid-cols-[56px_minmax(240px,_1.1fr)_minmax(220px,_1fr)] gap-2 px-4";
 const COMPACT_TABLE_BREAKPOINT = 980;
 const TOOLBAR_ICON_BUTTON_CLASS =
-  "h-8 w-8 shrink-0 rounded-sm border border-border bg-background text-muted-foreground hover:bg-muted/40";
+  "h-8 w-8 shrink-0 rounded-md border border-border bg-background text-muted-foreground hover:bg-muted/40";
 const TOOLBAR_BUTTON_CLASS =
-  "h-8 rounded-sm border border-border bg-background px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted/40";
+  "h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/40";
 const LAST_SELECTED_TABLE_STORAGE_KEY = "tablePreview:lastSelectedTableByFileSheet";
 
 type StoredTableSelections = Record<string, string>;
@@ -696,7 +696,7 @@ export function TablePreview({
             <p className="mt-1 truncate text-xs text-muted-foreground">
               <span className="font-medium text-foreground">{sheetName}</span> · {t("table.tablesFound", { count: filteredEntries.length })}
               {tableList.length > 0 && filteredEntries.length !== tableList.length && (
-                <span className="ml-2 text-[11px] text-muted-foreground">({filteredEntries.length}/{tableList.length})</span>
+                <span className="ml-2 text-xs text-muted-foreground">({filteredEntries.length}/{tableList.length})</span>
               )}
             </p>
             {tablesWithNamingWarnings > 0 && (
@@ -740,7 +740,7 @@ export function TablePreview({
                 onOpenChange={setIsTableSelectOpen}
               >
                 <SelectTrigger className={cn(
-                  "max-w-[60vw] h-8 shrink-0 rounded-sm border border-border bg-background text-xs",
+                  "max-w-[60vw] h-8 shrink-0 rounded-md border border-border bg-background text-xs",
                   isCompactColumns ? "w-[180px] min-w-[130px] sm:w-[210px] sm:min-w-[150px]" : "w-[220px] min-w-[140px] sm:w-[270px] sm:min-w-[170px]",
                 )}>
                   <SelectValue />
@@ -784,7 +784,7 @@ export function TablePreview({
                 <ChevronRight className="w-4 h-4" />
               </Button>
 
-              <span className="ml-1 shrink-0 hidden text-[11px] text-muted-foreground sm:inline">
+              <span className="ml-1 shrink-0 hidden text-xs text-muted-foreground sm:inline">
                 {currentVisiblePosition} / {filteredEntries.length}
               </span>
             </div>

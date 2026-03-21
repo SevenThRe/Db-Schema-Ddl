@@ -4,12 +4,16 @@ mod ddl;
 mod ddl_import;
 mod ddl_import_export;
 mod excel;
+pub mod extensions;
 mod models;
 mod name_fix;
 mod name_fix_apply;
 pub mod schema_diff;
 mod storage;
 mod workbook_templates;
+
+use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,6 +33,12 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // 拡張機能プロセスマネージャーを managed state として登録
+      let data_dir = app.path().app_data_dir()?;
+      let ext_manager = Arc::new(extensions::process::ProcessManager::new(&data_dir));
+      app.manage(ext_manager);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -57,6 +67,16 @@ pub fn run() {
       commands::diff_preview,
       commands::diff_confirm,
       commands::diff_alter_preview,
+      // 拡張機能コマンド
+      extensions::commands::ext_list,
+      extensions::commands::ext_get,
+      extensions::commands::ext_fetch_catalog,
+      extensions::commands::ext_install,
+      extensions::commands::ext_uninstall,
+      extensions::commands::ext_start,
+      extensions::commands::ext_stop,
+      extensions::commands::ext_health,
+      extensions::commands::ext_call,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

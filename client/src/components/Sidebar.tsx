@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2 } from "lucide-react";
+import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2, Puzzle } from "lucide-react";
 import type { CreateWorkbookFromTemplateRequest } from "@shared/schema";
 import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
+import { ExtensionPanel } from "./ExtensionPanel";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
 interface SidebarProps {
@@ -55,6 +56,8 @@ export function Sidebar({
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: number; name: string } | null>(null);
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
+  const desktopCapabilities = desktopBridge.getCapabilities();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const dragEnterDepthRef = useRef(0);
   const { data: workbookTemplates = [], isLoading: isTemplatesLoading } = useWorkbookTemplates();
@@ -463,6 +466,16 @@ export function Sidebar({
             </TooltipTrigger>
             <TooltipContent side="right">{t("sidebar.docs")}</TooltipContent>
           </Tooltip>
+          {desktopCapabilities.features.extensions ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={() => setExtensionPanelOpen(true)}>
+                  <Puzzle className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">拡張機能</TooltipContent>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Link href="/settings">
@@ -479,6 +492,7 @@ export function Sidebar({
         </div>
 
         {templateDialog}
+        <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} />
       </div>
     );
   }
@@ -628,6 +642,12 @@ export function Sidebar({
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}
         </Button>
+        {desktopCapabilities.features.extensions ? (
+          <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={() => setExtensionPanelOpen(true)}>
+            <Puzzle className="w-3.5 h-3.5" />
+            拡張機能
+          </Button>
+        ) : null}
         <Link href="/settings">
           <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs">
             <Settings className="w-3.5 h-3.5" />
@@ -672,6 +692,7 @@ export function Sidebar({
       </AlertDialog>
 
       {templateDialog}
+      <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} />
     </div>
   );
 }

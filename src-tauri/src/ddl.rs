@@ -772,4 +772,128 @@ mod tests {
     assert_eq!(result.skipped_count, 0);
     assert!(!result.base64.is_empty());
   }
+
+  // Phase-1 検収テスト: Oracle DDL 生成
+  #[test]
+  fn generates_oracle_ddl_with_named_pk_constraint() {
+    let response = generate_ddl_response(&GenerateDdlRequest {
+      tables: vec![sample_table()],
+      dialect: "oracle".into(),
+      settings: Some(DdlSettings::default()),
+    })
+    .expect("oracle ddl should generate");
+
+    // Oracle は名前付き PK 制約を使うこと
+    assert!(
+      response.ddl.contains("CONSTRAINT pk_employee PRIMARY KEY"),
+      "Oracle DDL must use named PK constraint, got:\n{}",
+      response.ddl
+    );
+  }
+
+  // Phase-1 検収テスト: データ型未指定時のフォールバック
+  #[test]
+  fn generates_mysql_ddl_with_varchar_fallback_for_missing_type() {
+    let table = TableInfo {
+      physical_table_name: "fallback_test".into(),
+      logical_table_name: "フォールバックテスト".into(),
+      columns: vec![ColumnInfo {
+        no: Some(1),
+        logical_name: Some("メモ".into()),
+        physical_name: Some("memo".into()),
+        data_type: None, // 未指定
+        size: None,
+        not_null: Some(false),
+        is_pk: Some(false),
+        auto_increment: Some(false),
+        comment: None,
+        comment_raw: None,
+        source_ref: None,
+      }],
+      column_range: None,
+      row_range: None,
+      excel_range: None,
+      source_ref: None,
+    };
+
+    let response = generate_ddl_response(&GenerateDdlRequest {
+      tables: vec![table],
+      dialect: "mysql".into(),
+      settings: Some(DdlSettings::default()),
+    })
+    .expect("mysql ddl should generate with fallback type");
+
+    // データ型未指定の列は varchar(255) にフォールバックすること（大小文字問わず）
+    assert!(
+      response.ddl.to_lowercase().contains("varchar(255)"),
+      "missing data type should fall back to VARCHAR(255), got:\n{}",
+      response.ddl
+    );
+  }
+
+  // Phase-1 検収テスト: ZIP エクスポート (Oracle 方言)
+  #[test]
+  fn exports_zip_payload_for_oracle() {
+    let result = export_zip_for_tables(
+      &[sample_table()],
+      "oracle",
+      Some(DdlSettings::default()),
+      false,
+      false,
+      Some("テーブル定義"),
+    )
+    .expect("oracle zip export should succeed");
+
+    assert_eq!(result.mime_type, ZIP_MIME_TYPE);
+    assert!(result.file_name.ends_with(".zip"));
+    assert_eq!(result.success_count, 1);
+    assert_eq!(result.skipped_count, 0);
+    assert!(!result.base64.is_empty());
+  }
+
+  // Phase-1 検収テスト: 参照モードによるテーブル選択
+  #[test]
+  fn selects_tables_by_reference_index() {
+    let tables = vec![sample_table(), {
+      let mut t = sample_table();
+      t.physical_table_name = "department".into();
+      t.logical_table_name = "部署".into();
+      t
+    }];
+
+    // インデックス [1] を選択 → department テーブルだけが返ること
+    let selected =
+      select_tables_by_reference(&tables, &[1], &[]).expect("reference selection should succeed");
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].physical_table_name, "department");
+  }
+
+  #[test]
+  fn select_by_reference_applies_override() {
+    let tables = vec![sample_table()];
+    let mut override_table = sample_table();
+    override_table.physical_table_name = "employee_v2".into();
+
+    // インデックス 0 に対してオーバーライドを適用
+    let selected = select_tables_by_reference(&tables, &[0], &[(0, override_table)])
+      .expect("reference selection with override should succeed");
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].physical_table_name, "employee_v2");
+  }
+
+  #[test]
+  fn select_by_reference_returns_error_for_empty_indexes() {
+    let tables = vec![sample_table()];
+    let result = select_tables_by_reference(&tables, &[], &[]);
+    assert!(result.is_err(), "empty index list must return an error");
+  }
+
+  #[test]
+  fn select_by_reference_returns_error_for_out_of_range_index() {
+    let tables = vec![sample_table()];
+    let result = select_tables_by_reference(&tables, &[99], &[]);
+    assert!(result.is_err(), "out-of-range index must return an error");
+  }
 }

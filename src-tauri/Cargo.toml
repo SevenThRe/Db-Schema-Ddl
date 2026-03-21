@@ -31,3 +31,10 @@ chrono = { version = "0.4", features = ["clock"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
+sqlparser = "0.53"
+regex = "1"
+rust_xlsxwriter = "0.79"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+thiserror = "1"
+tokio = { version = "1", features = ["fs", "io-util", "sync", "process", "time"] }

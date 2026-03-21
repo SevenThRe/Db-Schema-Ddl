@@ -38,7 +38,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
             onClick={() => setFilterUndefined(!filterUndefined)}
             aria-label={t("sheet.filterUndefined")}
             className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-sm border transition-colors",
+              "inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
               filterUndefined
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border bg-background text-muted-foreground hover:bg-muted/40"
@@ -49,7 +49,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
           </button>
         </div>
 
-        <div className="mt-2 text-[11px] text-muted-foreground">
+        <div className="mt-2 text-xs text-muted-foreground">
           {filteredSheets?.length ?? 0} sheets · {definedSheetCount} parsed{filterUndefined ? " · filtered" : ""}
         </div>
       </div>

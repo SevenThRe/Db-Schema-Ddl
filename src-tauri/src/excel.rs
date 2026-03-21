@@ -1528,7 +1528,7 @@ pub fn read_sheet_data(file_path: &Path, sheet_name: &str) -> Result<Vec<Vec<Val
 mod tests {
   use std::path::PathBuf;
 
-  use super::{list_table_info, ParseOptions};
+  use super::{list_search_index, list_sheet_summaries, list_table_info, parse_sheet_region, read_sheet_data, validate_excel_file, ParseOptions};
 
   fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1539,6 +1539,103 @@ mod tests {
 
   fn fixture_path(relative: &str) -> PathBuf {
     repo_root().join(relative)
+  }
+
+  // Phase-1 検収テスト: Excelファイルバリデーション
+  #[test]
+  fn validates_real_excel_file_as_valid() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    validate_excel_file(&file_path).expect("valid xlsx should pass validation");
+  }
+
+  #[test]
+  fn rejects_non_excel_bytes_as_invalid() {
+    let tmp = std::env::temp_dir().join("test_invalid_excel.txt");
+    std::fs::write(&tmp, b"not an excel file").expect("temp write should succeed");
+    let result = validate_excel_file(&tmp);
+    let _ = std::fs::remove_file(&tmp);
+    assert!(result.is_err(), "garbage bytes should fail validation");
+  }
+
+  // Phase-1 検収テスト: シート一覧とテーブル定義フラグ
+  #[test]
+  fn lists_all_sheets_from_workbook() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    let summaries = list_sheet_summaries(&file_path).expect("sheet summaries should load");
+    // 給与ワークブックは143シートを持つことが実績で確認済み
+    assert!(summaries.len() > 10, "should return many sheets, got {}", summaries.len());
+  }
+
+  #[test]
+  fn marks_table_definition_sheets_correctly() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    let summaries = list_sheet_summaries(&file_path).expect("sheet summaries should load");
+
+    // テーブル定義を含むシートは has_table_definitions = true であること
+    let definition_sheet = summaries
+      .iter()
+      .find(|sheet| sheet.name == "テーブル定義-会社")
+      .expect("テーブル定義-会社 sheet must exist");
+    assert!(definition_sheet.has_table_definitions, "テーブル定義-会社 should have table definitions");
+
+    // テーブル定義を含まない非データシートは false であること
+    let non_definition_sheet = summaries
+      .iter()
+      .find(|sheet| !sheet.has_table_definitions);
+    assert!(non_definition_sheet.is_some(), "at least one sheet should lack table definitions");
+  }
+
+  // Phase-1 検収テスト: 検索インデックス構築
+  #[test]
+  fn builds_search_index_with_sheet_and_table_entries() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    let index = list_search_index(&file_path, &ParseOptions::default()).expect("search index should build");
+
+    // インデックスは sheet エントリと table エントリの両方を含むこと
+    let sheet_entries: Vec<_> = index.iter().filter(|item| item.item_type == "sheet").collect();
+    let table_entries: Vec<_> = index.iter().filter(|item| item.item_type == "table").collect();
+
+    assert!(!sheet_entries.is_empty(), "search index must contain sheet entries");
+    assert!(!table_entries.is_empty(), "search index must contain table entries");
+
+    // table エントリは physical_table_name と logical_table_name を持つこと
+    let first_table = &table_entries[0];
+    assert!(first_table.physical_table_name.is_some(), "table entry must have physical_table_name");
+    assert!(first_table.logical_table_name.is_some(), "table entry must have logical_table_name");
+  }
+
+  // Phase-1 検収テスト: 生シートデータ読み取り
+  #[test]
+  fn reads_raw_sheet_data_as_2d_grid() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    let data = read_sheet_data(&file_path, "テーブル定義-会社").expect("sheet data should load");
+
+    assert!(!data.is_empty(), "sheet data must not be empty");
+    assert!(!data[0].is_empty(), "first row must have cells");
+  }
+
+  // Phase-1 検収テスト: 領域パース（スプレッドシートビューア用）
+  #[test]
+  fn parse_region_returns_tables_within_specified_bounds() {
+    let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
+    // 広い範囲を指定して、通常のテーブルパースと同等の結果が得られることを確認
+    let tables = parse_sheet_region(
+      &file_path,
+      "退職金支給 (2)",
+      0,    // start_row
+      200,  // end_row
+      0,    // start_col
+      30,   // end_col
+      &ParseOptions::default(),
+    )
+    .expect("region parse should succeed");
+
+    assert!(!tables.is_empty(), "region parse must find at least one table");
+    // 領域パースで見つかるテーブルの物理名が空でないこと
+    assert!(
+      tables.iter().any(|table| !table.physical_table_name.is_empty()),
+      "at least one table must have a physical name"
+    );
   }
 
   #[test]

@@ -1,10 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { createRequire } from "module";
+
+// package.json から直接バージョンを読み込む（npm_package_version が未設定でも動作する）
+const require = createRequire(import.meta.url);
+const pkg = require("./package.json") as { version: string };
 
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? "0.0.0"),
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   plugins: [react()],
   resolve: {
