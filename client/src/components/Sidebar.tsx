@@ -492,7 +492,7 @@ export function Sidebar({
         </div>
 
         {templateDialog}
-        <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} />
+        <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} selectedFileId={selectedFileId} />
       </div>
     );
   }
@@ -692,7 +692,7 @@ export function Sidebar({
       </AlertDialog>
 
       {templateDialog}
-      <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} />
+      <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} selectedFileId={selectedFileId} />
     </div>
   );
 }

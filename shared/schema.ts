@@ -751,3 +751,81 @@ export type SchemaDiffConfirmRequest = z.infer<typeof schemaDiffConfirmRequestSc
 export type SchemaDiffConfirmResponse = z.infer<typeof schemaDiffConfirmResponseSchema>;
 export type SchemaDiffAlterPreviewRequest = z.infer<typeof schemaDiffAlterPreviewRequestSchema>;
 export type SchemaDiffAlterPreviewResponse = z.infer<typeof schemaDiffAlterPreviewResponseSchema>;
+
+// ──────────────────────────────────────────────
+// 内蔵拡張機能 (Builtin Extensions) 型定義
+// Rust 側の BuiltinExtensionManifest と対応する
+// ──────────────────────────────────────────────
+
+/** 内蔵拡張のカテゴリ種別 */
+export type BuiltinExtensionCategory = "Transformer" | "DbConnector";
+
+/** 内蔵拡張のマニフェスト情報 */
+export interface BuiltinExtensionManifest {
+  id: string;
+  name: string;
+  description: string;
+  category: BuiltinExtensionCategory;
+  /** 対応する入力フォーマット一覧（例: ["xlsx"]） */
+  inputFormats: string[];
+  /** 対応する出力フォーマット一覧（例: ["java", "ts"]） */
+  outputFormats: string[];
+}
+
+// ──────────────────────────────────────────────
+// 列挙型生成リクエスト / レスポンス型定義
+// ──────────────────────────────────────────────
+
+/** 列挙定数の1エントリ */
+export interface EnumConstant {
+  name: string;
+  value: string;
+  /** 日本語ラベル（省略可） */
+  label?: string;
+}
+
+/** 1つの列挙クラス情報 */
+export interface EnumClass {
+  className: string;
+  constants: EnumConstant[];
+}
+
+/** Excel シートから自動検出したカラム位置情報 */
+export interface DetectedColumns {
+  classCol: number;
+  nameCol: number;
+  valueCol: number;
+  /** ラベル列（省略可） */
+  labelCol?: number;
+  headerRow: number;
+}
+
+/** enum_gen_preview コマンドのレスポンス */
+export interface EnumGenPreviewResponse {
+  enums: EnumClass[];
+  /** 生成されたコード文字列 */
+  code: string;
+  /** パース時の警告メッセージ一覧 */
+  warnings: string[];
+  detectedColumns: DetectedColumns;
+}
+
+/** enum_gen_preview / enum_gen_export コマンドのリクエスト */
+export interface EnumGenRequest {
+  fileId: number;
+  sheetName: string;
+  /** 生成対象言語 */
+  targetLang: "java" | "typescript";
+  /** Java パッケージ名（targetLang === "java" の場合のみ有効） */
+  packageName?: string;
+}
+
+/** enum_gen_export コマンドのレスポンス */
+export interface BinaryCommandResult {
+  base64: string;
+  fileName: string;
+  mimeType: string;
+  successCount: number;
+  skippedCount: number;
+  skippedTables: string[];
+}

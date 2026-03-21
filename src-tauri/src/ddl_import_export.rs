@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use rust_xlsxwriter::{Workbook, XlsxError};
 
 use crate::{

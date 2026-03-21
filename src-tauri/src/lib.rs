@@ -1,3 +1,4 @@
+mod builtin_extensions;
 mod commands;
 mod constants;
 mod ddl;
@@ -77,6 +78,9 @@ pub fn run() {
       extensions::commands::ext_stop,
       extensions::commands::ext_health,
       extensions::commands::ext_call,
+      commands::ext_list_builtin,
+      commands::enum_gen_preview,
+      commands::enum_gen_export,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

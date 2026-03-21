@@ -11,6 +11,7 @@ import {
   type SchemaDiffPreviewRequest,
   type SchemaDiffConfirmRequest,
   type SchemaDiffAlterPreviewRequest,
+  type EnumGenRequest,
 } from "@shared/schema";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
@@ -237,5 +238,53 @@ export function useSchemaDiffAlterPreview() {
   return useMutation({
     mutationFn: async (request: SchemaDiffAlterPreviewRequest) =>
       await desktopBridge.diff.alterPreview(request),
+  });
+}
+
+// --- Builtin Extensions ---
+
+/** 内蔵拡張の一覧を取得する hook */
+export function useBuiltinExtensions() {
+  return useQuery({
+    queryKey: ["/ext/builtin"],
+    queryFn: () => desktopBridge.extensions.listBuiltin(),
+    // 起動後は変わらないためキャッシュを無期限にする
+    staleTime: Infinity,
+  });
+}
+
+/** 列挙型生成のリアルタイムプレビュー hook */
+export function useEnumGenPreview(request: EnumGenRequest | null) {
+  return useQuery({
+    queryKey: ["/ext/enum-gen/preview", request],
+    queryFn: () => desktopBridge.extensions.enumGenPreview(request!),
+    // シート名が空の場合はリクエストを送らない
+    enabled: request !== null && request.sheetName !== "",
+  });
+}
+
+// Base64 → Blob 変換ユーティリティ
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
+/** 列挙型コードを生成してダウンロードする hook */
+export function useEnumGenExport() {
+  return useMutation({
+    mutationFn: async (request: EnumGenRequest) => {
+      const result = await desktopBridge.extensions.enumGenExport(request);
+      // ブラウザ経由でファイルをダウンロードする
+      const blob = base64ToBlob(result.base64, result.mimeType);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = result.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return result;
+    },
   });
 }

@@ -497,3 +497,75 @@ pub fn name_fix_apply(
 ) -> Result<name_fix_apply::NameFixApplyResponse, String> {
   name_fix_apply::apply_name_fix(&app, &request.plan_id, &request.mode, request.include_report)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 組み込み拡張コマンド
+// ──────────────────────────────────────────────────────────────────────────────
+
+use crate::builtin_extensions;
+use crate::builtin_extensions::enum_gen::{EnumGenPreviewResponse, EnumGenRequest};
+
+/// 組み込み拡張機能のマニフェスト一覧を返す
+#[tauri::command]
+pub async fn ext_list_builtin(
+) -> Result<Vec<builtin_extensions::BuiltinExtensionManifest>, String> {
+  Ok(builtin_extensions::get_builtin_extensions())
+}
+
+/// 指定シートから列挙定義を解析してプレビューデータを返す
+#[tauri::command]
+pub async fn enum_gen_preview(
+  app: tauri::AppHandle,
+  request: EnumGenRequest,
+) -> Result<EnumGenPreviewResponse, String> {
+  let file_record = crate::storage::find_uploaded_file(&app, request.file_id)
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| format!("ファイルが見つかりません: id={}", request.file_id))?;
+  let path = std::path::Path::new(&file_record.file_path);
+  builtin_extensions::enum_gen::parse_enum_sheet(path, &request.sheet_name)
+}
+
+/// 列挙定義を解析してコードファイルをエクスポートする（Base64 ZIP または .ts）
+#[tauri::command]
+pub async fn enum_gen_export(
+  app: tauri::AppHandle,
+  request: EnumGenRequest,
+) -> Result<crate::models::BinaryCommandResult, String> {
+  let file_record = crate::storage::find_uploaded_file(&app, request.file_id)
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| format!("ファイルが見つかりません: id={}", request.file_id))?;
+  let path = std::path::Path::new(&file_record.file_path);
+  let preview = builtin_extensions::enum_gen::parse_enum_sheet(path, &request.sheet_name)?;
+
+  match request.target_lang {
+    builtin_extensions::enum_gen::TargetLang::Java => {
+      // Java: 各クラスを個別ファイルとして ZIP にまとめる
+      let package = request.package_name.as_deref().unwrap_or("com.example");
+      let zip_bytes =
+        builtin_extensions::enum_gen::generate_java_zip(&preview.enums, package)?;
+      let base64 = STANDARD.encode(&zip_bytes);
+      Ok(crate::models::BinaryCommandResult {
+        base64,
+        file_name: "enums-java.zip".to_string(),
+        mime_type: "application/zip".to_string(),
+        success_count: preview.enums.len() as i64,
+        skipped_count: 0,
+        skipped_tables: vec![],
+      })
+    }
+    builtin_extensions::enum_gen::TargetLang::TypeScript => {
+      // TypeScript: 全クラスを1ファイルにまとめる
+      let content =
+        builtin_extensions::enum_gen::generate_typescript_content(&preview.enums);
+      let base64 = STANDARD.encode(content.as_bytes());
+      Ok(crate::models::BinaryCommandResult {
+        base64,
+        file_name: "enums.ts".to_string(),
+        mime_type: "text/plain".to_string(),
+        success_count: preview.enums.len() as i64,
+        skipped_count: 0,
+        skipped_tables: vec![],
+      })
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import type {
+  BinaryCommandResult,
+  BuiltinExtensionManifest,
   CreateWorkbookFromTemplateRequest,
   CreateWorkbookFromTemplateResponse,
   DdlImportExportRequest,
@@ -6,6 +8,8 @@ import type {
   DdlImportPreviewRequest,
   DdlImportPreviewResponse,
   DdlSettings,
+  EnumGenPreviewResponse,
+  EnumGenRequest,
   ExportZipRequest,
   GenerateDdlByReferenceRequest,
   GenerateDdlRequest,
@@ -298,6 +302,24 @@ export const desktopBridge = {
 
     async alterPreview(request: SchemaDiffAlterPreviewRequest): Promise<SchemaDiffAlterPreviewResponse> {
       return await invoke<SchemaDiffAlterPreviewResponse>("diff_alter_preview", { request });
+    },
+  },
+
+  // 内蔵拡張機能
+  extensions: {
+    /** 内蔵拡張の一覧を取得する */
+    async listBuiltin(): Promise<BuiltinExtensionManifest[]> {
+      return await invoke<BuiltinExtensionManifest[]>("ext_list_builtin");
+    },
+
+    /** 列挙型生成のプレビューを取得する */
+    async enumGenPreview(request: EnumGenRequest): Promise<EnumGenPreviewResponse> {
+      return await invoke<EnumGenPreviewResponse>("enum_gen_preview", { request });
+    },
+
+    /** 列挙型コードを生成してバイナリとして返す */
+    async enumGenExport(request: EnumGenRequest): Promise<BinaryCommandResult> {
+      return await invoke<BinaryCommandResult>("enum_gen_export", { request });
     },
   },
 };
