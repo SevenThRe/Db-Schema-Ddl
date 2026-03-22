@@ -1,4 +1,5 @@
 mod builtin_extensions;
+mod db_connector;
 mod commands;
 mod constants;
 mod ddl;
@@ -84,6 +85,12 @@ pub fn run() {
       commands::enum_gen_export,
       commands::update_check,
       commands::update_download_and_install,
+      db_connector::commands::db_conn_list,
+      db_connector::commands::db_conn_save,
+      db_connector::commands::db_conn_delete,
+      db_connector::commands::db_conn_test,
+      db_connector::commands::db_introspect,
+      db_connector::commands::db_diff,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

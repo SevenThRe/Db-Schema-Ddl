@@ -181,6 +181,13 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         plan_json TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS db_connections (
+        id TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
       ",
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
@@ -1025,4 +1032,64 @@ mod tests {
       .expect("count should succeed");
     assert_eq!(count, 1, "upsert must not create duplicate rows");
   }
+}
+
+// ──────────────────────────────────────────────
+// DB 接続 CRUD
+// ──────────────────────────────────────────────
+
+pub fn list_db_connections(
+  app: &AppHandle,
+) -> Result<Vec<crate::db_connector::DbConnectionConfig>, String> {
+  let (conn, _) = open_connection(app)?;
+  let mut stmt = conn
+    .prepare("SELECT config_json FROM db_connections ORDER BY created_at ASC")
+    .map_err(|e| storage_error("prepare db_connections list", e))?;
+  let rows = stmt
+    .query_map([], |row| {
+      let json: String = row.get(0)?;
+      Ok(json)
+    })
+    .map_err(|e| storage_error("query db_connections", e))?;
+  let mut result = Vec::new();
+  for json_res in rows {
+    let json = decode_row(json_res, "read db_connection row")?;
+    let config: crate::db_connector::DbConnectionConfig =
+      serde_json::from_str(&json).map_err(|e| storage_error("deserialize db_connection", e))?;
+    result.push(config);
+  }
+  Ok(result)
+}
+
+pub fn save_db_connection(
+  app: &AppHandle,
+  mut config: crate::db_connector::DbConnectionConfig,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  let (conn, _) = open_connection(app)?;
+  if config.id.trim().is_empty() {
+    // 新規作成: UUID 相当のランダム ID を生成
+    use sha2::Digest;
+    let hash = sha2::Sha256::digest(format!("{}{}", config.name, now_iso_string()).as_bytes());
+    config.id = format!("{:x}", hash)[..16].to_string();
+  }
+  let json =
+    serde_json::to_string(&config).map_err(|e| storage_error("serialize db_connection", e))?;
+  let now = now_iso_string();
+  conn
+    .execute(
+      "INSERT INTO db_connections (id, config_json, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?3)
+       ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at",
+      params![config.id, json, now],
+    )
+    .map_err(|e| storage_error("upsert db_connection", e))?;
+  Ok(config)
+}
+
+pub fn delete_db_connection(app: &AppHandle, id: &str) -> Result<(), String> {
+  let (conn, _) = open_connection(app)?;
+  conn
+    .execute("DELETE FROM db_connections WHERE id = ?1", params![id])
+    .map_err(|e| storage_error("delete db_connection", e))?;
+  Ok(())
 }

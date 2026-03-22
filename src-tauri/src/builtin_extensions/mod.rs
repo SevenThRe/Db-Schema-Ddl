@@ -66,6 +66,14 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["ts".to_string()],
         },
+        BuiltinExtensionManifest {
+            id: "db-connector".to_string(),
+            name: "DB 连接器".to_string(),
+            description: "连接 MySQL / PostgreSQL，浏览 Schema，对比多实例差异".to_string(),
+            category: ExtensionCategory::DbConnector,
+            input_formats: vec!["mysql".to_string(), "postgres".to_string()],
+            output_formats: vec!["diff".to_string(), "xlsx".to_string()],
+        },
     ]
 }
 

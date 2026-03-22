@@ -1,6 +1,9 @@
 import type {
   BinaryCommandResult,
   BuiltinExtensionManifest,
+  DbConnectionConfig,
+  DbSchemaSnapshot,
+  DbSchemaDiffResult,
   CreateWorkbookFromTemplateRequest,
   CreateWorkbookFromTemplateResponse,
   DdlImportExportRequest,
@@ -302,6 +305,28 @@ export const desktopBridge = {
 
     async alterPreview(request: SchemaDiffAlterPreviewRequest): Promise<SchemaDiffAlterPreviewResponse> {
       return await invoke<SchemaDiffAlterPreviewResponse>("diff_alter_preview", { request });
+    },
+  },
+
+  // DB 接続管理
+  db: {
+    async listConnections(): Promise<DbConnectionConfig[]> {
+      return await invoke<DbConnectionConfig[]>("db_conn_list");
+    },
+    async saveConnection(config: DbConnectionConfig): Promise<DbConnectionConfig> {
+      return await invoke<DbConnectionConfig>("db_conn_save", { config });
+    },
+    async deleteConnection(id: string): Promise<void> {
+      await invoke<void>("db_conn_delete", { id });
+    },
+    async testConnection(config: DbConnectionConfig): Promise<string> {
+      return await invoke<string>("db_conn_test", { config });
+    },
+    async introspect(connectionId: string): Promise<DbSchemaSnapshot> {
+      return await invoke<DbSchemaSnapshot>("db_introspect", { connectionId });
+    },
+    async diff(sourceConnectionId: string, targetConnectionId: string): Promise<DbSchemaDiffResult> {
+      return await invoke<DbSchemaDiffResult>("db_diff", { sourceConnectionId, targetConnectionId });
     },
   },
 

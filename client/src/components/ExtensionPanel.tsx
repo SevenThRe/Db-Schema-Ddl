@@ -31,6 +31,7 @@ import { useExtensions, type InstalledExtension, type ExtensionCatalog } from "@
 import { useBuiltinExtensions } from "@/hooks/use-ddl";
 import { EnumGenWorkspace } from "@/components/extensions/EnumGenWorkspace";
 import { DdlToExcelWorkspace } from "@/components/extensions/DdlToExcelWorkspace";
+import { DbConnectorWorkspace } from "@/components/extensions/DbConnectorWorkspace";
 import { cn } from "@/lib/utils";
 import type { BuiltinExtensionManifest } from "@shared/schema";
 import { useFiles } from "@/hooks/use-ddl";
@@ -65,6 +66,7 @@ function ExtCategoryIcon({ category }: { category: BuiltinExtensionManifest["cat
 
 const ENUM_GEN_IDS = new Set(["enum-gen", "excel-enum-java", "excel-enum-typescript", "excel-to-java-enum", "excel-to-ts-enum"]);
 const DDL_TO_EXCEL_IDS = new Set(["ddl-to-excel"]);
+const DB_CONNECTOR_IDS = new Set(["db-connector"]);
 
 // ──────────────────────────────────────────────
 // Props 型
@@ -189,6 +191,10 @@ export function ExtensionPanel({ open, onOpenChange, selectedFileId }: Extension
     activeWorkspaceId !== null &&
     DDL_TO_EXCEL_IDS.has(activeWorkspaceId);
 
+  const showDbConnector =
+    activeWorkspaceId !== null &&
+    DB_CONNECTOR_IDS.has(activeWorkspaceId);
+
   // ── レンダリング ────────────────────────────
 
   return (
@@ -220,7 +226,11 @@ export function ExtensionPanel({ open, onOpenChange, selectedFileId }: Extension
         </SheetHeader>
 
         {/* ── ワークスペース表示（内蔵拡張） ── */}
-        {showDdlToExcel ? (
+        {showDbConnector ? (
+          <div className="flex-1 overflow-hidden">
+            <DbConnectorWorkspace />
+          </div>
+        ) : showDdlToExcel ? (
           <div className="flex-1 overflow-hidden">
             <DdlToExcelWorkspace />
           </div>

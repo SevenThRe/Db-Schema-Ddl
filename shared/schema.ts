@@ -829,3 +829,65 @@ export interface BinaryCommandResult {
   skippedCount: number;
   skippedTables: string[];
 }
+
+// ──────────────────────────────────────────────
+// DB 接続管理 型定義
+// ──────────────────────────────────────────────
+
+export type DbDriver = "mysql" | "postgres";
+
+export interface DbConnectionConfig {
+  id: string;
+  name: string;
+  driver: DbDriver;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+}
+
+export interface DbColumnSchema {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  primaryKey: boolean;
+  defaultValue?: string;
+  comment?: string;
+}
+
+export interface DbTableSchema {
+  name: string;
+  comment?: string;
+  columns: DbColumnSchema[];
+}
+
+export interface DbSchemaSnapshot {
+  connectionId: string;
+  connectionName: string;
+  database: string;
+  tables: DbTableSchema[];
+}
+
+export interface DbColumnDiff {
+  columnName: string;
+  changeType: "added" | "removed" | "modified";
+  before?: DbColumnSchema;
+  after?: DbColumnSchema;
+}
+
+export interface DbTableDiff {
+  tableName: string;
+  changeType: "added" | "removed" | "modified";
+  columnDiffs: DbColumnDiff[];
+}
+
+export interface DbSchemaDiffResult {
+  sourceLabel: string;
+  targetLabel: string;
+  tableDiffs: DbTableDiff[];
+  addedTables: number;
+  removedTables: number;
+  modifiedTables: number;
+  unchangedTables: number;
+}
