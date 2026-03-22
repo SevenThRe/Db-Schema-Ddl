@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useExtensions, type InstalledExtension, type ExtensionCatalog } from "@/hooks/use-extensions";
 import { useBuiltinExtensions } from "@/hooks/use-ddl";
 import { EnumGenWorkspace } from "@/components/extensions/EnumGenWorkspace";
+import { DdlToExcelWorkspace } from "@/components/extensions/DdlToExcelWorkspace";
 import { cn } from "@/lib/utils";
 import type { BuiltinExtensionManifest } from "@shared/schema";
 import { useFiles } from "@/hooks/use-ddl";
@@ -62,7 +63,8 @@ function ExtCategoryIcon({ category }: { category: BuiltinExtensionManifest["cat
 // 現在は enum-gen のみ対応。今後はここに追加する。
 // ──────────────────────────────────────────────
 
-const ENUM_GEN_IDS = new Set(["enum-gen", "excel-enum-java", "excel-enum-typescript"]);
+const ENUM_GEN_IDS = new Set(["enum-gen", "excel-enum-java", "excel-enum-typescript", "excel-to-java-enum", "excel-to-ts-enum"]);
+const DDL_TO_EXCEL_IDS = new Set(["ddl-to-excel"]);
 
 // ──────────────────────────────────────────────
 // Props 型
@@ -183,6 +185,10 @@ export function ExtensionPanel({ open, onOpenChange, selectedFileId }: Extension
     ENUM_GEN_IDS.has(activeWorkspaceId) &&
     currentFile != null;
 
+  const showDdlToExcel =
+    activeWorkspaceId !== null &&
+    DDL_TO_EXCEL_IDS.has(activeWorkspaceId);
+
   // ── レンダリング ────────────────────────────
 
   return (
@@ -214,7 +220,11 @@ export function ExtensionPanel({ open, onOpenChange, selectedFileId }: Extension
         </SheetHeader>
 
         {/* ── ワークスペース表示（内蔵拡張） ── */}
-        {showEnumGen ? (
+        {showDdlToExcel ? (
+          <div className="flex-1 overflow-hidden">
+            <DdlToExcelWorkspace />
+          </div>
+        ) : showEnumGen ? (
           <div className="flex-1 overflow-hidden">
             <EnumGenWorkspace fileId={currentFile!.id} fileName={currentFile!.originalName} />
           </div>

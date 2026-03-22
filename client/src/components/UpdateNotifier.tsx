@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
-type UpdateStatus = "idle" | "checking" | "current" | "available" | "downloading" | "error";
+type UpdateStatus = "idle" | "checking" | "current" | "available" | "error";
 
 const FALLBACK_RELEASE_URL = "https://github.com/SevenThRe/Db-Schema-Ddl/releases";
 
@@ -22,6 +22,7 @@ interface UpdateNotifierProps {
 export function UpdateNotifier({ className }: UpdateNotifierProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [status, setStatus] = useState<UpdateStatus>("idle");
+  const [isDownloading, setIsDownloading] = useState(false);
   const [currentVersion] = useState(() => __APP_VERSION__);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
@@ -48,13 +49,15 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
   }, []);
 
   const handleInstall = useCallback(async () => {
-    setStatus("downloading");
+    setIsDownloading(true);
     try {
       await desktopBridge.updater.downloadAndInstall();
       // ダウンロード・インストール後はアプリが再起動するので到達しない
     } catch (error) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "安装失败，请手动下载。");
+    } finally {
+      setIsDownloading(false);
     }
   }, []);
 
@@ -72,9 +75,11 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
       case "checking":
         return { title: formatVersionLabel(currentVersion), summary: "正在检查更新…", tone: "text-muted-foreground" };
       case "available":
-        return { title: formatVersionLabel(latestVersion), summary: "检测到新版本，可立即安装。", tone: "text-amber-500" };
-      case "downloading":
-        return { title: formatVersionLabel(latestVersion), summary: "正在下载并安装，完成后自动重启…", tone: "text-blue-500" };
+        return {
+          title: formatVersionLabel(latestVersion),
+          summary: isDownloading ? "正在下载并安装，完成后自动重启…" : "检测到新版本，可立即安装。",
+          tone: isDownloading ? "text-blue-500" : "text-amber-500",
+        };
       case "error":
         return { title: formatVersionLabel(currentVersion), summary: errorMessage || "检查失败。", tone: "text-destructive" };
       case "current":
@@ -95,7 +100,7 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
             className,
           )}
         >
-          {status === "checking" || status === "downloading"
+          {status === "checking" || isDownloading
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
             : null}
           {formatVersionLabel(currentVersion)}
@@ -117,7 +122,7 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
             size="icon"
             className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
             onClick={() => void runUpdateCheck()}
-            disabled={status === "checking" || status === "downloading"}
+            disabled={status === "checking" || isDownloading}
           >
             {status === "checking"
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -150,12 +155,12 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
                 size="sm"
                 className="w-full h-8 text-xs"
                 onClick={() => void handleInstall()}
-                disabled={status === "downloading"}
+                disabled={isDownloading}
               >
-                {status === "downloading"
+                {isDownloading
                   ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   : <Download className="mr-1.5 h-3.5 w-3.5" />}
-                {status === "downloading" ? "安装中…" : "立即安装"}
+                {isDownloading ? "安装中…" : "立即安装"}
               </Button>
             </div>
           ) : null}
