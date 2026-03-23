@@ -6,9 +6,8 @@
  * クライアント側の簡易版。
  */
 
-import type { ColumnInfo, TableInfo } from "@shared/schema";
+import type { ColumnInfo, TableInfo, DbColumnSchema, DbSchemaSnapshot, DbSchemaDiffResult } from "@shared/schema";
 import type { DiffTableEntry } from "./types";
-import { computeLineDiff, groupIntoHunks, countDiffStats } from "./diff-algorithm";
 
 type Dialect = "mysql" | "oracle";
 
@@ -187,6 +186,94 @@ function normalizeColumnInfo(col: ColumnInfo): NormalizedColumn {
 // 公開アダプタ関数
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// DB スナップショット DDL レンダラー
+// ---------------------------------------------------------------------------
+
+/**
+ * DB スナップショットのカラム情報から CREATE TABLE DDL を生成する。
+ * カラム型は DB から取得済みの完全な型文字列（varchar(255) 等）をそのまま使用する。
+ */
+function renderDbTableDdl(
+  tableName: string,
+  tableComment: string | undefined,
+  columns: DbColumnSchema[],
+): string {
+  if (columns.length === 0) return `-- (no columns: ${tableName})`;
+  const lines: string[] = [];
+  lines.push(`CREATE TABLE \`${tableName}\` (`);
+
+  const pkCols = columns.filter((c) => c.primaryKey).map((c) => c.name);
+  const hasPk = pkCols.length > 0;
+
+  columns.forEach((col, index) => {
+    let line = `  \`${col.name}\` ${col.dataType}`;
+    if (!col.nullable) line += " NOT NULL";
+    if (col.defaultValue != null) line += ` DEFAULT ${col.defaultValue}`;
+    if (col.comment) line += ` COMMENT '${escapeSql(col.comment)}'`;
+    const isLast = index === columns.length - 1 && !hasPk;
+    if (!isLast) line += ",";
+    lines.push(line);
+  });
+
+  if (hasPk) {
+    lines.push(`  PRIMARY KEY (${pkCols.map((c) => `\`${c}\``).join(", ")})`);
+  }
+
+  let closing = ")";
+  if (tableComment) closing += ` COMMENT = '${escapeSql(tableComment)}'`;
+  closing += ";";
+  lines.push(closing);
+
+  return lines.join("\n");
+}
+
+/**
+ * DB スナップショット差分から DiffTableEntry 配列を生成する。
+ * source/target スナップショットの全カラム情報を使って DDL テキストを生成し、
+ * 行レベルの差分を計算する。
+ */
+export function dbSnapshotDiffToDiffEntries(
+  source: DbSchemaSnapshot,
+  target: DbSchemaSnapshot,
+  result: DbSchemaDiffResult,
+): DiffTableEntry[] {
+  const sourceMap = new Map(source.tables.map((t) => [t.name, t]));
+  const targetMap = new Map(target.tables.map((t) => [t.name, t]));
+
+  return result.tableDiffs.map((diff, index) => {
+    const srcTable = sourceMap.get(diff.tableName);
+    const tgtTable = targetMap.get(diff.tableName);
+
+    const oldDdl = srcTable
+      ? renderDbTableDdl(diff.tableName, srcTable.comment ?? undefined, srcTable.columns)
+      : "";
+    const newDdl = tgtTable
+      ? renderDbTableDdl(diff.tableName, tgtTable.comment ?? undefined, tgtTable.columns)
+      : "";
+
+    const action: DiffTableEntry["action"] =
+      diff.changeType === "added" ? "added"
+      : diff.changeType === "removed" ? "removed"
+      : "modified";
+
+    return {
+      key: `db-diff-${diff.tableName}-${index}`,
+      tableName: diff.tableName,
+      action,
+      addedLines: 0,
+      removedLines: 0,
+      oldDdl,
+      newDdl,
+      diffHunks: [],
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Excel スキーマ差分アダプタ
+// ---------------------------------------------------------------------------
+
 /**
  * SchemaDiff（Excel-to-Excel）のテーブル変更からDiffTableEntryを生成する
  */
@@ -228,20 +315,16 @@ export function schemaDiffToDiffEntry(
   const oldDdl = oldColumns.length > 0 ? renderTableDdl(oldTableName, oldLogical, oldColumns, dialect) : "";
   const newDdl = newColumns.length > 0 ? renderTableDdl(newTableName, newLogical, newColumns, dialect) : "";
 
-  const diffLines = computeLineDiff(oldDdl, newDdl);
-  const stats = countDiffStats(diffLines);
-  const diffHunks = groupIntoHunks(diffLines);
-
   return {
     key: tableChange.entityKey || `schema-${index}`,
     tableName,
     logicalName,
     action: (tableChange.action === "changed" ? "modified" : tableChange.action) as DiffTableEntry["action"],
-    addedLines: stats.added,
-    removedLines: stats.removed,
+    addedLines: 0,
+    removedLines: 0,
     oldDdl,
     newDdl,
-    diffHunks,
+    diffHunks: [],
   };
 }
 

@@ -18,6 +18,9 @@ import { useFiles, useSheets } from "@/hooks/use-ddl";
 import { type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { ExtensionWorkspaceHost } from "@/extensions/ExtensionWorkspaceHost";
+import { useExtensionHost } from "@/extensions/host-context";
+import type { MainSurface } from "@/extensions/host-api";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
@@ -130,8 +133,8 @@ export default function Dashboard() {
     return typeof fileId === "number" ? fileId : null;
   });
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
-  const [activeModule, setActiveModule] = useState<"workspace" | "ddl-import">(
-    () => (isDdlImportTestMode ? "ddl-import" : "workspace"),
+  const [activeSurface, setActiveSurface] = useState<MainSurface>(
+    () => (isDdlImportTestMode ? { kind: "ddl-import" } : { kind: "workspace" }),
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
@@ -155,10 +158,10 @@ export default function Dashboard() {
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (!desktopCapabilities.features.ddlImport && activeModule === "ddl-import") {
-      setActiveModule("workspace");
+    if (!desktopCapabilities.features.ddlImport && activeSurface.kind === "ddl-import") {
+      setActiveSurface({ kind: "workspace" });
     }
-  }, [activeModule, desktopCapabilities.features.ddlImport]);
+  }, [activeSurface, desktopCapabilities.features.ddlImport]);
 
   useEffect(() => {
     if (!desktopCapabilities.features.schemaDiff && viewMode === "diff") {
@@ -538,7 +541,7 @@ export default function Dashboard() {
     <DdlImportWorkspace
       onActivateFile={(fileId: number) => {
         setSelectedFileId(fileId);
-        setActiveModule("workspace");
+        setActiveSurface({ kind: "workspace" });
       }}
     />
   );
@@ -551,20 +554,20 @@ export default function Dashboard() {
             <div className="min-w-0 flex flex-1 items-center gap-3">
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
-                  variant={activeModule === "workspace" ? "default" : "outline"}
+                  variant={activeSurface.kind === "workspace" ? "default" : "outline"}
                   size="sm"
                   className="h-8 rounded-md px-3 text-xs"
-                  onClick={() => setActiveModule("workspace")}
+                  onClick={() => setActiveSurface({ kind: "workspace" })}
                 >
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   定义
                 </Button>
                 {desktopCapabilities.features.ddlImport ? (
                   <Button
-                    variant={activeModule === "ddl-import" ? "default" : "outline"}
+                    variant={activeSurface.kind === "ddl-import" ? "default" : "outline"}
                     size="sm"
                     className="h-8 rounded-md px-3 text-xs"
-                    onClick={() => setActiveModule("ddl-import")}
+                    onClick={() => setActiveSurface({ kind: "ddl-import" })}
                   >
                     <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
                     DDL 导入
@@ -594,12 +597,21 @@ export default function Dashboard() {
             onSelectFile={setSelectedFileId}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            activeSurface={activeSurface}
+            onNavigate={setActiveSurface}
             className="overflow-hidden border-r border-border"
           />
 
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden bg-background">
-              {desktopCapabilities.features.ddlImport && activeModule === "ddl-import" ? (
+              {activeSurface.kind === "extension" ? (
+                <ExtensionWorkspaceHost
+                  extensionId={activeSurface.extensionId}
+                  panelId={activeSurface.panelId}
+                  fileId={selectedFileId}
+                  fileName={selectedFileName}
+                />
+              ) : desktopCapabilities.features.ddlImport && activeSurface.kind === "ddl-import" ? (
                 renderDdlImportWorkspace()
               ) : isCompactLayout ? (
                 <>
@@ -619,7 +631,7 @@ export default function Dashboard() {
                         selectedTableNames={selectedTableNames}
                         onSelectedTableNamesChange={setSelectedTableNames}
                         onOpenImportWorkspace={
-                          desktopCapabilities.features.ddlImport ? () => setActiveModule("ddl-import") : undefined
+                          desktopCapabilities.features.ddlImport ? () => setActiveSurface({ kind: "ddl-import" }) : undefined
                         }
                       />
                     </ResizablePanel>
@@ -667,7 +679,7 @@ export default function Dashboard() {
                       selectedTableNames={selectedTableNames}
                       onSelectedTableNamesChange={setSelectedTableNames}
                       onOpenImportWorkspace={
-                        desktopCapabilities.features.ddlImport ? () => setActiveModule("ddl-import") : undefined
+                        desktopCapabilities.features.ddlImport ? () => setActiveSurface({ kind: "ddl-import" }) : undefined
                       }
                     />
                   </ResizablePanel>

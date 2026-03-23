@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::{ExtResult, ExtensionError};
+use crate::builtin_extensions::ExtensionContributes;
 
 // ──────────────────────────────────────────────
 // Manifest データ構造
@@ -29,6 +30,9 @@ pub struct ExtensionManifest {
     pub entry: HashMap<String, String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// V2: 拡張が宣言する Contribution（ナビゲーション・ワークスペース等）
+    #[serde(default)]
+    pub contributes: Option<ExtensionContributes>,
 }
 
 // ──────────────────────────────────────────────

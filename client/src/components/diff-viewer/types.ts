@@ -52,7 +52,12 @@ export interface DiffTableEntry {
   newDdl: string;
   /** 計算済み差分ハンク */
   diffHunks: DiffHunk[];
+  /** 構造化差分データ（セマンティック差分ビュー用、任意） */
+  structuredEntry?: import("./structured-types").StructuredDiffEntry;
 }
+
+/** 差分タブモード */
+export type DiffTabMode = "structured" | "ddl";
 
 /** DiffViewerShellのプロパティ */
 export interface DiffViewerShellProps {

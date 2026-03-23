@@ -102,6 +102,17 @@ Each panel component:
 - **UI State**: React local state (selected file, selected sheet, selected dialect)
 - **No global state library**: Data flows via React Query cache and URL parameters
 
+## Extension Boundary Spec
+
+See [`docs/extension-boundary-spec.md`](docs/extension-boundary-spec.md) for the normative rules on:
+- Manifest schema alignment (Rust ↔ TypeScript)
+- Capability fail-closed model and `useHostApiFor()` contract
+- Contribution resolver: disabled = invisible, extensionId tracing
+- Panel registry registration and lookup safety
+- New extension onboarding checklist (builtin and external)
+
+All new extensions must pass the checklist in §6 before merging.
+
 ## Debugging Tools
 
 ### Excel Inspection Script

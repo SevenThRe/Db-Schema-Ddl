@@ -718,4 +718,54 @@
       "DUPLICATE_TABLE_NAME": "检测到重复的表物理名“{{tableName}}”。"
     }
   }
+,
+  "extensions":   {
+    "title": "扩展功能",
+    "builtinTab": "内置扩展",
+    "installedTab": "已安装",
+    "noBuiltin": "暂无内置扩展",
+    "transformer": "变换器",
+    "dbConnector": "数据库连接器",
+    "open": "打开",
+    "back": "返回",
+    "noFileSelected": "请先在左侧文件列表选择一个 Excel 文件",
+    "badge": {
+      "running": "运行中"
+    },
+    "catalog": {
+      "fetchFailed": "获取失败",
+      "updateAvailable": " — 有可用更新",
+      "upToDate": " — 已是最新",
+      "latest": "最新: v{{version}}"
+    },
+    "button": {
+      "install": "安装",
+      "uninstall": "删除",
+      "start": "启动",
+      "stop": "停止",
+      "checkUpdate": "检查更新"
+    },
+    "officialExtensions": {
+      "dbManagement": {
+        "name": "DB 连接管理",
+        "description": "连接 MySQL / PostgreSQL，直接比对与应用 Schema"
+      }
+    },
+    "workspace": {
+      "disabled": "此扩展已被禁用",
+      "panelNotFound": "面板 \"{{panelId}}\" 未找到"
+    },
+    "toast": {
+      "installSuccess": "安装完成",
+      "installFailed": "安装失败",
+      "uninstallSuccess": "卸载完成",
+      "uninstallFailed": "卸载失败",
+      "startSuccess": "已启动",
+      "startFailed": "启动失败",
+      "stopSuccess": "已停止",
+      "stopFailed": "停止失败",
+      "checkUpdateFailed": "版本检查失败",
+      "githubConnectFailed": "无法连接到 GitHub"
+    }
+  }
 }

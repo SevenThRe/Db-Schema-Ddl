@@ -18,13 +18,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useToast } from "@/hooks/use-toast";
+import { useHostApi } from "@/extensions/host-context";
 import { parseUploadedAtMillis } from "@/components/ddl/name-fix-display-utils";
 import { translateApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Check, Columns2, Download, List, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, Code2, Columns2, Download, Layers, List, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DiffContent, schemaDiffToDiffEntry, type DiffViewMode, type DiffTableEntry } from "@/components/diff-viewer";
+import { StructuredDiffContent } from "@/components/diff-viewer/StructuredDiffContent";
+import { MonacoDdlDiff } from "@/components/diff-viewer/MonacoDdlDiff";
+import { schemaDiffToStructuredEntries } from "@/components/diff-viewer/structured-adapter";
+import type { StructuredDiffEntry } from "@/components/diff-viewer/structured-types";
 
 interface SchemaDiffPanelProps {
   fileId: number | null;
@@ -875,7 +879,9 @@ function buildColumnFieldDiffs(change: DiffColumn): Array<{ field: string; oldVa
 
 export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   const { t } = useTranslation();
-  const { toast } = useToast();
+  // SchemaDiffPanel の業務は Express API hooks 経由のため Capability スコープは不要
+  const { notifications } = useHostApi();
+  const toast = notifications.show;
   const { data: files } = useFiles();
   const previewMutation = useSchemaDiffPreview();
   const confirmMutation = useConfirmSchemaDiffRenames();
@@ -905,6 +911,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   const [hideFormattingOnly, setHideFormattingOnly] = useState(true);
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("side-by-side");
   const [diffDialect, setDiffDialect] = useState<"mysql" | "oracle">("mysql");
+  const [detailTab, setDetailTab] = useState<"structured" | "ddl">("structured");
 
   useEffect(() => {
     setPreviewResult(null);
@@ -1188,6 +1195,16 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     if (!selectedTableNode) return null;
     return schemaDiffToDiffEntry(selectedTableNode.tableChange, diffDialect, 0);
   }, [selectedTableNode, diffDialect]);
+
+  /** 選択中テーブルの構造化差分エントリ */
+  const selectedStructuredEntry = useMemo<StructuredDiffEntry | null>(() => {
+    if (!selectedTableNode) return null;
+    const entries = schemaDiffToStructuredEntries([{
+      sheetName: selectedTableNode.sheetName,
+      tableChanges: [selectedTableNode.tableChange],
+    }]);
+    return entries[0] ?? null;
+  }, [selectedTableNode]);
 
   const resolveFriendlyFieldLabel = (fieldKey: string): string => {
     switch (fieldKey) {
@@ -2042,40 +2059,78 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                           </div>
                         ) : (
                           <div className="h-[420px] flex flex-col">
-                            {/* DDL Diff ヘッダー（テーブル情報 + モード切替 + 方言選択） */}
+                            {/* ヘッダー：テーブル名 + タブ切替 + DDLモード切替 */}
                             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-slate-50 px-3 py-1.5 dark:bg-slate-800/50">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="truncate font-mono text-xs font-semibold">{selectedDiffEntry.tableName}</span>
-                                <span className="flex items-center gap-1.5 text-[10px] font-mono">
-                                  {selectedDiffEntry.addedLines > 0 ? <span className="text-green-600 dark:text-emerald-400">+{selectedDiffEntry.addedLines}</span> : null}
-                                  {selectedDiffEntry.removedLines > 0 ? <span className="text-red-600 dark:text-red-400">-{selectedDiffEntry.removedLines}</span> : null}
-                                </span>
+                                {selectedStructuredEntry && selectedStructuredEntry.columnChanges.length > 0 ? (
+                                  <span className="text-[10px] text-muted-foreground font-mono">
+                                    {selectedStructuredEntry.columnChanges.length} cols
+                                  </span>
+                                ) : null}
                               </div>
-                              <div className="flex items-center gap-1">
-                                <select
-                                  value={diffDialect}
-                                  onChange={(e) => setDiffDialect(e.target.value as "mysql" | "oracle")}
-                                  className="h-6 rounded border border-border bg-background px-1 text-[10px]"
-                                >
-                                  <option value="mysql">MySQL</option>
-                                  <option value="oracle">Oracle</option>
-                                </select>
-                                <Button variant={diffViewMode === "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("side-by-side")} title="Side by side">
-                                  <Columns2 className="h-3 w-3" />
-                                </Button>
-                                <Button variant={diffViewMode === "unified" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("unified")} title="Unified">
-                                  <List className="h-3 w-3" />
-                                </Button>
-                              </div>
+                              {/* DDLタブ時のみ方言・表示モード切替を表示 */}
+                              {detailTab === "ddl" ? (
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={diffDialect}
+                                    onChange={(e) => setDiffDialect(e.target.value as "mysql" | "oracle")}
+                                    className="h-6 rounded border border-border bg-background px-1 text-[10px]"
+                                  >
+                                    <option value="mysql">MySQL</option>
+                                    <option value="oracle">Oracle</option>
+                                  </select>
+                                  <Button variant={diffViewMode === "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("side-by-side")} title="Side by side">
+                                    <Columns2 className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant={diffViewMode !== "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("unified")} title="Inline">
+                                    <List className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
-                            {/* DDL 差分コンテンツ */}
+
+                            {/* タブバー：Structured / DDL Diff */}
+                            <div className="flex shrink-0 items-center gap-0.5 border-b border-border/40 bg-muted/20 px-2 py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setDetailTab("structured")}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+                                  detailTab === "structured"
+                                    ? "bg-background text-foreground shadow-sm border border-border/50"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                                )}
+                              >
+                                <Layers className="h-3 w-3" />
+                                Structured
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDetailTab("ddl")}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+                                  detailTab === "ddl"
+                                    ? "bg-background text-foreground shadow-sm border border-border/50"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                                )}
+                              >
+                                <Code2 className="h-3 w-3" />
+                                DDL Diff
+                              </button>
+                            </div>
+
+                            {/* コンテンツ：タブに応じて切替 */}
                             <div className="flex-1 overflow-hidden">
-                              <DiffContent
-                                hunks={selectedDiffEntry.diffHunks}
-                                viewMode={diffViewMode}
-                                oldTitle={`--- a/${selectedDiffEntry.tableName}`}
-                                newTitle={`+++ b/${selectedDiffEntry.tableName}`}
-                              />
+                              {detailTab === "structured" && selectedStructuredEntry ? (
+                                <StructuredDiffContent entry={selectedStructuredEntry} />
+                              ) : (
+                                <MonacoDdlDiff
+                                  oldValue={selectedDiffEntry.oldDdl}
+                                  newValue={selectedDiffEntry.newDdl}
+                                  sideBySide={diffViewMode === "side-by-side"}
+                                />
+                              )}
                             </div>
                           </div>
                         )}

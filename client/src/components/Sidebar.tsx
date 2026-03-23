@@ -30,13 +30,25 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
 import { ExtensionPanel } from "./ExtensionPanel";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { useExtensionHost } from "@/extensions/host-context";
+import type { MainSurface } from "@/extensions/host-api";
+import * as LucideIcons from "lucide-react";
 
 interface SidebarProps {
   selectedFileId: number | null;
   onSelectFile: (id: number | null) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  activeSurface?: MainSurface;
+  onNavigate?: (surface: MainSurface) => void;
   className?: string;
+}
+
+/** lucide-react アイコン名から動的にコンポーネントを取得 */
+function getLucideIcon(name?: string): LucideIcons.LucideIcon | null {
+  if (!name) return null;
+  const icon = (LucideIcons as Record<string, unknown>)[name];
+  return typeof icon === "function" ? (icon as LucideIcons.LucideIcon) : null;
 }
 
 export function Sidebar({
@@ -44,6 +56,8 @@ export function Sidebar({
   onSelectFile,
   collapsed,
   onToggleCollapse,
+  activeSurface,
+  onNavigate,
   className,
 }: SidebarProps) {
   const docsUrl = "https://seventhre.github.io/Db-Schema-Ddl/docs/manual-architecture";
@@ -58,6 +72,7 @@ export function Sidebar({
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
   const desktopCapabilities = desktopBridge.getCapabilities();
+  const { navigation: extNavItems } = useExtensionHost();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const dragEnterDepthRef = useRef(0);
   const { data: workbookTemplates = [], isLoading: isTemplatesLoading } = useWorkbookTemplates();
@@ -458,6 +473,27 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
+          {/* 拡張が Contribution で宣言したナビゲーション */}
+          {extNavItems.map((nav) => {
+            const Icon = getLucideIcon(nav.icon) ?? Puzzle;
+            const isActive = activeSurface?.kind === "extension" && activeSurface.extensionId === nav.extensionId;
+            return (
+              <Tooltip key={nav.id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={isActive ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8 rounded-md"
+                    onClick={() => onNavigate?.({ kind: "extension", extensionId: nav.extensionId, panelId: nav.panelId })}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{nav.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {extNavItems.length > 0 ? <div className="h-px w-6 bg-border" /> : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={openDocs}>
@@ -638,6 +674,23 @@ export function Sidebar({
 
       {/* Settings and Language Switcher at the bottom */}
       <div className="space-y-1.5 border-t border-border bg-background p-2">
+        {/* 拡張が Contribution で宣言したナビゲーション */}
+        {extNavItems.map((nav) => {
+          const Icon = getLucideIcon(nav.icon) ?? Puzzle;
+          const isActive = activeSurface?.kind === "extension" && activeSurface.extensionId === nav.extensionId;
+          return (
+            <Button
+              key={nav.id}
+              variant={isActive ? "secondary" : "ghost"}
+              className="h-8 w-full justify-start gap-2 rounded-md text-xs"
+              onClick={() => onNavigate?.({ kind: "extension", extensionId: nav.extensionId, panelId: nav.panelId })}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {nav.label}
+            </Button>
+          );
+        })}
+        {extNavItems.length > 0 ? <div className="h-px w-full bg-border" /> : null}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}

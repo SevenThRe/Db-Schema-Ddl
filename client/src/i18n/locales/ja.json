@@ -717,5 +717,54 @@
       "TYPE_ONLY_ACCEPTS_INTEGER_SIZE": "テーブル「{{tableName}}」のカラム「{{columnName}}」の型「{{dataType}}」は整数サイズのみ許可されます。",
       "DUPLICATE_TABLE_NAME": "テーブル物理名「{{tableName}}」が重複しています。"
     }
+  },
+  "extensions": {
+    "title": "拡張機能",
+    "builtinTab": "内蔵拡張",
+    "installedTab": "インストール済み",
+    "noBuiltin": "内蔵拡張はありません",
+    "transformer": "変換器",
+    "dbConnector": "DB コネクタ",
+    "open": "開く",
+    "back": "戻る",
+    "noFileSelected": "左のファイル一覧から Excel ファイルを選択してください",
+    "badge": {
+      "running": "実行中"
+    },
+    "catalog": {
+      "fetchFailed": "取得失敗",
+      "updateAvailable": " — アップデートあり",
+      "upToDate": " — 最新です",
+      "latest": "最新: v{{version}}"
+    },
+    "button": {
+      "install": "インストール",
+      "uninstall": "削除",
+      "start": "起動",
+      "stop": "停止",
+      "checkUpdate": "更新確認"
+    },
+    "officialExtensions": {
+      "dbManagement": {
+        "name": "DB 接続管理",
+        "description": "MySQL / PostgreSQL に接続し、スキーマを直接比較・適用する"
+      }
+    },
+    "workspace": {
+      "disabled": "この拡張機能は無効です",
+      "panelNotFound": "パネル \"{{panelId}}\" が見つかりません"
+    },
+    "toast": {
+      "installSuccess": "インストール完了",
+      "installFailed": "インストール失敗",
+      "uninstallSuccess": "アンインストール完了",
+      "uninstallFailed": "アンインストール失敗",
+      "startSuccess": "起動しました",
+      "startFailed": "起動失敗",
+      "stopSuccess": "停止しました",
+      "stopFailed": "停止失敗",
+      "checkUpdateFailed": "バージョン確認失敗",
+      "githubConnectFailed": "GitHub に接続できませんでした"
+    }
   }
 }

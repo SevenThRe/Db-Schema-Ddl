@@ -1,78 +1,237 @@
 // 組み込み拡張機能レジストリ
 // アプリケーションに内蔵された拡張機能のマニフェスト定義を管理する
+// V2: Contribution モデル対応 — ナビゲーション・ワークスペース・設定・コンテキストアクション
 
 use serde::{Deserialize, Serialize};
 
-/// 組み込み拡張機能のマニフェスト定義
+// ──────────────────────────────────────────────
+// Contribution サブ構造体
+// ──────────────────────────────────────────────
+
+/// サイドバーまたはヘッダーに表示するナビゲーションエントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NavigationItem {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default = "default_order")]
+    pub order: u32,
+}
+
+/// 拡張が提供するワークスペースパネル
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePanel {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+}
+
+/// 設定ページに表示するセクション
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSection {
+    pub id: String,
+    pub label: String,
+    #[serde(default = "default_order")]
+    pub order: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+}
+
+/// コンテキストメニューやアクションバーに表示するアクション
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextAction {
+    pub id: String,
+    pub label: String,
+    pub context: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+fn default_order() -> u32 {
+    100
+}
+
+/// 拡張が宣言する Contribution（貢献）の集合
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionContributes {
+    #[serde(default)]
+    pub navigation: Vec<NavigationItem>,
+    #[serde(default)]
+    pub workspace_panels: Vec<WorkspacePanel>,
+    #[serde(default)]
+    pub settings_sections: Vec<SettingsSection>,
+    #[serde(default)]
+    pub context_actions: Vec<ContextAction>,
+}
+
+// ──────────────────────────────────────────────
+// 拡張カテゴリ
+// ──────────────────────────────────────────────
+
+/// 拡張機能のカテゴリ分類
+/// serde デフォルト（PascalCase）で TS 側の "Transformer" | "DbConnector" | "Utility" と一致させる
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ExtensionCategory {
+    Transformer,
+    DbConnector,
+    Utility,
+}
+
+// ──────────────────────────────────────────────
+// 組み込み拡張マニフェスト V2
+// ──────────────────────────────────────────────
+
+/// 組み込み拡張機能のマニフェスト定義（V2: Contribution 対応）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuiltinExtensionManifest {
-    /// 拡張機能の一意識別子
     pub id: String,
-    /// 表示名
     pub name: String,
-    /// 機能説明
+    pub version: String,
     pub description: String,
-    /// 拡張機能カテゴリ
+    pub kind: String,
     pub category: ExtensionCategory,
-    /// 受け付ける入力フォーマット一覧
+    /// 要求する Capability 一覧（db.connect, db.schema.read 等）
+    #[serde(default)]
+    pub capabilities: Vec<String>,
     pub input_formats: Vec<String>,
-    /// 生成可能な出力フォーマット一覧
     pub output_formats: Vec<String>,
-}
-
-/// 拡張機能のカテゴリ分類
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ExtensionCategory {
-    /// 変換処理（ファイル形式の変換・生成）
-    Transformer,
-    /// データベース接続・操作
-    DbConnector,
+    pub contributes: ExtensionContributes,
 }
 
 /// 全組み込み拡張機能のマニフェストを返す
 pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
     vec![
-        BuiltinExtensionManifest {
-            id: "excel-to-ddl".to_string(),
-            name: "Excel → DDL".to_string(),
-            description: "データベース定義書（XLSX）からMySQL/Oracle用DDLを生成する".to_string(),
-            category: ExtensionCategory::Transformer,
-            input_formats: vec!["xlsx".to_string()],
-            output_formats: vec!["sql".to_string(), "zip".to_string()],
-        },
+        // excel-to-ddl はアプリ本体の主機能のため拡張として列挙しない
         BuiltinExtensionManifest {
             id: "ddl-to-excel".to_string(),
             name: "DDL → Excel".to_string(),
-            description: "SQL DDLファイルからデータベース定義書（XLSX）を逆生成する".to_string(),
+            version: "1.0.0".to_string(),
+            description: "从 SQL DDL 文件逆向生成数据库定义书（XLSX）".to_string(),
+            kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
+            capabilities: vec![],
             input_formats: vec!["sql".to_string()],
             output_formats: vec!["xlsx".to_string()],
+            contributes: ExtensionContributes {
+                navigation: vec![NavigationItem {
+                    id: "ddl-to-excel".to_string(),
+                    label: "DDL → Excel".to_string(),
+                    icon: Some("FileSpreadsheet".to_string()),
+                    order: 20,
+                }],
+                workspace_panels: vec![WorkspacePanel {
+                    id: "ddl-to-excel-workspace".to_string(),
+                    title: "DDL → Excel".to_string(),
+                    component: Some("DdlToExcelWorkspace".to_string()),
+                }],
+                ..Default::default()
+            },
         },
         BuiltinExtensionManifest {
             id: "excel-to-java-enum".to_string(),
             name: "Excel → Java Enum".to_string(),
-            description: "XLSXの列挙定義シートからJava enumクラスを生成する".to_string(),
+            version: "1.0.0".to_string(),
+            description: "从 XLSX 枚举定义表生成 Java enum 类".to_string(),
+            kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
+            capabilities: vec![],
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["java".to_string()],
+            contributes: ExtensionContributes {
+                navigation: vec![NavigationItem {
+                    id: "enum-gen".to_string(),
+                    label: "Enum 生成".to_string(),
+                    icon: Some("Zap".to_string()),
+                    order: 30,
+                }],
+                workspace_panels: vec![WorkspacePanel {
+                    id: "enum-gen-workspace".to_string(),
+                    title: "Enum 生成".to_string(),
+                    component: Some("EnumGenWorkspace".to_string()),
+                }],
+                ..Default::default()
+            },
         },
         BuiltinExtensionManifest {
             id: "excel-to-ts-enum".to_string(),
             name: "Excel → TypeScript Enum".to_string(),
-            description: "XLSXの列挙定義シートからTypeScript const enumを生成する".to_string(),
+            version: "1.0.0".to_string(),
+            description: "从 XLSX 枚举定义表生成 TypeScript const enum".to_string(),
+            kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
+            capabilities: vec![],
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["ts".to_string()],
+            contributes: ExtensionContributes {
+                workspace_panels: vec![WorkspacePanel {
+                    id: "enum-gen-workspace".to_string(),
+                    title: "Enum 生成".to_string(),
+                    component: Some("EnumGenWorkspace".to_string()),
+                }],
+                ..Default::default()
+            },
         },
         BuiltinExtensionManifest {
             id: "db-connector".to_string(),
             name: "DB 连接器".to_string(),
+            version: "1.0.0".to_string(),
             description: "连接 MySQL / PostgreSQL，浏览 Schema，对比多实例差异".to_string(),
+            kind: "builtin".to_string(),
             category: ExtensionCategory::DbConnector,
+            capabilities: vec![
+                "db.connect".to_string(),
+                "db.query".to_string(),
+                "db.schema.read".to_string(),
+            ],
             input_formats: vec!["mysql".to_string(), "postgres".to_string()],
             output_formats: vec!["diff".to_string(), "xlsx".to_string()],
+            contributes: ExtensionContributes {
+                navigation: vec![NavigationItem {
+                    id: "db-connector".to_string(),
+                    label: "数据库".to_string(),
+                    icon: Some("Database".to_string()),
+                    order: 10,
+                }],
+                workspace_panels: vec![WorkspacePanel {
+                    id: "db-connector-workspace".to_string(),
+                    title: "数据库工作台".to_string(),
+                    component: Some("DbConnectorWorkspace".to_string()),
+                }],
+                ..Default::default()
+            },
+        },
+        BuiltinExtensionManifest {
+            id: "schema-diff".to_string(),
+            name: "Schema Diff".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Excel 定义书的多版本 Schema 差分比较与 ALTER 生成".to_string(),
+            kind: "builtin".to_string(),
+            category: ExtensionCategory::Transformer,
+            capabilities: vec![],
+            input_formats: vec!["xlsx".to_string()],
+            output_formats: vec!["sql".to_string()],
+            contributes: ExtensionContributes {
+                navigation: vec![NavigationItem {
+                    id: "schema-diff".to_string(),
+                    label: "Schema Diff".to_string(),
+                    icon: Some("ArrowLeftRight".to_string()),
+                    order: 15,
+                }],
+                workspace_panels: vec![WorkspacePanel {
+                    id: "schema-diff-workspace".to_string(),
+                    title: "Schema Diff".to_string(),
+                    component: Some("SchemaDiffPanel".to_string()),
+                }],
+                ..Default::default()
+            },
         },
     ]
 }

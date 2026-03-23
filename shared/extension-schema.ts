@@ -68,6 +68,8 @@ export const extensionManifestSchema = z.object({
   entry: z.record(extensionPlatformSchema, z.string()),
   /** 要求する Capability 一覧 */
   capabilities: z.array(extensionCapabilitySchema).default([]),
+  /** V2: 拡張が宣言する Contribution（Rust manifest.rs と同期） */
+  contributes: z.lazy(() => extensionContributesSchema).optional(),
 });
 
 export type ExtensionManifest = z.infer<typeof extensionManifestSchema>;
@@ -147,3 +149,89 @@ export const OFFICIAL_EXTENSIONS = {
 
 export type OfficialExtensionId =
   (typeof OFFICIAL_EXTENSIONS)[keyof typeof OFFICIAL_EXTENSIONS];
+
+// ──────────────────────────────────────────────
+// Extension Manifest V2 — 統合型拡張モデル
+// builtin / external 共通の Contribution 宣言付き
+// ──────────────────────────────────────────────
+
+/** 拡張が提供するナビゲーションエントリ */
+export const navigationItemSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  icon: z.string().optional(),
+  order: z.number().default(100),
+});
+export type NavigationItem = z.infer<typeof navigationItemSchema>;
+
+/** 拡張が提供するワークスペースパネル */
+export const workspacePanelSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  component: z.string().optional(),
+});
+export type WorkspacePanel = z.infer<typeof workspacePanelSchema>;
+
+/** 拡張が提供する設定セクション */
+export const settingsSectionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  order: z.number().default(100),
+  component: z.string().optional(),
+});
+export type SettingsSection = z.infer<typeof settingsSectionSchema>;
+
+/** 拡張が提供するコンテキストアクション */
+export const contextActionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  context: z.enum(["connection", "schema", "table", "file"]),
+  icon: z.string().optional(),
+});
+export type ContextAction = z.infer<typeof contextActionSchema>;
+
+/** 拡張の Contribution 宣言 */
+export const extensionContributesSchema = z.object({
+  navigation: z.array(navigationItemSchema).default([]),
+  workspacePanels: z.array(workspacePanelSchema).default([]),
+  settingsSections: z.array(settingsSectionSchema).default([]),
+  contextActions: z.array(contextActionSchema).default([]),
+});
+export type ExtensionContributes = z.infer<typeof extensionContributesSchema>;
+
+/** 拡張の種別 */
+export const extensionKindSchema = z.enum(["builtin", "external"]);
+export type ExtensionKind = z.infer<typeof extensionKindSchema>;
+
+/** 拡張カテゴリ */
+export const extensionCategorySchema = z.enum(["Transformer", "DbConnector", "Utility"]);
+export type ExtensionCategory = z.infer<typeof extensionCategorySchema>;
+
+/** 統合マニフェスト V2 — builtin と external の両方に対応 */
+export const extensionManifestV2Schema = z.object({
+  id: z.string().min(1).regex(/^[a-z0-9-]+$/),
+  name: z.string().min(1),
+  version: z.string().default("1.0.0"),
+  description: z.string().default(""),
+  kind: extensionKindSchema,
+  category: extensionCategorySchema.default("Utility"),
+  api_version: z.number().int().optional(),
+  publisher: z.string().optional(),
+  entry: z.record(z.string(), z.string()).optional(),
+  capabilities: z.array(z.string()).default([]),
+  contributes: extensionContributesSchema.default({}),
+  inputFormats: z.array(z.string()).default([]),
+  outputFormats: z.array(z.string()).default([]),
+});
+export type ExtensionManifestV2 = z.infer<typeof extensionManifestV2Schema>;
+
+/** フロントエンドで消費する解決済み拡張状態 */
+export const resolvedExtensionSchema = z.object({
+  manifest: extensionManifestV2Schema,
+  enabled: z.boolean(),
+  stage: extensionLifecycleStageSchema.nullable().default(null),
+  pid: z.number().int().nullable().default(null),
+  port: z.number().int().nullable().default(null),
+  error: z.string().nullable().default(null),
+});
+export type ResolvedExtension = z.infer<typeof resolvedExtensionSchema>;

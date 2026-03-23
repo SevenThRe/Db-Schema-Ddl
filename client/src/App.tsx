@@ -9,6 +9,11 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { ExtensionHostProvider } from "@/extensions/host-context";
+import { registerBuiltinPanels } from "@/extensions/builtin/register-all";
+
+// builtin パネルを起動時に一度だけ登録
+registerBuiltinPanels();
 
 type RuntimeProbeState = {
   runtime: string;
@@ -77,7 +82,9 @@ function App() {
           </div>
         ) : null}
         <Toaster />
-        <Router />
+        <ExtensionHostProvider>
+          <Router />
+        </ExtensionHostProvider>
       </TooltipProvider>
     </QueryClientProvider>
     </ThemeProvider>
