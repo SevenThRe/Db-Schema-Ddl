@@ -333,8 +333,20 @@ export const desktopBridge = {
   // 自動更新
   updater: {
     /** 更新の有無を確認する */
-    async check(): Promise<{ available: boolean; version?: string; body?: string }> {
-      return await invoke<{ available: boolean; version?: string; body?: string }>("update_check");
+    async check(): Promise<{
+      available: boolean;
+      version?: string;
+      body?: string;
+      canAutoInstall?: boolean;
+      releaseUrl?: string;
+    }> {
+      return await invoke<{
+        available: boolean;
+        version?: string;
+        body?: string;
+        canAutoInstall?: boolean;
+        releaseUrl?: string;
+      }>("update_check");
     },
 
     /** 更新をダウンロードしてインストールする (アプリが再起動される) */

@@ -216,14 +216,14 @@ const SQL_TYPE_NAMES = new Set([
 ]);
 
 const SQL_TOKEN_CLASS_MAP: Record<SqlTokenType, string> = {
-  plain: "text-slate-200",
-  keyword: "text-cyan-300 font-semibold",
-  type: "text-sky-300",
-  identifier: "text-amber-300",
-  string: "text-emerald-300",
-  comment: "text-slate-400 italic",
-  number: "text-violet-300",
-  operator: "text-slate-300",
+  plain: "text-slate-700 dark:text-slate-200",
+  keyword: "font-semibold text-cyan-700 dark:text-cyan-300",
+  type: "text-sky-700 dark:text-sky-300",
+  identifier: "text-amber-700 dark:text-amber-300",
+  string: "text-emerald-700 dark:text-emerald-300",
+  comment: "italic text-slate-400 dark:text-slate-500",
+  number: "text-violet-700 dark:text-violet-300",
+  operator: "text-slate-500 dark:text-slate-300",
 };
 
 interface NameFixFileVersionMeta {
@@ -961,6 +961,11 @@ export function DdlGenerator({
 
     return result;
   }, [tables, searchQuery, sortMode]);
+
+  const outputTargetLabel =
+    currentTable?.physicalTableName || sheetName || "当前对象";
+  const selectedTableCount = effectiveSelectedTableNames.size;
+  const candidateTableCount = filteredAndSortedTables?.length || tables?.length || 0;
 
   function getNameFixKey(_table: TableInfo, index: number): string {
     return String(index);
@@ -1832,57 +1837,56 @@ export function DdlGenerator({
   };
 
   if (!tables || tables.length === 0) {
-    if (!onOpenImportWorkspace) {
-      return null;
-    }
-
     return (
-      <div className="flex h-full flex-col bg-background">
-        <div className="border-b border-border bg-background px-3 py-2">
+      <div className="flex h-full flex-col bg-transparent">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground" data-testid="text-ddl-header">
-              <Code className="h-4 w-4 text-muted-foreground" />
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-slate-50" data-testid="text-ddl-header">
+              <Code className="h-4 w-4 text-slate-500 dark:text-slate-400" />
               DDL
             </h3>
+            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {t("ddl.inspectorHint")}
+            </p>
           </div>
         </div>
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center text-muted-foreground">
-          <div className="max-w-sm">
-            <p className="text-sm font-medium text-foreground">当前没有可生成 DDL 的表。</p>
-            <p className="mt-2 text-xs">选择工作表后可生成 SQL，也可以直接使用 DDL 导入。</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center text-muted-foreground">
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+            <Database className="h-8 w-8 text-slate-500 dark:text-slate-400" />
           </div>
-          <Button size="sm" variant="outline" className="rounded-md px-4" onClick={onOpenImportWorkspace}>
-            DDL 导入
-          </Button>
+          <div className="max-w-sm">
+            <p className="text-base font-semibold text-foreground">{t("ddl.emptySelectionTitle")}</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("ddl.emptySelectionDescription")}</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border bg-background px-3 py-2">
+    <div className="flex h-full flex-col bg-transparent">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div className="space-y-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Code className="h-4 w-4 text-muted-foreground" />
-            <h3 className="shrink-0 whitespace-nowrap text-sm font-semibold text-foreground" data-testid="text-ddl-header">DDL</h3>
+          <div className="flex min-w-0 items-center justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-slate-50" data-testid="text-ddl-header">
+                <Code className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                {t("ddl.generatedPanelTitle")}
+              </h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t("ddl.selectionSummary", {
+                  dialect: dialect.toUpperCase(),
+                  selected: selectedTableCount,
+                  total: candidateTableCount,
+                })}
+              </p>
+            </div>
           </div>
 
-          <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
-            {onOpenImportWorkspace ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onOpenImportWorkspace}
-                className="h-8 shrink-0 rounded-md px-3 text-xs"
-              >
-                <span className="hidden xl:inline">DDL 导入</span>
-                <span className="xl:hidden">导入</span>
-              </Button>
-            ) : null}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-x-auto pb-0.5">
             <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
-              <SelectTrigger className="h-8 w-[98px] shrink-0 rounded-md bg-background text-xs sm:w-[104px]" data-testid="select-dialect">
-                <SelectValue placeholder="Dialect" />
+              <SelectTrigger className="h-8 w-[108px] shrink-0 rounded-md border-slate-200/90 bg-white text-xs dark:border-slate-800 dark:bg-slate-950 sm:w-[116px]" data-testid="select-dialect">
+                <SelectValue placeholder={t("ddl.dialectPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="mysql" data-testid="option-mysql">MySQL</SelectItem>
@@ -1891,12 +1895,12 @@ export function DdlGenerator({
             </Select>
 
             <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
-              <SelectTrigger className="h-8 w-[116px] shrink-0 rounded-md bg-background text-xs sm:w-[124px]" data-testid="select-export-mode">
-                <SelectValue placeholder="导出模式" />
+              <SelectTrigger className="h-8 w-[128px] shrink-0 rounded-md border-slate-200/90 bg-white text-xs dark:border-slate-800 dark:bg-slate-950 sm:w-[138px]" data-testid="select-export-mode">
+                <SelectValue placeholder={t("ddl.exportModePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="single" data-testid="option-single">Single File</SelectItem>
-                <SelectItem value="per-table" data-testid="option-per-table">Per Table (ZIP)</SelectItem>
+                <SelectItem value="single" data-testid="option-single">{t("ddl.exportModeSingle")}</SelectItem>
+                <SelectItem value="per-table" data-testid="option-per-table">{t("ddl.exportModePerTable")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1904,7 +1908,7 @@ export function DdlGenerator({
               size="sm"
               onClick={handleGenerate}
               disabled={isPending || isGeneratingByReference}
-              className="h-8 shrink-0 rounded-md px-3 text-xs font-semibold"
+              className="h-8 shrink-0 rounded-md px-4 text-xs font-semibold"
               data-testid="button-generate"
             >
               {isPending || isGeneratingByReference ? t("ddl.generating") : (
@@ -1928,30 +1932,35 @@ export function DdlGenerator({
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden bg-background">
+      <div className="relative flex-1 overflow-hidden bg-white dark:bg-slate-950">
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-muted-foreground">
-            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border bg-muted/20">
-              <Database className="h-6 w-6 opacity-60" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+              <Database className="h-7 w-7 opacity-70" />
             </div>
             {generationError ? (
-              <div className="mt-4 max-w-[90%] border border-red-500/30 bg-red-500/5 p-4 text-left">
+              <div className="mt-5 max-w-[90%] rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-left">
                 <p className="text-sm font-semibold text-red-700 dark:text-red-300">{t("ddl.generationFailed")}</p>
                 <pre className="mt-2 whitespace-pre-wrap text-xs text-red-700/90 dark:text-red-200/90">{generationError}</pre>
               </div>
             ) : (
-              <div className="mt-4 max-w-sm text-center">
-                <p className="text-sm font-medium text-foreground">{t("ddl.readyToGenerate")}</p>
+              <div className="mt-5 max-w-sm text-center">
+                <p className="text-base font-semibold text-foreground">{t("ddl.readyToGenerate")}</p>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  {t("ddl.readyHint")}
+                </p>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex h-full flex-col bg-background">
-            <div className="flex justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="flex h-full flex-col bg-transparent">
+            <div className="flex justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Output</p>
+                <p className="truncate text-sm font-medium text-slate-950 dark:text-slate-50">
+                  {outputTargetLabel}
+                </p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {currentTable?.physicalTableName || sheetName || "当前对象"} · {dialect.toUpperCase()}
+                  {dialect.toUpperCase()} · {generatedTables?.length ?? 1} table payload{(generatedTables?.length ?? 1) > 1 ? "s" : ""}
                 </p>
               </div>
               <div className="flex justify-end gap-1.5">
@@ -1977,8 +1986,11 @@ export function DdlGenerator({
                 </Button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto custom-scrollbar">
-              <pre className="p-4 font-mono text-[12px] leading-relaxed text-foreground selection:bg-primary/20" data-testid="text-ddl-output">
+            <div className="flex-1 overflow-auto bg-slate-50/70 custom-scrollbar dark:bg-slate-950">
+              <pre
+                className="min-h-full bg-slate-50/90 p-4 font-mono text-[12px] leading-relaxed text-slate-700 selection:bg-primary/20 dark:bg-slate-950 dark:text-slate-200"
+                data-testid="text-ddl-output"
+              >
                 <code>
                   {highlightedDdlTokens.map((token, tokenIndex) => (
                     <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>

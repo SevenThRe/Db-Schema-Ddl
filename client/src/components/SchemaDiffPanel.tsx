@@ -24,7 +24,7 @@ import { translateApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Check, Code2, Columns2, Download, Layers, List, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { DiffContent, schemaDiffToDiffEntry, type DiffViewMode, type DiffTableEntry } from "@/components/diff-viewer";
+import { schemaDiffToDiffEntry, type DiffViewMode, type DiffTableEntry } from "@/components/diff-viewer";
 import { StructuredDiffContent } from "@/components/diff-viewer/StructuredDiffContent";
 import { MonacoDdlDiff } from "@/components/diff-viewer/MonacoDdlDiff";
 import { schemaDiffToStructuredEntries } from "@/components/diff-viewer/structured-adapter";
@@ -912,6 +912,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("side-by-side");
   const [diffDialect, setDiffDialect] = useState<"mysql" | "oracle">("mysql");
   const [detailTab, setDetailTab] = useState<"structured" | "ddl">("structured");
+  const [inspectorTab, setInspectorTab] = useState<"inspect" | "rename" | "alter">("inspect");
 
   useEffect(() => {
     setPreviewResult(null);
@@ -925,6 +926,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     setSelectedTableNodeKey("");
     setShowMetadataChanges(false);
     setHideFormattingOnly(true);
+    setInspectorTab("inspect");
   }, [fileId, sheetName]);
 
 
@@ -1332,6 +1334,88 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     });
     return counts;
   }, [previewResult]);
+
+  const workspaceRenameSuggestions = useMemo(() => {
+    return previewResult?.renameSuggestions ?? [];
+  }, [previewResult]);
+
+  const selectedRenameSuggestions = useMemo(() => {
+    if (!selectedTableNode || !previewResult) {
+      return [];
+    }
+    const currentTableNames = new Set([
+      selectedTableNode.tableChange.oldTable?.physicalTableName ?? "",
+      selectedTableNode.tableChange.newTable?.physicalTableName ?? "",
+      selectedTableNode.tableChange.oldTable?.logicalTableName ?? "",
+      selectedTableNode.tableChange.newTable?.logicalTableName ?? "",
+    ].filter(Boolean));
+
+    return previewResult.renameSuggestions.filter((suggestion) => {
+      if (suggestion.entityType === "table") {
+        return currentTableNames.has(suggestion.tableNameBefore ?? "") || currentTableNames.has(suggestion.tableNameAfter ?? "");
+      }
+      return currentTableNames.has(suggestion.tableNameBefore ?? "") || currentTableNames.has(suggestion.tableNameAfter ?? "");
+    });
+  }, [previewResult, selectedTableNode]);
+
+  const selectedInspectorSummary = useMemo(() => {
+    if (!selectedStructuredEntry) {
+      return null;
+    }
+
+    const columnActions = {
+      added: 0,
+      removed: 0,
+      modified: 0,
+      renamed: 0,
+    };
+    let breaking = 0;
+    let metadata = 0;
+
+    for (const column of selectedStructuredEntry.columnChanges) {
+      if (column.action === "added") columnActions.added += 1;
+      else if (column.action === "removed") columnActions.removed += 1;
+      else if (column.action === "modified") columnActions.modified += 1;
+      else columnActions.renamed += 1;
+
+      const impactedFields = new Set(column.changedFields);
+      const isMetadataOnly = impactedFields.size > 0 && Array.from(impactedFields).every((field) => field === "comment" || field === "logicalName");
+      if (isMetadataOnly) {
+        metadata += 1;
+      } else {
+        breaking += 1;
+      }
+    }
+
+    return {
+      ...columnActions,
+      breaking,
+      metadata,
+      tableFieldChanges: selectedStructuredEntry.tableFieldChanges.filter((item) => !item.semanticEqual).length,
+    };
+  }, [selectedStructuredEntry]);
+
+  const selectedImpactTone = useMemo(() => {
+    if (!selectedTableNode) {
+      return null;
+    }
+    if (selectedTableNode.impactGroup === "breaking") {
+      return {
+        label: t("schemaDiff.tree.groups.breaking"),
+        className: "border-rose-300/50 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+      };
+    }
+    if (selectedTableNode.impactGroup === "metadata") {
+      return {
+        label: t("schemaDiff.tree.groups.metadata"),
+        className: "border-border/70 bg-muted/40 text-muted-foreground",
+      };
+    }
+    return {
+      label: t("schemaDiff.tree.groups.nonBreaking"),
+      className: "border-sky-300/50 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    };
+  }, [selectedTableNode, t]);
 
   const applyBatchRenameDecision = (decision: RenameDecisionDraft, target: "all" | "table" | "column" = "all") => {
     if (!previewResult) {
@@ -1863,12 +1947,33 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
               </Card>
             ) : null}
 
-            <Card className="border-border/60">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t("schemaDiff.diffView.title")}</CardTitle>
+            <Card className="overflow-hidden border-border/60 bg-[linear-gradient(180deg,rgba(15,23,42,0.035),transparent_14rem)]">
+              <CardHeader className="border-b border-border/60 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-sm">{t("schemaDiff.diffView.title")}</CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Structured review in the center, decision queue and ALTER controls on the right.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className="text-[10px] font-mono">
+                      {filteredTableNodes.length} tables
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] border-rose-300/50 text-rose-700 dark:text-rose-300">
+                      {groupedTableNodes.breaking.length} breaking
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] border-sky-300/50 text-sky-700 dark:text-sky-300">
+                      {groupedTableNodes.non_breaking.length} structural
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      {groupedTableNodes.metadata.length} metadata
+                    </Badge>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="border border-border/60 bg-muted/20 p-2.5 space-y-2">
+              <CardContent className="p-0">
+                <div className="border-b border-border/60 bg-muted/15 p-3">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
                       { key: "all", label: t("schemaDiff.filters.all"), count: changeCounts.all },
@@ -1889,7 +1994,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       </Button>
                     ))}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
                     <Input
                       value={tableKeyword}
                       onChange={(event) => setTableKeyword(event.target.value)}
@@ -1903,7 +2008,7 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                       placeholder={t("schemaDiff.filters.columnKeywordPlaceholder")}
                     />
                   </div>
-                  <details className="rounded border border-border/60 bg-background/60">
+                  <details className="mt-2 rounded border border-border/60 bg-background/60">
                     <summary className="cursor-pointer select-none px-2.5 py-2 text-xs">
                       {t("schemaDiff.filters.advancedFilters")}
                     </summary>
@@ -1959,19 +2064,18 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                 </div>
 
                 {filteredTableNodes.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <div className="px-4 py-8 text-xs text-muted-foreground">
                     {previewResult.sheets.length === 0
                       ? t("schemaDiff.empty.noChanges")
                       : t("schemaDiff.empty.noChangesInFilter")}
-                  </p>
+                  </div>
                 ) : (
-                  <div className="rounded-md border border-border/60 overflow-hidden">
-                    <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
-                      <div className="border-b lg:border-b-0 lg:border-r border-border/60">
-                        <div className="px-3 py-2 border-b border-border/60 text-xs text-muted-foreground">
-                          {t("schemaDiff.tree.changedTables", { count: filteredTableNodes.length })}
-                        </div>
-                        <ScrollArea className="h-[420px]">
+                  <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_380px]">
+                    <div className="border-b xl:border-b-0 xl:border-r border-border/60 bg-muted/10">
+                      <div className="px-3 py-2 border-b border-border/60 text-xs text-muted-foreground">
+                        {t("schemaDiff.tree.changedTables", { count: filteredTableNodes.length })}
+                      </div>
+                      <ScrollArea className="h-[420px] xl:h-[680px]">
                           <div className="p-2 space-y-1.5">
                             {[
                               {
@@ -2013,12 +2117,22 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                                       type="button"
                                       onClick={() => setSelectedTableNodeKey(node.key)}
                                       className={cn(
-                                        "w-full rounded-md border px-2.5 py-2 text-left transition-colors",
+                                        "relative w-full overflow-hidden rounded-xl border px-3 py-2.5 text-left transition-colors",
                                         selectedTableNodeKey === node.key
-                                          ? "border-primary/50 bg-primary/10"
-                                          : "border-border/60 hover:bg-muted/40",
+                                          ? "border-primary/50 bg-primary/10 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)]"
+                                          : "border-border/60 bg-background/80 hover:bg-muted/40",
                                       )}
                                     >
+                                      <span
+                                        className={cn(
+                                          "absolute inset-y-0 left-0 w-1",
+                                          node.impactGroup === "breaking"
+                                            ? "bg-rose-500/70"
+                                            : node.impactGroup === "metadata"
+                                              ? "bg-slate-400/50"
+                                              : "bg-sky-500/70",
+                                        )}
+                                      />
                                       <div className="flex items-center gap-2 text-xs">
                                         <span className={cn("w-5 text-center font-mono font-semibold", actionTone(node.tableChange.action))}>
                                           {actionMarker(node.tableChange.action)}
@@ -2049,204 +2163,389 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
                               </div>
                             ))}
                           </div>
-                        </ScrollArea>
-                      </div>
+                      </ScrollArea>
+                    </div>
 
-                      <div className="min-w-0">
-                        {!selectedTableNode || !selectedDiffEntry ? (
-                          <div className="h-[420px] flex items-center justify-center text-xs text-muted-foreground">
-                            {t("schemaDiff.tree.selectLeftHint")}
-                          </div>
-                        ) : (
-                          <div className="h-[420px] flex flex-col">
-                            {/* ヘッダー：テーブル名 + タブ切替 + DDLモード切替 */}
-                            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-slate-50 px-3 py-1.5 dark:bg-slate-800/50">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="truncate font-mono text-xs font-semibold">{selectedDiffEntry.tableName}</span>
-                                {selectedStructuredEntry && selectedStructuredEntry.columnChanges.length > 0 ? (
-                                  <span className="text-[10px] text-muted-foreground font-mono">
-                                    {selectedStructuredEntry.columnChanges.length} cols
-                                  </span>
-                                ) : null}
+                    <div className="min-w-0 border-b border-border/60 xl:border-b-0 xl:border-r">
+                      {!selectedTableNode || !selectedDiffEntry ? (
+                        <div className="flex h-[420px] xl:h-[680px] items-center justify-center text-xs text-muted-foreground">
+                          {t("schemaDiff.tree.selectLeftHint")}
+                        </div>
+                      ) : (
+                        <div className="flex h-[420px] xl:h-[680px] flex-col">
+                          <div className="shrink-0 border-b border-border/50 bg-[linear-gradient(135deg,rgba(248,250,252,0.96),rgba(241,245,249,0.82))] px-4 py-3 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.9))]">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Active Review</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span className="truncate font-mono text-base font-semibold">{selectedDiffEntry.tableName}</span>
+                                  {selectedImpactTone ? (
+                                    <Badge variant="outline" className={cn("text-[10px]", selectedImpactTone.className)}>
+                                      {selectedImpactTone.label}
+                                    </Badge>
+                                  ) : null}
+                                  {selectedStructuredEntry?.requiresConfirmation ? (
+                                    <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300/40">
+                                      {t("schemaDiff.rename.confirm")}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                                  <Badge variant="outline" className="text-[10px] font-mono">sheet/{selectedTableNode.sheetName}</Badge>
+                                  <Badge variant="outline" className="text-[10px] font-mono">{selectedTableNode.impactGroup}</Badge>
+                                  {selectedStructuredEntry?.columnChanges.length ? (
+                                    <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                                      {selectedStructuredEntry.columnChanges.length} cols
+                                    </Badge>
+                                  ) : null}
+                                  {selectedInspectorSummary ? (
+                                    <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                                      {selectedInspectorSummary.breaking} breaking fields
+                                    </Badge>
+                                  ) : null}
+                                </div>
                               </div>
-                              {/* DDLタブ時のみ方言・表示モード切替を表示 */}
                               {detailTab === "ddl" ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-background/85 p-1">
                                   <select
                                     value={diffDialect}
                                     onChange={(e) => setDiffDialect(e.target.value as "mysql" | "oracle")}
-                                    className="h-6 rounded border border-border bg-background px-1 text-[10px]"
+                                    className="h-7 rounded border border-border bg-background px-2 text-[10px]"
                                   >
                                     <option value="mysql">MySQL</option>
                                     <option value="oracle">Oracle</option>
                                   </select>
-                                  <Button variant={diffViewMode === "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("side-by-side")} title="Side by side">
+                                  <Button variant={diffViewMode === "side-by-side" ? "default" : "ghost"} size="icon" className="h-7 w-7" onClick={() => setDiffViewMode("side-by-side")} title="Side by side">
                                     <Columns2 className="h-3 w-3" />
                                   </Button>
-                                  <Button variant={diffViewMode !== "side-by-side" ? "default" : "ghost"} size="icon" className="h-6 w-6" onClick={() => setDiffViewMode("unified")} title="Inline">
+                                  <Button variant={diffViewMode !== "side-by-side" ? "default" : "ghost"} size="icon" className="h-7 w-7" onClick={() => setDiffViewMode("unified")} title="Inline">
                                     <List className="h-3 w-3" />
                                   </Button>
                                 </div>
                               ) : null}
                             </div>
 
-                            {/* タブバー：Structured / DDL Diff */}
-                            <div className="flex shrink-0 items-center gap-0.5 border-b border-border/40 bg-muted/20 px-2 py-0.5">
-                              <button
-                                type="button"
-                                onClick={() => setDetailTab("structured")}
-                                className={cn(
-                                  "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
-                                  detailTab === "structured"
-                                    ? "bg-background text-foreground shadow-sm border border-border/50"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                                )}
-                              >
-                                <Layers className="h-3 w-3" />
-                                Structured
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDetailTab("ddl")}
-                                className={cn(
-                                  "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
-                                  detailTab === "ddl"
-                                    ? "bg-background text-foreground shadow-sm border border-border/50"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                                )}
-                              >
-                                <Code2 className="h-3 w-3" />
-                                DDL Diff
-                              </button>
-                            </div>
-
-                            {/* コンテンツ：タブに応じて切替 */}
-                            <div className="flex-1 overflow-hidden">
-                              {detailTab === "structured" && selectedStructuredEntry ? (
-                                <StructuredDiffContent entry={selectedStructuredEntry} />
-                              ) : (
-                                <MonacoDdlDiff
-                                  oldValue={selectedDiffEntry.oldDdl}
-                                  newValue={selectedDiffEntry.newDdl}
-                                  sideBySide={diffViewMode === "side-by-side"}
-                                />
-                              )}
+                            <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
+                              <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Old Label</p>
+                                <p className="mt-1 truncate text-xs font-medium">{selectedTableNode.tableLabelBefore}</p>
+                              </div>
+                              <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">New Label</p>
+                                <p className="mt-1 truncate text-xs font-medium">{selectedTableNode.tableLabelAfter}</p>
+                              </div>
+                              <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Visible Columns</p>
+                                <p className="mt-1 font-mono text-sm">{selectedTableNode.visibleColumnChanges.length}</p>
+                              </div>
+                              <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Metadata</p>
+                                <p className="mt-1 font-mono text-sm">{selectedTableNode.columnImpactSummary.metadataCount}</p>
+                              </div>
                             </div>
                           </div>
-                        )}
-                      </div>
+
+                          <div className="flex shrink-0 items-center gap-1 border-b border-border/40 bg-muted/20 px-3 py-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setDetailTab("structured")}
+                              className={cn(
+                                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors",
+                                detailTab === "structured"
+                                  ? "border border-border/60 bg-background text-foreground shadow-sm"
+                                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                              )}
+                            >
+                              <Layers className="h-3 w-3" />
+                              Structured
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDetailTab("ddl")}
+                              className={cn(
+                                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors",
+                                detailTab === "ddl"
+                                  ? "border border-border/60 bg-background text-foreground shadow-sm"
+                                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                              )}
+                            >
+                              <Code2 className="h-3 w-3" />
+                              DDL Diff
+                            </button>
+                          </div>
+
+                          <div className="flex-1 overflow-hidden">
+                            {detailTab === "structured" && selectedStructuredEntry ? (
+                              <StructuredDiffContent entry={selectedStructuredEntry} />
+                            ) : (
+                              <MonacoDdlDiff
+                                oldValue={selectedDiffEntry.oldDdl}
+                                newValue={selectedDiffEntry.newDdl}
+                                sideBySide={diffViewMode === "side-by-side"}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-muted/10">
+                      <ScrollArea className="h-[420px] xl:h-[680px]">
+                        <div className="space-y-3 p-3">
+                          <div className="rounded-xl border border-border/60 bg-background/90 p-2">
+                            <div className="grid grid-cols-3 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setInspectorTab("inspect")}
+                                className={cn(
+                                  "rounded-lg px-3 py-2 text-[11px] font-medium transition-colors",
+                                  inspectorTab === "inspect"
+                                    ? "bg-foreground text-background"
+                                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                                )}
+                              >
+                                Inspect
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectorTab("rename")}
+                                className={cn(
+                                  "rounded-lg px-3 py-2 text-[11px] font-medium transition-colors",
+                                  inspectorTab === "rename"
+                                    ? "bg-foreground text-background"
+                                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                                )}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectorTab("alter")}
+                                className={cn(
+                                  "rounded-lg px-3 py-2 text-[11px] font-medium transition-colors",
+                                  inspectorTab === "alter"
+                                    ? "bg-foreground text-background"
+                                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                                )}
+                              >
+                                ALTER
+                              </button>
+                            </div>
+                          </div>
+                          {inspectorTab === "inspect" ? (
+                            <div className="rounded-xl border border-border/60 bg-background/90 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                                Selection
+                              </p>
+                              {selectedTableNode && selectedInspectorSummary ? (
+                                <>
+                                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                      <p className="text-[10px] text-muted-foreground">Breaking fields</p>
+                                      <p className="mt-1 font-mono text-sm">{selectedInspectorSummary.breaking}</p>
+                                    </div>
+                                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                      <p className="text-[10px] text-muted-foreground">Metadata only</p>
+                                      <p className="mt-1 font-mono text-sm">{selectedInspectorSummary.metadata}</p>
+                                    </div>
+                                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                      <p className="text-[10px] text-muted-foreground">Table attrs</p>
+                                      <p className="mt-1 font-mono text-sm">{selectedInspectorSummary.tableFieldChanges}</p>
+                                    </div>
+                                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                      <p className="text-[10px] text-muted-foreground">Visible columns</p>
+                                      <p className="mt-1 font-mono text-sm">{selectedStructuredEntry?.columnChanges.length ?? 0}</p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Pathing</p>
+                                    <p className="mt-1 text-xs font-medium">{selectedTableNode.tableLabelBefore}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">to</p>
+                                    <p className="mt-1 text-xs font-medium">{selectedTableNode.tableLabelAfter}</p>
+                                  </div>
+                                  {previewResult.mcpHints.nextActions.length > 0 ? (
+                                    <div className="mt-3 space-y-1.5">
+                                      <p className="text-[11px] font-medium text-muted-foreground">{t("schemaDiff.notes.title")}</p>
+                                      {previewResult.mcpHints.nextActions.slice(0, 3).map((note, index) => (
+                                        <div key={`note-${index}`} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                                          {note}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <p className="mt-2 text-xs text-muted-foreground">{t("schemaDiff.tree.selectLeftHint")}</p>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {inspectorTab === "rename" ? (
+                          <div className="rounded-xl border border-border/60 bg-background/90 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Rename Queue</p>
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  {selectedRenameSuggestions.length > 0
+                                    ? `${selectedRenameSuggestions.length} suggestions in selection`
+                                    : `${workspaceRenameSuggestions.length} suggestions in workspace`}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="text-[10px]">{renameDecisionSummary.pending} pending</Badge>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => applyBatchRenameDecision("accept", "all")}>
+                                {t("schemaDiff.rename.bulkAccept")}
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => applyBatchRenameDecision("reject", "all")}>
+                                {t("schemaDiff.rename.bulkReject")}
+                              </Button>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              {(selectedRenameSuggestions.length > 0 ? selectedRenameSuggestions : workspaceRenameSuggestions.slice(0, 4)).map((suggestion) => (
+                                <div key={suggestion.entityKey} className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <Badge variant="outline" className="text-[10px]">{suggestion.entityType}</Badge>
+                                    <Badge variant="outline" className="text-[10px] font-mono">{suggestion.confidence.toFixed(2)}</Badge>
+                                  </div>
+                                  <p className="mt-2 text-xs font-medium">
+                                    {suggestion.entityType === "table"
+                                      ? `${suggestion.tableNameBefore ?? "-"} -> ${suggestion.tableNameAfter ?? "-"}`
+                                      : `${suggestion.columnNameBefore ?? "-"} -> ${suggestion.columnNameAfter ?? "-"} (${suggestion.tableNameAfter ?? suggestion.tableNameBefore ?? "-"})`}
+                                  </p>
+                                  <ToggleGroup
+                                    type="single"
+                                    value={renameDecisions[suggestion.entityKey] ?? suggestion.decision}
+                                    onValueChange={(value) => setSuggestionDecision(suggestion.entityKey, (value || "pending") as RenameDecisionDraft)}
+                                    className="mt-2 grid grid-cols-3 gap-1 rounded-md border border-border/60 bg-background/80 p-1"
+                                  >
+                                    <ToggleGroupItem value="accept" variant="default" size="sm" className="h-7 rounded text-[10px] text-muted-foreground data-[state=on]:bg-emerald-500/15 data-[state=on]:text-emerald-700 dark:data-[state=on]:text-emerald-300">
+                                      {t("schemaDiff.rename.accept")}
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem value="reject" variant="default" size="sm" className="h-7 rounded text-[10px] text-muted-foreground data-[state=on]:bg-rose-500/15 data-[state=on]:text-rose-700 dark:data-[state=on]:text-rose-300">
+                                      {t("schemaDiff.rename.reject")}
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem value="pending" variant="default" size="sm" className="h-7 rounded text-[10px] text-muted-foreground data-[state=on]:bg-sky-500/15 data-[state=on]:text-sky-700 dark:data-[state=on]:text-sky-300">
+                                      {t("schemaDiff.rename.pending")}
+                                    </ToggleGroupItem>
+                                  </ToggleGroup>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          ) : null}
+
+                          {inspectorTab === "alter" ? (
+                          <div className="rounded-xl border border-border/60 bg-background/90 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">ALTER Studio</p>
+                                <p className="mt-1 text-[10px] text-muted-foreground">Generate and inspect migration SQL without leaving the review surface.</p>
+                              </div>
+                              <Badge variant="outline" className="text-[10px]">
+                                {alterResult?.artifacts.length ?? 0} artifacts
+                              </Badge>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 gap-2">
+                              <Select value={dialect} onValueChange={(value) => setDialect(value as "mysql" | "oracle")}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="mysql">MySQL</SelectItem>
+                                  <SelectItem value="oracle">Oracle</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Select value={outputMode} onValueChange={(value) => setOutputMode(value as "single_table" | "multi_table")}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="single_table">{t("schemaDiff.alter.singleTable")}</SelectItem>
+                                  <SelectItem value="multi_table">{t("schemaDiff.alter.multiTable")}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Select value={packaging} onValueChange={(value) => setPackaging(value as "single_file" | "zip")}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="single_file">{t("schemaDiff.alter.singleFile")}</SelectItem>
+                                  <SelectItem value="zip">ZIP</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 gap-2">
+                              <div className="rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.splitBySheet")}</p>
+                                  <Switch checked={splitBySheet} onCheckedChange={setSplitBySheet} />
+                                </div>
+                                <div className="mt-2 flex items-center justify-between">
+                                  <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.includeUnconfirmed")}</p>
+                                  <Switch checked={includeUnconfirmed} onCheckedChange={setIncludeUnconfirmed} />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex gap-2">
+                              <Button size="sm" className="h-8 flex-1 text-xs" onClick={handleGenerateAlterPreview} disabled={alterPreviewMutation.isPending}>
+                                {alterPreviewMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                                {t("schemaDiff.alter.build")}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleExportAlter}>
+                                <Download className="mr-1 h-3.5 w-3.5" />
+                                {t("schemaDiff.alter.export")}
+                              </Button>
+                            </div>
+
+                            {alterResult ? (
+                              <div className="mt-3 space-y-2">
+                                <Select value={selectedArtifactName} onValueChange={setSelectedArtifactName}>
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {alterResult.artifacts.map((artifact) => (
+                                      <SelectItem key={artifact.artifactName} value={artifact.artifactName}>
+                                        {artifact.artifactName}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <pre className="max-h-[280px] overflow-auto rounded-lg border border-border/60 bg-black/[0.92] p-3 font-mono text-[11px] leading-relaxed selection:bg-primary/30">
+                                  {selectedArtifact?.sql ? (
+                                    highlightedAlterTokens.map((token, tokenIndex) => (
+                                      <span key={`alter-sql-token-${tokenIndex}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
+                                        {token.text}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-slate-300">{t("schemaDiff.alter.noSqlPreview")}</span>
+                                  )}
+                                </pre>
+                              </div>
+                            ) : null}
+
+                            {previewResult.mcpHints.nextActions.length > 0 ? (
+                              <div className="mt-3 space-y-1.5">
+                                <p className="text-[11px] font-medium text-muted-foreground">{t("schemaDiff.notes.title")}</p>
+                                {previewResult.mcpHints.nextActions.slice(0, 2).map((note, index) => (
+                                  <div key={`note-${index}`} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                                    {note}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          ) : null}
+                        </div>
+                      </ScrollArea>
                     </div>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 bg-gradient-to-br from-primary/[0.04] to-transparent">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t("schemaDiff.alter.title")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 xl:grid-cols-5 gap-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.dialect")}</p>
-                    <Select value={dialect} onValueChange={(value) => setDialect(value as "mysql" | "oracle")}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="mysql">MySQL</SelectItem>
-                        <SelectItem value="oracle">Oracle</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.outputMode")}</p>
-                    <Select value={outputMode} onValueChange={(value) => setOutputMode(value as "single_table" | "multi_table")}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="single_table">{t("schemaDiff.alter.singleTable")}</SelectItem>
-                        <SelectItem value="multi_table">{t("schemaDiff.alter.multiTable")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">{t("schemaDiff.alter.packaging")}</p>
-                    <Select value={packaging} onValueChange={(value) => setPackaging(value as "single_file" | "zip")}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="single_file">{t("schemaDiff.alter.singleFile")}</SelectItem>
-                        <SelectItem value="zip">ZIP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="rounded-md border border-border/70 px-2.5 py-1.5 flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.splitBySheet")}</p>
-                    <Switch checked={splitBySheet} onCheckedChange={setSplitBySheet} />
-                  </div>
-                  <div className="rounded-md border border-border/70 px-2.5 py-1.5 flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">{t("schemaDiff.alter.includeUnconfirmed")}</p>
-                    <Switch checked={includeUnconfirmed} onCheckedChange={setIncludeUnconfirmed} />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" className="h-8 text-xs" onClick={handleGenerateAlterPreview} disabled={alterPreviewMutation.isPending}>
-                    {alterPreviewMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
-                    {t("schemaDiff.alter.build")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={handleExportAlter}
-                    disabled={false}
-                  >
-                    <Download className="w-3.5 h-3.5 mr-1" />
-                    {t("schemaDiff.alter.export")}
-                  </Button>
-                </div>
-
-                {alterResult ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px]">
-                        {t("schemaDiff.alter.artifactsCount", { count: alterResult.artifacts.length })}
-                      </Badge>
-                      <Select value={selectedArtifactName} onValueChange={setSelectedArtifactName}>
-                        <SelectTrigger className="h-8 text-xs max-w-[360px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {alterResult.artifacts.map((artifact) => (
-                            <SelectItem key={artifact.artifactName} value={artifact.artifactName}>
-                              {artifact.artifactName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Input
-                      readOnly
-                      value={selectedArtifact?.artifactName || ""}
-                      className="h-8 text-xs bg-muted/20"
-                    />
-                    <pre className="max-h-[360px] overflow-auto rounded-md border border-border/60 bg-black/[0.92] p-3 font-mono text-xs leading-relaxed selection:bg-primary/30">
-                      {selectedArtifact?.sql ? (
-                        highlightedAlterTokens.map((token, tokenIndex) => (
-                          <span key={`alter-sql-token-${tokenIndex}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
-                            {token.text}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-slate-300">{t("schemaDiff.alter.noSqlPreview")}</span>
-                      )}
-                    </pre>
-                  </div>
-                ) : null}
               </CardContent>
             </Card>
           </>

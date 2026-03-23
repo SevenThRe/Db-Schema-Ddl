@@ -24,9 +24,82 @@ use crate::{
 
 const DEFAULT_MAX_CONSECUTIVE_EMPTY_ROWS: usize = 10;
 const TEMP_UPLOAD_VALIDATION_FILE_NAME: &str = "tauri-upload-validation.xlsx";
+const RELEASES_LATEST_URL: &str = "https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest";
+const RELEASES_PAGE_URL: &str = "https://github.com/SevenThRe/Db-Schema-Ddl/releases";
 
 fn command_error(action: &str, error: impl Display) -> String {
   format!("Failed to {action}: {error}")
+}
+
+fn strip_version_prefix(version: &str) -> &str {
+  version.strip_prefix('v').unwrap_or(version)
+}
+
+fn compare_versions(left: &str, right: &str) -> std::cmp::Ordering {
+  let parse = |input: &str| {
+    strip_version_prefix(input)
+      .split(['.', '-', '+'])
+      .map(|part| part.parse::<u64>().unwrap_or(0))
+      .collect::<Vec<_>>()
+  };
+
+  let left_parts = parse(left);
+  let right_parts = parse(right);
+  let max_len = left_parts.len().max(right_parts.len());
+
+  for index in 0..max_len {
+    let left_value = *left_parts.get(index).unwrap_or(&0);
+    let right_value = *right_parts.get(index).unwrap_or(&0);
+    match left_value.cmp(&right_value) {
+      std::cmp::Ordering::Equal => continue,
+      ordering => return ordering,
+    }
+  }
+
+  std::cmp::Ordering::Equal
+}
+
+fn extract_version_from_release_url(url: &str) -> Option<String> {
+  let tag_marker = "/releases/tag/";
+  let start = url.find(tag_marker)? + tag_marker.len();
+  let version = url[start..].trim().trim_matches('/').to_string();
+  if version.is_empty() {
+    None
+  } else {
+    Some(version)
+  }
+}
+
+async fn fetch_latest_release_fallback() -> Result<(String, String), String> {
+  let client = reqwest::Client::builder()
+    .redirect(reqwest::redirect::Policy::none())
+    .build()
+    .map_err(|error| error.to_string())?;
+
+  let response = client
+    .get(RELEASES_LATEST_URL)
+    .header("User-Agent", "DBSchemaExcel2DDL")
+    .send()
+    .await
+    .map_err(|error| error.to_string())?;
+
+  let release_url = if response.status().is_redirection() {
+    response
+      .headers()
+      .get(reqwest::header::LOCATION)
+      .and_then(|value| value.to_str().ok())
+      .map(str::to_string)
+      .ok_or_else(|| "GitHub release redirect location missing".to_string())?
+  } else if response.status().is_success() {
+    response.url().to_string()
+  } else {
+    return Err(format!("GitHub release page error: HTTP {}", response.status()));
+  };
+
+  let version = extract_version_from_release_url(&release_url)
+    .ok_or_else(|| format!("Unable to parse release version from {release_url}"))?;
+
+  Ok((version, release_url))
 }
 
 fn require_uploaded_file(app: &tauri::AppHandle, file_id: i64) -> Result<UploadedFileRecord, String> {
@@ -573,28 +646,53 @@ pub async fn enum_gen_export(
 // ─── 自動更新コマンド ─────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateCheckResult {
   pub available: bool,
   pub version: Option<String>,
   pub body: Option<String>,
+  pub can_auto_install: bool,
+  pub release_url: Option<String>,
 }
 
 /// 更新の有無を確認する
 #[tauri::command]
 pub async fn update_check(app: tauri::AppHandle) -> Result<UpdateCheckResult, String> {
   use tauri_plugin_updater::UpdaterExt;
+  let current_version = app.package_info().version.to_string();
+
   match app.updater().map_err(|e| e.to_string())?.check().await {
     Ok(Some(update)) => Ok(UpdateCheckResult {
       available: true,
       version: Some(update.version.clone()),
       body: update.body.clone(),
+      can_auto_install: true,
+      release_url: Some(format!(
+        "{}/tag/{}",
+        RELEASES_PAGE_URL,
+        update.version
+      )),
     }),
     Ok(None) => Ok(UpdateCheckResult {
       available: false,
       version: None,
       body: None,
+      can_auto_install: false,
+      release_url: Some(RELEASES_PAGE_URL.to_string()),
     }),
-    Err(e) => Err(e.to_string()),
+    Err(e) => {
+      let updater_error = e.to_string();
+      match fetch_latest_release_fallback().await {
+        Ok((latest_version, release_url)) => Ok(UpdateCheckResult {
+          available: compare_versions(&latest_version, &current_version).is_gt(),
+          version: Some(strip_version_prefix(&latest_version).to_string()),
+          body: None,
+          can_auto_install: false,
+          release_url: Some(release_url),
+        }),
+        Err(_) => Err(updater_error),
+      }
+    }
   }
 }
 

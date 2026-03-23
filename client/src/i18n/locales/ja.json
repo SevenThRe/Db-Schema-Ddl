@@ -16,7 +16,9 @@
     "docs": "ドキュメント",
     "docsHint": "取込や解析で迷ったときは、クイックスタートとトラブルシューティングを確認できます。",
     "openGuide": "ガイドを開く",
-    "deleteFile": "ファイルを削除"
+    "deleteFile": "ファイルを削除",
+    "timestampUnavailable": "タイムスタンプなし",
+    "deleteConfirm": "このファイルを削除しますか？"
   },
   "sheet": {
     "selectSheet": "シートを選択",
@@ -24,7 +26,11 @@
     "failed": "シートの読み込みに失敗しました",
     "noSheets": "シートが見つかりません",
     "filterUndefined": "定義のないシートを非表示",
-    "noDefinedSheets": "表定義のあるシートが見つかりません"
+    "noDefinedSheets": "表定義のあるシートが見つかりません",
+    "summary": "{{total}} sheets · {{defined}} parsed",
+    "summaryFiltered": "{{total}} sheets · {{defined}} parsed · filtered",
+    "parsedLabel": "parsed",
+    "rawLabel": "raw"
   },
   "table": {
     "columns": "列",
@@ -42,6 +48,8 @@
     "noTables": "このシートにテーブル定義が見つかりません",
     "tablesFound": "シート内に {{count}} 個のテーブルが見つかりました",
     "tablesParsedFromSelection": "選択範囲から {{count}} 個のテーブルを解析しました",
+    "compactView": "Compact",
+    "standardView": "Standard",
     "namingWarningBadge": "命名警告",
     "namingWarningTitle": "不正な物理名が検出されました。",
     "namingWarningColumns": "{{count}} 件のカラム物理名が規約に違反しています。",
@@ -52,12 +60,22 @@
     "generate": "作成",
     "generating": "作成中...",
     "readyToGenerate": "SQL を生成する準備ができました",
+    "readyHint": "中央プレビューを確認してから、ここで SQL を生成します。",
     "generated": "DDL が生成されました",
     "generatedSuccess": "{{count}} 個のテーブルの {{dialect}} DDL を正常に生成しました",
     "generationFailed": "生成に失敗しました",
     "copy": "コピー",
     "copied": "コピー済み",
     "copiedToClipboard": "クリップボードにコピーしました",
+    "generatedPanelTitle": "SQL 出力",
+    "inspectorHint": "出力インスペクタ",
+    "selectionSummary": "{{dialect}} · {{selected}}/{{total}} selected",
+    "emptySelectionTitle": "生成対象のテーブルが選択されていません。",
+    "emptySelectionDescription": "中央プレビューでシートとテーブルを選択してください。",
+    "dialectPlaceholder": "Dialect",
+    "exportModePlaceholder": "出力モード",
+    "exportModeSingle": "Single File",
+    "exportModePerTable": "Per Table (ZIP)",
     "namingWarningsFound": "{{count}} 件のテーブルに命名警告",
     "namingWarningBadge": "命名警告",
     "invalidColumnsHint": "{{count}} 件のカラム名が不正です",
@@ -373,6 +391,13 @@
     "autoParse": "自動解析",
     "spreadsheet": "スプレッドシート"
   },
+  "dashboard": {
+    "workspace": "定義",
+    "ddlImport": "DDL 取込",
+    "noSheetSelected": "シート未選択",
+    "sheetsPane": "Sheets",
+    "inspectorPane": "Inspector"
+  },
   "search": {
     "button": "検索",
     "placeholder": "シートとテーブルを検索...",
@@ -583,7 +608,23 @@
     "ready": "アップデートの準備が完了しました",
     "readyDesc": "バージョン {{version}} のダウンロードが完了しました。再起動後に自動でインストールされます。",
     "restartNow": "今すぐ再起動",
-    "restartLater": "後で再起動"
+    "restartLater": "後で再起動",
+    "notifier": {
+      "serviceUnavailable": "現在、配信サービスに接続できません。",
+      "installFailed": "インストールに失敗しました。しばらくしてから再試行してください。",
+      "checking": "更新を確認中…",
+      "installing": "ダウンロードとインストールを進めています。完了後に自動で再起動します…",
+      "availableReady": "新しいバージョンが見つかりました。すぐにインストールできます。",
+      "availableManual": "新しいバージョンは見つかりましたが、自動更新用メタデータが不足しています。リリースページから手動でダウンロードしてください。",
+      "checkFailed": "更新確認に失敗しました。",
+      "upToDate": "最新バージョンです。",
+      "currentVersion": "現在のバージョン",
+      "latestVersion": "最新バージョン {{version}}",
+      "installingShort": "インストール中…",
+      "installNow": "今すぐインストール",
+      "downloadFromRelease": "リリースページからダウンロード",
+      "viewRelease": "リリースを見る"
+    }
   },
   "common": {
     "cancel": "キャンセル",
@@ -720,14 +761,20 @@
   },
   "extensions": {
     "title": "拡張機能",
-    "builtinTab": "内蔵拡張",
-    "installedTab": "インストール済み",
-    "noBuiltin": "内蔵拡張はありません",
+    "navLabel": "拡張機能",
+    "panelTitle": "拡張機能センター",
     "transformer": "変換器",
     "dbConnector": "DB コネクタ",
     "open": "開く",
     "back": "戻る",
     "noFileSelected": "左のファイル一覧から Excel ファイルを選択してください",
+    "center": {
+      "title": "Extension Catalog",
+      "description": "ここでは外部拡張のインストールと管理のみを扱います。アプリ本体に同梱された機能は、この一覧には表示しません。",
+      "installedLabel": "Installed",
+      "emptyTitle": "利用可能な拡張カタログはまだありません",
+      "emptyDescription": "外部 catalog を接続すると、ここにインストール可能な拡張とその状態が表示されます。"
+    },
     "badge": {
       "running": "実行中"
     },

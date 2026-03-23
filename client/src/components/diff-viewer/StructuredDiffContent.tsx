@@ -108,9 +108,9 @@ const FieldChangeRow = memo(function FieldChangeRow({ fc, action }: { fc: FieldC
   const changed = !fc.semanticEqual && !isAdd && !isDel;
 
   return (
-    <div className="grid grid-cols-[120px_1fr_24px_1fr] items-baseline gap-x-2 px-3 py-1.5 text-[12px] leading-relaxed hover:bg-muted/30 transition-colors">
+    <div className="grid grid-cols-[110px_1fr_24px_1fr] items-baseline gap-x-2 border-t border-border/20 px-3 py-2 text-[12px] leading-relaxed transition-colors hover:bg-muted/30">
       {/* ラベル */}
-      <span className="font-medium text-muted-foreground truncate" title={fc.field}>
+      <span className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground" title={fc.field}>
         {fc.label}
       </span>
 
@@ -221,7 +221,7 @@ const ColumnChangeCard = memo(function ColumnChangeCard({
 
       {/* フィールド詳細 */}
       {expanded && col.fieldChanges.length > 0 && (
-        <div className="border-t border-border/30">
+        <div className="border-t border-border/30 bg-background/60">
           {col.fieldChanges.map((fc) => (
             <FieldChangeRow key={fc.field} fc={fc} action={col.action} />
           ))}
@@ -249,7 +249,7 @@ const TableSummaryHeader = memo(function TableSummaryHeader({
   const renamedCols = entry.columnChanges.filter((c) => c.action === "renamed" || c.action === "rename_suggest").length;
 
   return (
-    <div className={cn("rounded-lg border px-4 py-3", cfg.border, cfg.bg)}>
+    <div className={cn("rounded-xl border px-4 py-4 shadow-sm", cfg.border, cfg.bg)}>
       {/* テーブル識別 */}
       <div className="flex items-center gap-2.5">
         <ActionIcon className={cn("h-4.5 w-4.5 shrink-0", cfg.text)} />
@@ -306,6 +306,17 @@ const TableSummaryHeader = memo(function TableSummaryHeader({
           )}
         </div>
       )}
+
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border/20 pt-3">
+        <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Table Fields</p>
+          <p className="mt-1 font-mono text-sm">{entry.tableFieldChanges.filter((item) => !item.semanticEqual).length}</p>
+        </div>
+        <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Column Changes</p>
+          <p className="mt-1 font-mono text-sm">{entry.columnChanges.length}</p>
+        </div>
+      </div>
     </div>
   );
 });
@@ -325,9 +336,9 @@ const TableFieldChanges = memo(function TableFieldChanges({
   if (visibleChanges.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border/40 bg-muted/20 overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-border/30 bg-muted/30">
-        <span className="text-[11px] font-medium text-muted-foreground">テーブル属性</span>
+    <div className="overflow-hidden rounded-xl border border-border/40 bg-muted/20">
+      <div className="border-b border-border/30 bg-muted/30 px-3 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Table Delta</span>
       </div>
       {visibleChanges.map((fc) => (
         <FieldChangeRow key={fc.field} fc={fc} action={action} />
@@ -367,8 +378,15 @@ export const StructuredDiffContent = memo(function StructuredDiffContent({
   }
 
   return (
-    <ScrollArea className={cn("h-full", className)}>
-      <div className="p-4 space-y-3">
+    <ScrollArea className={cn("h-full bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.08),transparent_40%)]", className)}>
+      <div className="space-y-3 p-4">
+        <div className="rounded-xl border border-dashed border-border/50 bg-background/70 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Review Surface</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Semantic deltas are grouped by table fields first, then by column-level change cards.
+          </p>
+        </div>
+
         {/* テーブルサマリヘッダー */}
         <TableSummaryHeader entry={entry} />
 

@@ -473,27 +473,6 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
-          {/* 拡張が Contribution で宣言したナビゲーション */}
-          {extNavItems.map((nav) => {
-            const Icon = getLucideIcon(nav.icon) ?? Puzzle;
-            const isActive = activeSurface?.kind === "extension" && activeSurface.extensionId === nav.extensionId;
-            return (
-              <Tooltip key={nav.id}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8 rounded-md"
-                    onClick={() => onNavigate?.({ kind: "extension", extensionId: nav.extensionId, panelId: nav.panelId })}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{nav.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
-          {extNavItems.length > 0 ? <div className="h-px w-6 bg-border" /> : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={openDocs}>
@@ -509,7 +488,7 @@ export function Sidebar({
                   <Puzzle className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">拡張機能</TooltipContent>
+              <TooltipContent side="right">{t("extensions.navLabel")}</TooltipContent>
             </Tooltip>
           ) : null}
           <Tooltip>
@@ -535,17 +514,22 @@ export function Sidebar({
 
   return (
     <div
-      className={cn("relative z-20 flex h-full w-[280px] shrink-0 flex-col border-r border-border bg-background", className)}
+      className={cn(
+        "relative z-20 flex h-full w-[272px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950",
+        className,
+      )}
       onDragEnter={handleUploadDragEnter}
       onDragOver={handleUploadDragOver}
       onDragLeave={handleUploadDragLeave}
       onDrop={handleUploadDrop}
     >
-      <div className="border-b border-border bg-background px-3 py-2">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-[13px] font-semibold text-foreground">{t("app.title")}</h2>
+      <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <h2 className="truncate text-[16px] font-semibold leading-none text-slate-950 dark:text-slate-50">{t("app.title")}</h2>
+            </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-md text-muted-foreground" aria-label={t("sidebar.collapseSidebar")}>
             <PanelLeftClose className="w-4 h-4" />
@@ -566,26 +550,28 @@ export function Sidebar({
 
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-3 py-2 space-y-2">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="space-y-2 px-3 py-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <h3 className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {t("sidebar.definitionFiles")}
             </h3>
-            <span className="text-[10px] text-muted-foreground">{sortedFiles.length}</span>
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+              {sortedFiles.length}
+            </span>
           </div>
         </div>
 
         <ScrollArea className="flex-1 px-2">
-          <div className="space-y-1 pb-3">
+          <div className="space-y-0.5 pb-3">
             {isLoading ? (
               <div className="flex flex-col gap-2 p-2">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-10 rounded-md bg-muted/30 animate-pulse" />
+                  <div key={i} className="h-14 rounded-lg bg-muted/30 animate-pulse" />
                 ))}
               </div>
             ) : sortedFiles.length === 0 ? (
-              <div className="mx-1 border border-dashed border-border/70 bg-muted/10 p-4 text-center text-xs text-muted-foreground">
+              <div className="mx-1 rounded-lg border border-dashed border-slate-300/80 bg-slate-50/80 p-5 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
                 {t("sidebar.noFilesYet")}
               </div>
             ) : (
@@ -600,48 +586,53 @@ export function Sidebar({
                       onMouseLeave={() => setHoverFileId(null)}
                       style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}
                       className={cn(
-                        "animate-enter group grid grid-cols-[minmax(0,1fr)_26px] items-center gap-1 border border-transparent transition-colors duration-150",
+                        "animate-enter group relative overflow-hidden rounded-md transition-all duration-150",
                         selectedFileId === file.id
-                          ? "border-border bg-muted/40 text-foreground"
-                          : "bg-background text-foreground hover:bg-muted/20"
+                          ? "bg-slate-100 text-foreground dark:bg-slate-900"
+                          : "text-foreground hover:bg-slate-50 dark:hover:bg-slate-900/60"
                       )}
                     >
+                      <div
+                        className={cn(
+                          "absolute inset-y-0 left-0 w-0.5 transition-colors",
+                          selectedFileId === file.id ? "bg-slate-500 dark:bg-slate-400" : "bg-transparent",
+                        )}
+                      />
                       <button
                         onClick={() => onSelectFile(file.id)}
-                        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left"
+                        className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-3 py-2 text-left"
                       >
-                        <FileSpreadsheet className={cn(
-                          "h-3.5 w-3.5 shrink-0 transition-colors",
-                          selectedFileId === file.id ? "text-foreground" : "text-muted-foreground"
-                        )} />
+                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                          <FileSpreadsheet className="h-3.5 w-3.5" />
+                        </div>
                         <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="text-xs font-medium truncate leading-tight mb-0.5 flex items-center gap-1.5">
+                          <p className="mb-0.5 flex items-center gap-1.5 truncate text-xs font-medium leading-tight">
                             {file.originalName}
                             {meta && meta.versionCount > 1 ? (
                               <span
                                 className={cn(
                                   "text-[9px] leading-tight",
-                                  "text-muted-foreground",
+                                  "border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400",
                                 )}
                               >
                                 v{meta.versionNumber}
                               </span>
                             ) : null}
                           </p>
-                          <p className={cn(
-                            "text-[10px]",
-                            selectedFileId === file.id ? "text-foreground/80" : "text-muted-foreground"
-                          )}>
-                            {uploadedAtLabel}
+                          <p className={cn("text-[10px]", selectedFileId === file.id ? "text-slate-600 dark:text-slate-300" : "text-muted-foreground")}>
+                            {uploadedAtLabel || t("sidebar.timestampUnavailable")}
                           </p>
+                          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                            {meta?.shortHash ? `#${meta.shortHash}` : ""}
+                          </div>
                         </div>
                       </button>
 
-                      <div className="h-full pr-1 flex items-center justify-center">
+                      <div className="absolute right-2 top-2 flex items-center justify-center">
                         <button
                           onClick={(e) => requestDelete(e, file.id, file.originalName)}
-                        className={cn(
-                            "h-6 w-6 flex items-center justify-center rounded-md transition-all",
+                          className={cn(
+                            "flex h-6 w-6 items-center justify-center rounded-md transition-all",
                             "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
                             hoverFileId === file.id || selectedFileId === file.id
                               ? "opacity-100"
@@ -673,24 +664,8 @@ export function Sidebar({
       </div>
 
       {/* Settings and Language Switcher at the bottom */}
-      <div className="space-y-1.5 border-t border-border bg-background p-2">
+      <div className="space-y-1.5 border-t border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
         {/* 拡張が Contribution で宣言したナビゲーション */}
-        {extNavItems.map((nav) => {
-          const Icon = getLucideIcon(nav.icon) ?? Puzzle;
-          const isActive = activeSurface?.kind === "extension" && activeSurface.extensionId === nav.extensionId;
-          return (
-            <Button
-              key={nav.id}
-              variant={isActive ? "secondary" : "ghost"}
-              className="h-8 w-full justify-start gap-2 rounded-md text-xs"
-              onClick={() => onNavigate?.({ kind: "extension", extensionId: nav.extensionId, panelId: nav.panelId })}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {nav.label}
-            </Button>
-          );
-        })}
-        {extNavItems.length > 0 ? <div className="h-px w-full bg-border" /> : null}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}
@@ -698,7 +673,7 @@ export function Sidebar({
         {desktopCapabilities.features.extensions ? (
           <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={() => setExtensionPanelOpen(true)}>
             <Puzzle className="w-3.5 h-3.5" />
-            拡張機能
+            {t("extensions.navLabel")}
           </Button>
         ) : null}
         <Link href="/settings">
@@ -726,7 +701,7 @@ export function Sidebar({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("sidebar.deleteFile")}</AlertDialogTitle>
             <AlertDialogDescription className="break-all">
-              Are you sure you want to delete this file?
+              {t("sidebar.deleteConfirm")}
               {pendingDeleteFile ? (
                 <span className="block mt-2 font-mono text-xs text-foreground/80">{pendingDeleteFile.name}</span>
               ) : null}

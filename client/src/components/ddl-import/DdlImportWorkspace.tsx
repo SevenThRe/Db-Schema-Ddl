@@ -28,6 +28,7 @@ import {
   useWorkbookTemplates,
 } from "@/hooks/use-ddl";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface DdlImportWorkspaceProps {
   onActivateFile?: (fileId: number) => void;
@@ -102,6 +103,7 @@ export function DdlImportWorkspace({
 }: DdlImportWorkspaceProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { data: templates = [] } = useWorkbookTemplates();
   const previewMutation = usePreviewDdlImport();
   const exportMutation = useExportWorkbookFromDdl();
@@ -168,7 +170,7 @@ export function DdlImportWorkspace({
       setSelectedTableNames(new Set());
     } catch (error) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: error instanceof Error ? error.message : "无法读取 SQL 文件。",
         variant: "destructive",
       });
@@ -190,7 +192,7 @@ export function DdlImportWorkspace({
     const trimmedSql = sqlText.trim();
     if (!trimmedSql) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: "请先提供 SQL 内容，再根据当前来源模式预览导入。",
         variant: "destructive",
       });
@@ -207,12 +209,12 @@ export function DdlImportWorkspace({
       );
       setPreviewResult(result);
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: `已按 ${result.dialect.toUpperCase()} ${result.sourceMode} 解析 ${result.catalog.tables.length} 张表。`,
       });
     } catch (error) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: error instanceof Error ? error.message : "DDL 预览失败。",
         variant: "destructive",
       });
@@ -238,7 +240,7 @@ export function DdlImportWorkspace({
 
     if (!selectedTemplateId) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: "请先选择导出的官方模板。",
         variant: "destructive",
       });
@@ -247,7 +249,7 @@ export function DdlImportWorkspace({
 
     if (selectedTableNames.size === 0) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: "请至少勾选一张已解析的表。",
         variant: "destructive",
       });
@@ -256,7 +258,7 @@ export function DdlImportWorkspace({
 
     if (hasBlockingIssues) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: "当前仍有阻断项，先处理后才能导出。",
         variant: "destructive",
       });
@@ -265,7 +267,7 @@ export function DdlImportWorkspace({
 
     if (needsLossyConfirmation && !allowLossyExport) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: "当前存在有损导出项，请先确认后再继续。",
         variant: "destructive",
       });
@@ -283,13 +285,13 @@ export function DdlImportWorkspace({
       });
 
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: `已生成 ${result.file.originalName}，并加入文件列表。`,
       });
       onActivateFile?.(result.file.id);
     } catch (error) {
       toast({
-        title: "DDL 导入",
+        title: t("dashboard.ddlImport"),
         description: error instanceof Error ? error.message : "导出 XLSX 失败。",
         variant: "destructive",
       });
@@ -301,11 +303,8 @@ export function DdlImportWorkspace({
       <div className="border-b border-border bg-background px-3 py-2">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="text-sm font-semibold text-foreground">DDL 导入</div>
-              <Badge variant="outline">导入</Badge>
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">导入、审阅、导出。</p>
+            <div className="text-sm font-semibold text-foreground">{t("dashboard.ddlImport")}</div>
+            <p className="mt-1 text-[11px] text-muted-foreground">1 选择来源  2 审阅结构  3 导出模板</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -315,7 +314,7 @@ export function DdlImportWorkspace({
               onClick={() => handleOpenUploadPicker()}
             >
               <Upload className="mr-1.5 h-3.5 w-3.5" />
-              上传 .sql / .ddl
+              Upload .sql / .ddl
             </Button>
             <Button
               size="sm"
@@ -337,27 +336,27 @@ export function DdlImportWorkspace({
         onChange={handleUploadSource}
       />
 
-      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[1.1fr_1fr_0.9fr]">
+      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(420px,0.95fr)_minmax(540px,1.05fr)]">
         <section className="min-h-0 border-r border-border">
-          <div className="border-b border-border px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">导入来源</h3>
-                <p className="text-xs text-muted-foreground">支持粘贴 SQL、上传 SQL 文件和结构导向导入包。</p>
+            <div className="border-b border-border px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold">导入来源</h3>
+                  <p className="text-xs text-muted-foreground">先确定来源模式，再粘贴或上传内容。</p>
+                </div>
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                  {sourceConfig.dialect}
+                </span>
               </div>
-              <Badge variant="outline" className="uppercase">
-                {sourceConfig.dialect}
-              </Badge>
-            </div>
-            <div className="mt-2 border border-border">
-              {SOURCE_OPTIONS.map((option) => (
-                <button
-                  key={option.mode}
-                  type="button"
-                  className={`w-full border-b border-border px-3 py-2 text-left transition last:border-b-0 ${
-                    sourceMode === option.mode
-                      ? "bg-primary/10"
-                      : "bg-background hover:bg-muted/20"
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {SOURCE_OPTIONS.map((option) => (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    className={`rounded-md px-3 py-2.5 text-left transition ${
+                      sourceMode === option.mode
+                      ? "bg-slate-100 ring-1 ring-inset ring-slate-300 dark:bg-slate-900 dark:ring-slate-700"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-900/60"
                   }`}
                   onClick={() => {
                     setSourceMode(option.mode);
@@ -375,12 +374,12 @@ export function DdlImportWorkspace({
                       <span>{option.upload ? "文件" : "粘贴"}</span>
                     </div>
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">{option.description}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{option.description}</p>
                 </button>
               ))}
             </div>
             {sourceFileName ? (
-              <div className="mt-2 border border-border bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+              <div className="mt-2 rounded-md border border-border bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
                 当前文件: {sourceFileName}
               </div>
             ) : null}
@@ -396,124 +395,116 @@ export function DdlImportWorkspace({
                 }
               }}
               placeholder={sourcePlaceholder}
-              className="h-full min-h-[360px] resize-none font-mono text-xs leading-6"
+              spellCheck={false}
+              className="h-full min-h-[360px] resize-none overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-6 [overflow-wrap:anywhere] [word-break:break-word]"
             />
           </div>
         </section>
 
-        <section className="min-h-0 border-r border-border">
-          <div className="border-b border-border px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">结构审阅</h3>
-                <p className="text-xs text-muted-foreground">默认全选所有解析出的表，导出前可以缩小范围。</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
-                <Database className="h-3.5 w-3.5" />
-                {previewResult ? `${previewResult.catalog.tables.length} 张表 / ${previewResult.dialect.toUpperCase()}` : "等待预览"}
+        <section className="min-h-0 bg-background text-foreground">
+          <div className="flex h-full flex-col">
+            <div className="border-b border-border px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold">结构审阅</h3>
+                  <p className="text-xs text-muted-foreground">先确认解析出的表结构，再决定是否导出。</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
+                  <Database className="h-3.5 w-3.5" />
+                  {previewResult ? `${previewResult.catalog.tables.length} 张表 / ${previewResult.dialect.toUpperCase()}` : "等待预览"}
+                </div>
               </div>
             </div>
-          </div>
-          <ScrollArea className="h-[calc(100%-77px)]">
-            {!previewResult ? (
-              <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center text-muted-foreground">
-                <Database className="mb-4 h-10 w-10 opacity-30" />
-                <p className="text-sm">先预览解析，再在这里审阅表结构。</p>
-              </div>
-            ) : (
-              <div className="space-y-3 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedTableNames(new Set(previewResult.selectableTableNames))}
-                  >
-                    全选
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedTableNames(new Set())}
-                  >
-                    清空
-                  </Button>
-                  <span className="text-[11px] text-muted-foreground">
-                    已选 {selectedTableNames.size}/{previewResult.selectableTableNames.length}
-                  </span>
-                </div>
-
-                {selectableTables.map((table) => (
-                  <div key={table.name} className="border border-border bg-background">
-                    <div className="flex items-start gap-3 border-b border-border px-3 py-3">
-                      <Checkbox
-                        checked={selectedTableNames.has(table.name)}
-                        onCheckedChange={(checked) => handleToggleTable(table.name, checked === true)}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="truncate font-semibold">{table.name}</div>
-                          <Badge variant="outline">
-                            {table.columns.length} 列
-                          </Badge>
-                          {table.foreignKeys.length > 0 ? (
-                            <Badge variant="outline">
-                              FK {table.foreignKeys.length}
-                            </Badge>
-                          ) : null}
-                          {table.indexes.length > 0 ? (
-                            <Badge variant="outline">
-                              IDX {table.indexes.length}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {table.comment ? (
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{table.comment}</p>
-                        ) : null}
-                      </div>
+            <div className="grid min-h-0 flex-1 lg:grid-rows-[minmax(0,1fr)_minmax(280px,0.78fr)]">
+              <ScrollArea className="min-h-0 border-b border-border">
+                {!previewResult ? (
+                  <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center text-muted-foreground">
+                    <Database className="mb-4 h-10 w-10 opacity-30" />
+                    <p className="text-sm">先预览解析，再在这里审阅表结构。</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedTableNames(new Set(previewResult.selectableTableNames))}
+                      >
+                        全选
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedTableNames(new Set())}
+                      >
+                        清空
+                      </Button>
+                      <span className="text-[11px] text-muted-foreground">
+                        已选 {selectedTableNames.size}/{previewResult.selectableTableNames.length}
+                      </span>
                     </div>
 
-                    <div className="divide-y divide-border/50">
-                      {table.columns.map((column) => (
-                        <div key={`${table.name}:${column.name}`} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{column.name}</span>
-                              <span className="font-mono text-muted-foreground">
-                                {column.columnType}
-                                {column.dataTypeArgs ? ` (${column.dataTypeArgs})` : ""}
-                              </span>
+                    {selectableTables.map((table) => (
+                      <div key={table.name} className="overflow-hidden rounded-lg border border-border bg-background">
+                        <div className="flex items-start gap-3 border-b border-border px-3 py-3">
+                          <Checkbox
+                            checked={selectedTableNames.has(table.name)}
+                            onCheckedChange={(checked) => handleToggleTable(table.name, checked === true)}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="truncate font-semibold">{table.name}</div>
+                              <span className="text-[11px] text-muted-foreground">{table.columns.length} 列</span>
+                              {table.foreignKeys.length > 0 ? <span className="text-[11px] text-muted-foreground">FK {table.foreignKeys.length}</span> : null}
+                              {table.indexes.length > 0 ? <span className="text-[11px] text-muted-foreground">IDX {table.indexes.length}</span> : null}
                             </div>
-                            {column.comment ? (
-                              <div className="mt-1 text-muted-foreground">{column.comment}</div>
+                            {table.comment ? (
+                              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{table.comment}</p>
                             ) : null}
                           </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            {!column.nullable ? <Badge variant="secondary">NN</Badge> : null}
-                            {column.primaryKey ? <Badge>PK</Badge> : null}
-                            {column.autoIncrement ? <Badge variant="outline">AI</Badge> : null}
-                            {column.defaultValue ? <Badge variant="outline">DEFAULT</Badge> : null}
-                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
-        </section>
 
-        <section className="min-h-0 bg-background text-foreground">
-          <div className="border-b border-border px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">问题与导出</h3>
-                <p className="text-xs text-muted-foreground">不受支持项会拦截导出，有损项需要明确确认。</p>
-              </div>
-              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </div>
-          <div className="flex h-[calc(100%-77px)] flex-col">
+                        <div className="divide-y divide-border/50">
+                          {table.columns.map((column) => (
+                            <div key={`${table.name}:${column.name}`} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{column.name}</span>
+                                  <span className="font-mono text-muted-foreground">
+                                    {column.columnType}
+                                    {column.dataTypeArgs ? ` (${column.dataTypeArgs})` : ""}
+                                  </span>
+                                </div>
+                                {column.comment ? (
+                                  <div className="mt-1 text-muted-foreground">{column.comment}</div>
+                                ) : null}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                                {!column.nullable ? <span>NN</span> : null}
+                                {column.primaryKey ? <span>PK</span> : null}
+                                {column.autoIncrement ? <span>AI</span> : null}
+                                {column.defaultValue ? <span>DEFAULT</span> : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+
+              <div className="min-h-0 bg-background">
+                <div className="border-b border-border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold">问题与导出</h3>
+                      <p className="text-xs text-muted-foreground">不受支持项会拦截导出，有损项需要明确确认。</p>
+                    </div>
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+                <div className="flex h-[calc(100%-61px)] flex-col">
             <div className="grid grid-cols-3 gap-2 border-b border-border px-3 py-3">
               <div className="border border-red-500/30 bg-red-500/10 p-2 text-center">
                 <div className="text-[10px] text-muted-foreground">阻断</div>
@@ -634,8 +625,11 @@ export function DdlImportWorkspace({
                   </div>
                 ) : null}
               </div>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
         </section>
       </div>
     </div>

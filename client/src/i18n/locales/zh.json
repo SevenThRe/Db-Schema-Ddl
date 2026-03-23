@@ -21,7 +21,9 @@
     "docs": "文档",
     "docsHint": "导入或解析不清楚时，可打开快速开始和故障排查。",
     "openGuide": "打开指南",
-    "deleteFile": "删除文件"
+    "deleteFile": "删除文件",
+    "timestampUnavailable": "无时间戳",
+    "deleteConfirm": "确认删除这个文件吗？"
   },
   "sheet": {
     "selectSheet": "选择工作表",
@@ -29,7 +31,11 @@
     "failed": "加载工作表失败",
     "noSheets": "未找到工作表",
     "filterUndefined": "隐藏无定义的工作表",
-    "noDefinedSheets": "未找到有表定义的工作表"
+    "noDefinedSheets": "未找到有表定义的工作表",
+    "summary": "{{total}} sheets · {{defined}} parsed",
+    "summaryFiltered": "{{total}} sheets · {{defined}} parsed · filtered",
+    "parsedLabel": "parsed",
+    "rawLabel": "raw"
   },
   "table": {
     "columns": "列",
@@ -47,6 +53,8 @@
     "noTables": "此工作表中未找到表定义",
     "tablesFound": "在工作表中找到 {{count}} 个表",
     "tablesParsedFromSelection": "从选择区域解析了 {{count}} 个表",
+    "compactView": "Compact",
+    "standardView": "Standard",
     "namingWarningBadge": "命名警告",
     "namingWarningTitle": "检测到不合法的物理名。",
     "namingWarningColumns": "{{count}} 个字段物理名不符合规范。",
@@ -57,12 +65,22 @@
     "generate": "生成",
     "generating": "生成中...",
     "readyToGenerate": "准备生成 SQL",
+    "readyHint": "确认中间预览无误后，在这里生成。",
     "generated": "DDL 已生成",
     "generatedSuccess": "成功为 {{count}} 个表生成了 {{dialect}} DDL",
     "generationFailed": "生成失败",
     "copy": "复制",
     "copied": "已复制",
     "copiedToClipboard": "已复制到剪贴板",
+    "generatedPanelTitle": "SQL 输出",
+    "inspectorHint": "输出检查器",
+    "selectionSummary": "{{dialect}} · {{selected}}/{{total}} selected",
+    "emptySelectionTitle": "尚未选择可生成的表。",
+    "emptySelectionDescription": "先在中间预览区选择工作表和表结构。",
+    "dialectPlaceholder": "Dialect",
+    "exportModePlaceholder": "导出模式",
+    "exportModeSingle": "Single File",
+    "exportModePerTable": "Per Table (ZIP)",
     "namingWarningsFound": "{{count}} 个表存在命名警告",
     "namingWarningBadge": "命名异常",
     "invalidColumnsHint": "{{count}} 个字段名不合法",
@@ -378,6 +396,13 @@
     "autoParse": "自动解析",
     "spreadsheet": "电子表格"
   },
+  "dashboard": {
+    "workspace": "定义",
+    "ddlImport": "DDL 导入",
+    "noSheetSelected": "未选择工作表",
+    "sheetsPane": "Sheets",
+    "inspectorPane": "Inspector"
+  },
   "search": {
     "button": "搜索",
     "placeholder": "搜索工作表和表...",
@@ -588,7 +613,23 @@
     "ready": "更新已就绪",
     "readyDesc": "版本 {{version}} 已下载完成，重启后将自动安装。",
     "restartNow": "立即重启",
-    "restartLater": "稍后重启"
+    "restartLater": "稍后重启",
+    "notifier": {
+      "serviceUnavailable": "暂时无法连接发布服务。",
+      "installFailed": "安装失败，请稍后重试。",
+      "checking": "正在检查更新…",
+      "installing": "正在下载并安装，完成后自动重启…",
+      "availableReady": "检测到新版本，可立即安装。",
+      "availableManual": "检测到新版本，但当前发布未附带自动更新元数据，请前往发布页手动下载。",
+      "checkFailed": "检查失败。",
+      "upToDate": "已是最新版本。",
+      "currentVersion": "当前版本",
+      "latestVersion": "最新版本 {{version}}",
+      "installingShort": "安装中…",
+      "installNow": "立即安装",
+      "downloadFromRelease": "前往发布页下载",
+      "viewRelease": "查看发布"
+    }
   },
   "spreadsheet": {
     "status": {
@@ -721,14 +762,20 @@
 ,
   "extensions":   {
     "title": "扩展功能",
-    "builtinTab": "内置扩展",
-    "installedTab": "已安装",
-    "noBuiltin": "暂无内置扩展",
+    "navLabel": "扩展功能",
+    "panelTitle": "扩展中心",
     "transformer": "变换器",
     "dbConnector": "数据库连接器",
     "open": "打开",
     "back": "返回",
     "noFileSelected": "请先在左侧文件列表选择一个 Excel 文件",
+    "center": {
+      "title": "扩展中心",
+      "description": "这里只管理可安装和可维护的外部扩展，不再把应用自带功能混在这里显示。",
+      "installedLabel": "已安装",
+      "emptyTitle": "当前还没有可用扩展目录",
+      "emptyDescription": "接入外部 catalog 后，这里会显示可安装的扩展及其当前状态。"
+    },
     "badge": {
       "running": "运行中"
     },

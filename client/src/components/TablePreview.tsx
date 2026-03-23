@@ -1,7 +1,6 @@
 import { useTableInfo } from "@/hooks/use-ddl";
 import { Loader2, AlertTriangle, Key, ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,14 +27,14 @@ interface TablePreviewProps {
 }
 
 const TABLE_COLUMN_GRID_CLASS =
-  "grid grid-cols-[56px_44px_minmax(180px,_1fr)_minmax(180px,_1fr)_120px_88px_84px] gap-2 px-4";
+  "grid grid-cols-[44px_28px_minmax(220px,_1.2fr)_minmax(180px,_1fr)_132px_56px_52px] gap-3 px-5";
 const COMPACT_TABLE_GRID_CLASS =
-  "grid grid-cols-[56px_minmax(240px,_1.1fr)_minmax(220px,_1fr)] gap-2 px-4";
+  "grid grid-cols-[44px_minmax(240px,_1.15fr)_minmax(220px,_1fr)] gap-3 px-5";
 const COMPACT_TABLE_BREAKPOINT = 980;
 const TOOLBAR_ICON_BUTTON_CLASS =
-  "h-8 w-8 shrink-0 rounded-md border border-border bg-background text-muted-foreground hover:bg-muted/40";
+  "h-8 w-8 shrink-0 rounded-md border border-slate-200/90 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-900";
 const TOOLBAR_BUTTON_CLASS =
-  "h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/40";
+  "h-8 rounded-md border border-slate-200/90 bg-white px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900";
 const LAST_SELECTED_TABLE_STORAGE_KEY = "tablePreview:lastSelectedTableByFileSheet";
 
 type StoredTableSelections = Record<string, string>;
@@ -145,30 +144,30 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
   }, [validation.invalidColumns]);
 
   return (
-    <div className="space-y-0 border-b border-border bg-background">
-      <div className="border-b border-border px-4 py-2">
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="truncate text-[14px] font-semibold text-foreground">
+            <h2 className="truncate text-[15px] font-semibold text-slate-950 dark:text-slate-50">
               {table.logicalTableName || "Untitled Table"}
             </h2>
-            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+            <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">
               {table.physicalTableName || "NO_PHYSICAL_NAME"}
             </p>
           </div>
           {validation.hasIssues ? (
-            <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
-              Warning
+            <span className="shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              {t("table.namingWarningBadge")}
             </span>
           ) : null}
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {table.columns.length} {t("table.columns")} · {compactMode ? "紧凑视图" : "完整视图"}
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          {table.columns.length} {t("table.columns")} · {compactMode ? t("table.compactView") : t("table.standardView")}
         </p>
       </div>
 
       {validation.hasIssues && (
-        <div className="border-b border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-200">
+        <div className="border-b border-amber-200/70 bg-amber-50/40 px-5 py-2.5 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
           <div className="text-xs font-medium">{t("table.namingWarningTitle")}</div>
           <div className="mt-1 text-xs leading-5">
             {validation.hasInvalidTableName ? (
@@ -182,10 +181,10 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
         </div>
       )}
 
-      <div className="overflow-hidden bg-background">
+      <div className="overflow-hidden bg-white dark:bg-slate-950">
         {compactMode ? (
           <div>
-            <div className={cn(COMPACT_TABLE_GRID_CLASS, "border-b border-border bg-muted/20 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground")}>
+            <div className={cn(COMPACT_TABLE_GRID_CLASS, "border-b border-slate-200 py-2 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400")}>
               <div>No.</div>
               <div>{t("table.logicalName")}</div>
               <div>{t("table.physicalName")}</div>
@@ -196,40 +195,40 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                   key={index}
                   className={cn(
                     COMPACT_TABLE_GRID_CLASS,
-                    "items-start border-b border-border py-2.5 text-xs transition-colors hover:bg-muted/20",
+                    "items-start border-b border-slate-100 py-2.5 text-xs transition-colors hover:bg-slate-50/50 dark:border-slate-900 dark:hover:bg-slate-900/30",
                   )}
                 >
-                  <div className="pt-0.5 font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
+                  <div className="pt-0.5 text-right font-mono text-[11px] text-slate-400 dark:text-slate-500">{col.no || index + 1}</div>
                   <div className="min-w-0">
                     <div
                       className={cn(
-                        "font-medium min-w-0 truncate",
-                        col.isPk ? "text-amber-700 dark:text-amber-300" : "text-foreground",
+                        "min-w-0 truncate font-medium text-slate-950 dark:text-slate-50",
+                        col.isPk ? "text-slate-950 dark:text-slate-50" : "text-foreground",
                       )}
                       title={col.logicalName}
                     >
                       <span className="inline-flex items-center gap-1 min-w-0">
-                        {col.isPk && <Key className="w-3.5 h-3.5 rotate-45 shrink-0" />}
+                        {col.isPk && <Key className="h-3.5 w-3.5 shrink-0 rotate-45 text-slate-400 dark:text-slate-500" />}
                         <span className="truncate">{col.logicalName || "-"}</span>
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      <span className="font-mono text-[10px] tracking-[0.12em] text-slate-500 dark:text-slate-400">
                         {toTypeDisplay(col)}
                       </span>
-                      {col.notNull && <Badge variant="outline" className="text-red-700 dark:text-red-300">{t("table.notNull")}</Badge>}
+                      {col.notNull && <span className="text-[10px] text-slate-500 dark:text-slate-400">not null</span>}
                     </div>
                   </div>
                   <div
                     className={cn(
-                      "font-mono text-xs min-w-0 truncate pt-0.5",
-                      invalidColumnIndexSet.has(index) ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+                      "min-w-0 truncate pt-0.5 font-mono text-[11px]",
+                      invalidColumnIndexSet.has(index) ? "text-slate-700 dark:text-slate-300" : "text-muted-foreground",
                     )}
                     title={col.physicalName}
                   >
                     <div>{col.physicalName || "-"}</div>
                     {invalidColumnIndexSet.has(index) && (
-                      <div className="text-[10px] leading-tight mt-0.5 opacity-90 break-all whitespace-normal">
+                      <div className="mt-0.5 break-all whitespace-normal text-[10px] leading-tight text-amber-700/90 dark:text-amber-300/90">
                         {"->"} {invalidColumnMap.get(index)?.suggestedName}
                       </div>
                     )}
@@ -241,8 +240,8 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className={cn(TABLE_COLUMN_GRID_CLASS, "border-b border-border bg-muted/20 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground")}>
-                <div>No.</div>
+              <div className={cn(TABLE_COLUMN_GRID_CLASS, "border-b border-slate-200 py-2 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400")}>
+                <div className="text-right">No.</div>
                 <div></div>
                 <div>{t("table.logicalName")}</div>
                 <div>{t("table.physicalName")}</div>
@@ -254,44 +253,39 @@ function SingleTablePreview({ table, compactMode }: { table: TableInfo; compactM
                 {table.columns.map((col, index) => (
                   <div
                     key={index}
-                  className={cn(
+                    className={cn(
                       TABLE_COLUMN_GRID_CLASS,
-                      "items-center border-b border-border py-2.5 text-xs transition-colors hover:bg-muted/20",
+                      "items-center border-b border-slate-100 py-2.5 text-xs transition-colors hover:bg-slate-50/50 dark:border-slate-900 dark:hover:bg-slate-900/30",
                     )}
                   >
-                    <div className="font-mono text-xs text-muted-foreground">{col.no || index + 1}</div>
-                    <div>
-                      {col.isPk && (
-                        <Key className="w-3.5 h-3.5 text-amber-500 rotate-45" />
-                      )}
-                    </div>
-                    <div className="font-medium text-foreground min-w-0 truncate" title={col.logicalName}>
+                    <div className="text-right font-mono text-[11px] text-slate-400 dark:text-slate-500">{col.no || index + 1}</div>
+                    <div>{col.isPk && <Key className="h-3.5 w-3.5 rotate-45 text-slate-400 dark:text-slate-500" />}</div>
+                    <div className="min-w-0 truncate font-medium text-slate-950 dark:text-slate-50" title={col.logicalName}>
                       {col.logicalName || "-"}
                     </div>
                     <div
                       className={cn(
-                        "font-mono text-xs min-w-0 truncate",
-                        invalidColumnIndexSet.has(index) ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+                        "min-w-0 truncate font-mono text-[11px]",
+                        invalidColumnIndexSet.has(index) ? "text-slate-700 dark:text-slate-300" : "text-muted-foreground",
                       )}
                       title={col.physicalName}
                     >
                       <div>{col.physicalName || "-"}</div>
                       {invalidColumnIndexSet.has(index) && (
-                        <div className="text-[10px] leading-tight mt-0.5 opacity-90 break-all whitespace-normal">
+                        <div className="mt-0.5 break-all whitespace-normal text-[10px] leading-tight text-amber-700/90 dark:text-amber-300/90">
                           {"->"} {invalidColumnMap.get(index)?.suggestedName}
                         </div>
                       )}
                     </div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                    <div className="font-mono text-[11px] tracking-[0.12em] text-slate-500 dark:text-slate-400">
                       {toTypeDisplay(col)}
                     </div>
-                    <div className="font-mono text-xs">{col.size}</div>
-                    <div className="text-center">
-                      {col.notNull ? (
-                        <Badge variant="outline" className="px-1.5 text-red-700 dark:text-red-300" title={t("table.notNull")}>NN</Badge>
-                      ) : (
-                        <Badge variant="outline" className="px-1.5 text-muted-foreground" title={t("table.nullable")}>NULL</Badge>
-                      )}
+                    <div className="text-center font-mono text-[11px] text-slate-600 dark:text-slate-300">{col.size || "-"}</div>
+                    <div
+                      className="text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 dark:text-slate-300"
+                      title={col.notNull ? t("table.notNull") : t("table.nullable")}
+                    >
+                      {col.notNull ? "NN" : ""}
                     </div>
                   </div>
                 ))}
@@ -578,7 +572,7 @@ export function TablePreview({
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
         <AlertTriangle className="mb-3 h-8 w-8 text-muted-foreground/50" />
         <p className="text-sm font-medium text-foreground">{t("table.selectSheet")}</p>
-        <p className="mt-1 text-xs">先选择工作表。</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">在左侧工作表列表中选择一个项目。</p>
       </div>
     );
   }
@@ -609,20 +603,20 @@ export function TablePreview({
       <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
         <AlertTriangle className="mb-3 h-8 w-8 opacity-50" />
         <p className="text-sm">{t("table.noTables")}</p>
-        <p className="mt-1 text-xs">当前工作表没有可预览的表定义。</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("table.noTables")}</p>
       </div>
     );
   }
 
   if (filteredEntries.length === 0) {
     return (
-      <div className="flex h-full flex-col bg-background">
-        <div className="space-y-2 border-b border-border bg-background px-3 py-2">
+      <div className="flex h-full flex-col bg-white dark:bg-slate-950">
+        <div className="space-y-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-[220px] flex-1">
-              <div className="text-sm font-semibold text-foreground">表预览</div>
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{sheetName}</span> · {t("table.tablesFound", { count: tableList.length })}
+              <div className="text-sm font-medium text-slate-950 dark:text-slate-50">预览</div>
+              <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium text-slate-950 dark:text-slate-50">{sheetName}</span> · {t("table.tablesFound", { count: tableList.length })}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -639,7 +633,7 @@ export function TablePreview({
           </div>
 
           {(showFilterBar || hasActiveFilters) && (
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex flex-wrap items-center gap-1.5">
               <div className="relative w-full max-w-[360px]">
                 <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input
@@ -681,22 +675,22 @@ export function TablePreview({
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
           <AlertTriangle className="mb-3 h-8 w-8 opacity-50" />
           <p className="text-sm">{t("search.noResults")}</p>
-          <p className="mt-1 text-xs">清空筛选后再试。</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">清空筛选条件后重试。</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <div className="space-y-2 border-b border-border bg-background px-3 py-2">
+    <div className="flex h-full flex-col bg-white dark:bg-slate-950">
+      <div className="space-y-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-[220px] flex-1">
-            <div className="text-sm font-semibold text-foreground">表预览</div>
-            <p className="mt-1 truncate text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{sheetName}</span> · {t("table.tablesFound", { count: filteredEntries.length })}
+            <div className="text-sm font-medium text-slate-950 dark:text-slate-50">预览</div>
+            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-medium text-slate-950 dark:text-slate-50">{sheetName}</span> · {t("table.tablesFound", { count: filteredEntries.length })}
               {tableList.length > 0 && filteredEntries.length !== tableList.length && (
-                <span className="ml-2 text-xs text-muted-foreground">({filteredEntries.length}/{tableList.length})</span>
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">({filteredEntries.length}/{tableList.length})</span>
               )}
             </p>
             {tablesWithNamingWarnings > 0 && (
@@ -740,7 +734,7 @@ export function TablePreview({
                 onOpenChange={setIsTableSelectOpen}
               >
                 <SelectTrigger className={cn(
-                  "max-w-[60vw] h-8 shrink-0 rounded-md border border-border bg-background text-xs",
+                  "max-w-[60vw] h-8 shrink-0 rounded-md border border-slate-200 bg-white text-xs dark:border-slate-800 dark:bg-slate-950",
                   isCompactColumns ? "w-[180px] min-w-[130px] sm:w-[210px] sm:min-w-[150px]" : "w-[220px] min-w-[140px] sm:w-[270px] sm:min-w-[170px]",
                 )}>
                   <SelectValue />
@@ -792,7 +786,7 @@ export function TablePreview({
         </div>
 
         {(showFilterBar || hasActiveFilters) && (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/10 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950">
             <div className="relative w-full max-w-[360px]">
               <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
@@ -828,14 +822,14 @@ export function TablePreview({
                 <X className="w-3.5 h-3.5" />
               </Button>
             ) : null}
-            <span className="text-[10px] text-muted-foreground">
-              {hasActiveFilters ? "筛选已应用" : "表名 / 列区间"}
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">
+              {hasActiveFilters ? "已筛选" : "表名 / 列区间"}
             </span>
           </div>
         )}
       </div>
 
-      <div ref={contentContainerRef} className="flex-1 overflow-auto px-3 py-3 md:px-4 md:py-4">
+        <div ref={contentContainerRef} className="flex-1 overflow-auto bg-white px-4 py-4 dark:bg-slate-950">
         {currentTable && <SingleTablePreview table={currentTable} compactMode={isCompactColumns} />}
       </div>
     </div>

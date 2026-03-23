@@ -25,12 +25,12 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
   const definedSheetCount = sheets?.filter((sheet: any) => sheet.hasTableDefinitions).length ?? 0;
 
   return (
-    <div className="flex h-full min-w-0 w-full flex-col bg-background">
-      <div className="border-b border-border bg-background px-3 py-2">
+    <div className="flex h-full min-w-0 w-full flex-col bg-transparent">
+      <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
         <div className="flex items-center justify-between">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Table className="h-4 w-4 text-muted-foreground" />
+            <h3 className="flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-slate-50">
+              <Table className="h-4 w-4 text-slate-500 dark:text-slate-400" />
               {t("sheet.selectSheet")}
             </h3>
           </div>
@@ -38,10 +38,10 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
             onClick={() => setFilterUndefined(!filterUndefined)}
             aria-label={t("sheet.filterUndefined")}
             className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
+              "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors",
               filterUndefined
                 ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background text-muted-foreground hover:bg-muted/40"
+                : "border-slate-200 bg-white text-muted-foreground hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
             )}
             title={t("sheet.filterUndefined")}
           >
@@ -49,23 +49,25 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
           </button>
         </div>
 
-        <div className="mt-2 text-xs text-muted-foreground">
-          {filteredSheets?.length ?? 0} sheets · {definedSheetCount} parsed{filterUndefined ? " · filtered" : ""}
+        <div className="mt-2 text-xs leading-5 text-muted-foreground">
+          {filterUndefined
+            ? t("sheet.summaryFiltered", { total: filteredSheets?.length ?? 0, defined: definedSheetCount })
+            : t("sheet.summary", { total: filteredSheets?.length ?? 0, defined: definedSheetCount })}
         </div>
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="space-y-0.5 p-2">
+        <div className="space-y-1 p-2">
           {isLoading ? (
-             <div className="flex items-center justify-center border border-dashed border-border/70 bg-muted/10 p-8 text-muted-foreground">
+              <div className="flex items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-8 text-muted-foreground">
                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> {t("sheet.loading")}
              </div>
            ) : isError ? (
-            <div className="flex items-center gap-2 border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-500">
+            <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-500">
               <AlertCircle className="h-4 w-4" /> {t("sheet.failed")}
             </div>
           ) : filteredSheets?.length === 0 ? (
-            <div className="border border-dashed border-border/70 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
               {filterUndefined ? t("sheet.noDefinedSheets") : t("sheet.noSheets")}
             </div>
           ) : (
@@ -75,12 +77,12 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
                   key={sheet.name}
                   onClick={() => onSelectSheet(sheet.name)}
                   className={cn(
-                    "grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2 border border-transparent px-2.5 py-2 text-left text-xs transition-colors",
+                    "grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-3 py-2 text-left text-xs transition-colors",
                     selectedSheet === sheet.name
-                      ? "border-border bg-muted/40 text-foreground"
+                      ? "bg-slate-100 text-foreground dark:bg-slate-900"
                       : !sheet.hasTableDefinitions
-                      ? "text-foreground hover:bg-amber-50/40"
-                      : "text-foreground hover:bg-muted/20"
+                      ? "text-foreground hover:bg-amber-50/50 dark:hover:bg-amber-950/20"
+                      : "text-foreground hover:bg-slate-50 dark:hover:bg-slate-900/60"
                   )}
                 >
                   <div
@@ -102,7 +104,7 @@ export function SheetSelector({ fileId, selectedSheet, onSelectSheet }: SheetSel
                       sheet.hasTableDefinitions ? "text-emerald-700" : "text-amber-700",
                     )}
                   >
-                    {sheet.hasTableDefinitions ? "parsed" : "raw"}
+                    {sheet.hasTableDefinitions ? t("sheet.parsedLabel") : t("sheet.rawLabel")}
                   </span>
                 </button>
               ))}
