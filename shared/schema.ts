@@ -67,6 +67,7 @@ export const createWorkbookFromTemplateResponseSchema = z.object({
 });
 
 export const ddlSettingsSchema = z.object({
+  statusBarItems: z.array(z.enum(["activity", "memory"])).default([...DEFAULT_DDL_SETTINGS_VALUES.statusBarItems]),
   mysqlEngine: z.string().default(DEFAULT_DDL_SETTINGS_VALUES.mysqlEngine),
   mysqlCharset: z.string().default(DEFAULT_DDL_SETTINGS_VALUES.mysqlCharset),
   mysqlCollate: z.string().default(DEFAULT_DDL_SETTINGS_VALUES.mysqlCollate),
@@ -82,6 +83,7 @@ export const ddlSettingsSchema = z.object({
   excelReadPath: z.string().optional(),
   customHeaderTemplate: z.string().optional(),
   useCustomHeader: z.boolean().default(DEFAULT_DDL_SETTINGS_VALUES.useCustomHeader),
+  hideSheetsWithoutDefinitions: z.boolean().default(DEFAULT_DDL_SETTINGS_VALUES.hideSheetsWithoutDefinitions),
   mysqlDataTypeCase: z.enum(["lower", "upper"]).default(DEFAULT_DDL_SETTINGS_VALUES.mysqlDataTypeCase),
   mysqlBooleanMode: z
     .enum(["tinyint(1)", "boolean"])
@@ -836,6 +838,9 @@ export interface BinaryCommandResult {
 
 export type DbDriver = "mysql" | "postgres";
 
+/** 接続環境ラベル（dev / test / prod） */
+export type DbEnvironment = "dev" | "test" | "prod";
+
 export interface DbConnectionConfig {
   id: string;
   name: string;
@@ -845,6 +850,14 @@ export interface DbConnectionConfig {
   database: string;
   username: string;
   password: string;
+  /** 環境ラベル（dev / test / prod）— 省略時は未分類 */
+  environment?: DbEnvironment;
+  /** 読み取り専用モード — true の場合 DML/DDL 実行を Rust 側でブロック */
+  readonly?: boolean;
+  /** ワークベンチヘッダーに表示する色タグ（CSSカラー文字列） */
+  colorTag?: string;
+  /** デフォルトスキーマ（接続後に自動的に USE する DB 名） */
+  defaultSchema?: string;
 }
 
 export interface DbColumnSchema {
@@ -890,4 +903,128 @@ export interface DbSchemaDiffResult {
   removedTables: number;
   modifiedTables: number;
   unchangedTables: number;
+}
+
+// ──────────────────────────────────────────────
+// Phase 1 クエリ実行 / EXPLAIN 型定義
+// ──────────────────────────────────────────────
+
+/**
+ * 危険な SQL 分類
+ * Rust の detect_dangerous_sql が返すカテゴリと 1:1 対応
+ */
+export type DangerClass =
+  | "DROP"
+  | "TRUNCATE"
+  | "ALTER_TABLE"
+  | "ALTER_DATABASE"
+  | "DELETE_WITHOUT_WHERE"
+  | "UPDATE_WITHOUT_WHERE";
+
+/**
+ * クエリ実行リクエスト
+ * confirmed フィールドはサーバー側の安全性強制に使用される:
+ * 危険な SQL が検出され confirmed が false / 未指定の場合、Rust 側で実行を拒否する
+ */
+export interface QueryExecutionRequest {
+  connectionId: string;
+  sql: string;
+  requestId: string;
+  /** 1回のフェッチで取得する最大行数（デフォルト 1000） */
+  limit?: number;
+  offset?: number;
+  /** エラー発生時に後続ステートメントを継続するか（デフォルト false = 停止） */
+  continueOnError?: boolean;
+  /**
+   * 危険な SQL 確認済みフラグ（サーバー側安全ゲート）
+   * フロントエンドの確認ダイアログで OK を押した後に true をセットする
+   */
+  confirmed?: boolean;
+}
+
+/** クエリ結果のカラム情報 */
+export interface DbQueryColumn {
+  name: string;
+  dataType: string;
+}
+
+/** クエリ結果の1行 */
+export interface DbQueryRow {
+  values: (string | number | boolean | null)[];
+}
+
+/**
+ * 1ステートメント分の実行結果バッチ
+ * マルチステートメント実行では statements の数だけ生成される
+ */
+export interface DbQueryBatchResult {
+  sql: string;
+  columns: DbQueryColumn[];
+  rows: DbQueryRow[];
+  totalRows: number;
+  elapsedMs: number;
+  affectedRows?: number;
+  error?: string;
+}
+
+/** クエリ実行レスポンス（マルチステートメント対応） */
+export interface QueryExecutionResponse {
+  batches: DbQueryBatchResult[];
+  requestId: string;
+}
+
+/**
+ * "Load more" ページネーションリクエスト
+ * フロントエンドが現在の rows.length を offset として送信し、次ページを取得する
+ */
+export interface FetchMoreRequest {
+  requestId: string;
+  batchIndex: number;
+  sql: string;
+  connectionId: string;
+  offset: number;
+  limit: number;
+}
+
+/** EXPLAIN プランの1ノード（再帰構造） */
+export interface PlanNode {
+  id: string;
+  label: string;
+  nodeType: string;
+  relationName?: string;
+  cost?: number;
+  rows?: number;
+  children: PlanNode[];
+  /** 警告タグ: "FULL_TABLE_SCAN" | "LARGE_ROWS_ESTIMATE" など */
+  warnings: string[];
+}
+
+/** Rust 側で正規化済みの EXPLAIN プラン */
+export interface DbExplainPlan {
+  dialect: DbDriver;
+  root: PlanNode;
+  rawJson: string;
+}
+
+/** 危険な SQL の事前プレビュー情報 */
+export interface DangerousSqlPreview {
+  dangers: DangerClass[];
+  sql: string;
+  connectionName: string;
+  environment: DbEnvironment;
+  database: string;
+}
+
+/** 結果行エクスポートリクエスト */
+export interface ExportRowsRequest {
+  rows: DbQueryRow[];
+  columns: DbQueryColumn[];
+  format: "json" | "csv" | "markdown" | "sql-insert";
+  tableName?: string;
+}
+
+/** EXPLAIN 実行リクエスト */
+export interface ExplainRequest {
+  connectionId: string;
+  sql: string;
 }
