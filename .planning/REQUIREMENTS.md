@@ -89,12 +89,36 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 ## Traceability
 
-| Phase | Requirements |
-|-------|-------------|
-| Phase 01 | CONN-01, CONN-02, CONN-03, EDIT-01..05, EXEC-01..04, PLAN-01..02, SAFE-01..02 |
-| Phase 02 | GRID-01..03, OBJ-01..02, AUTO-01 |
-| Phase 03 | ER-01..03 |
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CONN-01 | Phase 1: Usable Workbench | Pending |
+| CONN-02 | Phase 1: Usable Workbench | Pending |
+| CONN-03 | Phase 1: Usable Workbench | Pending |
+| EDIT-01 | Phase 1: Usable Workbench | Pending |
+| EDIT-02 | Phase 1: Usable Workbench | Pending |
+| EDIT-03 | Phase 1: Usable Workbench | Pending |
+| EDIT-04 | Phase 1: Usable Workbench | Pending |
+| EDIT-05 | Phase 1: Usable Workbench | Pending |
+| EXEC-01 | Phase 1: Usable Workbench | Pending |
+| EXEC-02 | Phase 1: Usable Workbench | Pending |
+| EXEC-03 | Phase 1: Usable Workbench | Pending |
+| EXEC-04 | Phase 1: Usable Workbench | Pending |
+| PLAN-01 | Phase 1: Usable Workbench | Pending |
+| PLAN-02 | Phase 1: Usable Workbench | Pending |
+| SAFE-01 | Phase 1: Usable Workbench | Pending |
+| SAFE-02 | Phase 1: Usable Workbench | Pending |
+| GRID-01 | Phase 2: Editable Workbench | Pending |
+| GRID-02 | Phase 2: Editable Workbench | Pending |
+| GRID-03 | Phase 2: Editable Workbench | Pending |
+| OBJ-01 | Phase 2: Editable Workbench | Pending |
+| OBJ-02 | Phase 2: Editable Workbench | Pending |
+| AUTO-01 | Phase 2: Editable Workbench | Pending |
+| ER-01 | Phase 3: Structural Workbench | Pending |
+| ER-02 | Phase 3: Structural Workbench | Pending |
+| ER-03 | Phase 3: Structural Workbench | Pending |
+
+**Coverage: 21/21 requirements mapped (100%)**
 
 ---
 
-*Last updated: 2026-03-24 — v1.4 requirements defined*
+*Last updated: 2026-03-24 — Traceability table populated after roadmap creation*

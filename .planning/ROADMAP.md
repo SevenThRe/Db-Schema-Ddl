@@ -1,73 +1,122 @@
-# Roadmap: Desktop Stability and Real-Env Smoke
+---
+milestone: v1.4
+milestone_name: DB 工作台
+created: "2026-03-24"
+granularity: coarse
+total_phases: 3
+total_requirements: 21
+---
 
-**Created:** 2026-03-18
-**Granularity:** Coarse
-**Coverage:** 6 / 6 v1.3 requirements mapped
+# Roadmap: DB 工作台 v1.4
 
-## Summary
+## Milestone Goal
 
-This roadmap treats `v1.3` as a stabilization milestone. Instead of growing feature breadth, it hardens the Electron desktop runtime, improves persistent diagnostics, adds targeted guards around the most fragile desktop seams, formalizes a repeatable real-environment smoke path, and extends that confidence to packaged Windows deliverables.
+Upgrade the `db-connector` builtin extension into a high-frequency database workbench — SQL editing, incremental execution, result browsing, execution plan visualization, dangerous SQL protection, in-place grid editing, object explorer, and ER diagram — forming a complete closed loop with the existing Excel DDL definition workflow.
 
-## Phase Overview
+---
 
-| # | Phase | Goal | Requirements | Success Criteria | Status |
-|---|-------|------|--------------|------------------|--------|
-| 1 | Electron Stability and Real-Env Smoke | Make startup, shutdown, diagnostics, release guards, and a real-environment smoke path reliable | STAB-01, STAB-02, STAB-03, STAB-04 | 4 | Complete |
-| 2 | Packaged Build Smoke | Prove `win-unpacked` and installer builds survive packaged startup, shutdown, migration, extension entry, and DB-management access with structured evidence | STAB-05, STAB-06 | 4 | Complete |
+## Phases
+
+- [ ] **Phase 1: Usable Workbench** - User can connect, write SQL, execute with Ctrl+Enter, browse results, view EXPLAIN plans, export, and is protected from dangerous SQL on prod
+- [ ] **Phase 2: Editable Workbench** - User can browse schema objects, edit single-table grid cells with transaction safety, and get schema-aware autocomplete
+- [ ] **Phase 3: Structural Workbench** - User can visualize the schema as an ER diagram with FK relationships, search nodes, and inspect table details
+
+---
 
 ## Phase Details
 
-### Phase 1: Electron Stability and Real-Env Smoke
+### Phase 1: Usable Workbench
+**Goal**: Users can connect to MySQL or PostgreSQL, write SQL with syntax highlighting and formatting, execute with keyboard shortcuts, see results in a virtual-scroll grid, view execution plan graphs, export results, and are protected by environment-aware dangerous SQL confirmation before any destructive command runs
+**Depends on**: Nothing (first phase; Steps 1-4 infrastructure — type foundation, Rust stubs, IPC bridge, workspace refactor — are internal prerequisites within this phase)
+**Requirements**: CONN-01, CONN-02, CONN-03, EDIT-01, EDIT-02, EDIT-03, EDIT-04, EDIT-05, EXEC-01, EXEC-02, EXEC-03, EXEC-04, PLAN-01, PLAN-02, SAFE-01, SAFE-02
+**Success Criteria** (what must be TRUE):
+  1. User can assign dev/test/prod environment label and see a prominent color band on the workbench header for test (blue) or prod (red) connections; readonly connections show a lock indicator
+  2. User can write SQL in a Monaco editor, execute with Ctrl+Enter (selection or current statement) and Shift+Ctrl+Enter (full script), format with Alt+Shift+F, and switch between multiple query tabs
+  3. User can execute a query and see results in a virtual-scroll grid limited to 1000 rows, with sticky column headers, column-width drag, elapsed time, row count, a cancel button that stops the running query, and export to CSV/JSON/Markdown/SQL Insert
+  4. User can request an EXPLAIN plan for any SELECT query and see it rendered as a node graph with full-table-scan nodes highlighted in red and large-row-estimate nodes flagged with a risk badge
+  5. User sees a confirmation dialog showing connection name, environment, database name, and exact SQL before any DROP/TRUNCATE/ALTER/WHERE-less DELETE or UPDATE executes; prod connections require typing the database name to confirm; readonly connections reject DML at the Rust command layer
+**Plans**: TBD
+**UI hint**: yes
 
-Goal: Stabilize the desktop runtime so startup, shutdown, native modules, extension delivery, and real-environment DB flows behave predictably before more product breadth is added.
+### Phase 2: Editable Workbench
+**Goal**: Users can browse the database object tree, open table data directly from the explorer, edit single-table grid results in a transaction with full SQL preview before commit, and receive schema-aware autocomplete in the SQL editor without live database calls on every keystroke
+**Depends on**: Phase 1 (readonly enforcement proven at Rust layer; query execution chain stable; DbSchemaSnapshot available as cached ref for autocomplete)
+**Requirements**: GRID-01, GRID-02, GRID-03, OBJ-01, OBJ-02, AUTO-01
+**Success Criteria** (what must be TRUE):
+  1. User can browse a lazy-loaded tree of schemas, tables, views, and columns for the active connection, and right-click a table to open a "view table data" grid query in a new tab
+  2. User can double-click a cell in a single-table result (PK column present in result, connection not readonly) to enter edit mode, with pending changes visually highlighted
+  3. User can review a generated SQL preview of all pending changes before committing, then commit all patches in a single transaction or discard them; any failure automatically rolls back the entire transaction
+  4. User receives table names, column names scoped to the FROM clause, and SQL keyword suggestions while typing in the Monaco editor, with zero live database calls triggered per keystroke
+**Plans**: TBD
+**UI hint**: yes
 
-Requirements:
-- STAB-01
-- STAB-02
-- STAB-03
-- STAB-04
-
-Success criteria:
-1. Startup and shutdown errors no longer leak raw JS dialog spam to users in normal failure paths.
-2. Fatal-path desktop failures write persistent local diagnostics that survive startup and shutdown issues.
-3. Native-module, migration, and extension-catalog seams fail early and clearly through targeted guards.
-4. A repeatable smoke path exists for app startup, shutdown, SQLite init/migration, extension entry, and one real MySQL DB-management flow.
-
-## Phase Dependencies
-
-- Phase 1 stands on the shipped Electron, SQLite, extension-delivery, and DB-management infrastructure from `v1.0` through `v1.2`
-- Phase 2 depends on Phase 1's runtime hardening, logging, and smoke artifact seam
-
-### Phase 2: Packaged Build Smoke
-
-Goal: Extend desktop confidence from development Electron runs to packaged Windows deliverables, with repeatable evidence and explicit release-blocker policy.
-
-Requirements:
-- STAB-05
-- STAB-06
-
-Success criteria:
-1. `win-unpacked` packaged builds can start, open the main window, initialize SQLite/migrations, enter `DB 管理`, and close cleanly.
-2. NSIS installer builds have at least one verified install -> first run -> close path with structured evidence.
-3. Packaged smoke evidence includes Markdown + JSON artifacts and also captures screenshots/log excerpts for human review.
-4. Release-blocker policy is explicit for packaged failures such as startup failure, native-module load failure, migration failure, raw shutdown error dialogs, and broken extension entry.
-
-Current execution status:
-- Plan `02-01` extended the smoke artifact model for packaged evidence.
-- Plan `02-02` added the `win-unpacked` runner, checkpoint-based readiness seam, screenshot/log capture, and packaged ABI guardrails.
-- Plan `02-03` added the NSIS installer smoke helper, semi-manual artifact seam, and explicit packaged blocker policy.
-- Plan `02-04` captured fresh `win-unpacked` and `NSIS` artifacts, updated the phase-close validation contract, and documented the current `win-unpacked` false-negative blocker in the packaged smoke runner.
-- Plan `02-05` closed the timestamp-prefixed parser false-negative, added packaged sqlite and `DB 管理` smoke checkpoints, and regenerated trustworthy `win-unpacked` evidence.
-- Plan `02-06` closed the NSIS checkpoint by writing a fresh artifact pair that records the real `DB 管理` sqlite blocker, preserves `close=pass`, and marks the missing installer / first-launch screenshots as incomplete proof instead of installer success.
-
-## Notes
-
-- Keep this milestone operational, not feature-broadening
-- Keep user-facing errors translated and calm
-- Preserve structured logs and smoke artifacts for future MCP/automation use
-- Prefer narrow release guards over broad infrastructure changes
-- Packaged smoke should prioritize `win-unpacked` iteration speed while still covering the installer path
-- Real MySQL access is useful but should remain optional during packaged smoke unless a packaging-specific DB regression demands it
+### Phase 3: Structural Workbench
+**Goal**: Users can visualize the current database schema as an auto-layout ER diagram showing foreign key relationships, search for tables by name, and click any table node to inspect its column details
+**Depends on**: Phase 2 (relations.rs FK introspection module implemented; DbSchemaSnapshot extended with foreignKeys and indexes fields)
+**Requirements**: ER-01, ER-02, ER-03
+**Success Criteria** (what must be TRUE):
+  1. User can open an ER diagram view showing all tables in the current schema connected by foreign key relationship arrows, rendered with auto-layout (elkjs layered algorithm, direction RIGHT)
+  2. User can type a table name in a search box to highlight and focus matching table nodes in the ER diagram
+  3. User can click any table node in the ER diagram to see its column list, data types, and PK/FK indicators in a side panel
+**Plans**: TBD
+**UI hint**: yes
 
 ---
-*Last updated: 2026-03-19 after executing v1.3 / Phase 2 Plan 06*
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Usable Workbench | 0/0 | Not started | - |
+| 2. Editable Workbench | 0/0 | Not started | - |
+| 3. Structural Workbench | 0/0 | Not started | - |
+
+---
+
+## Coverage
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CONN-01 | Phase 1 | Pending |
+| CONN-02 | Phase 1 | Pending |
+| CONN-03 | Phase 1 | Pending |
+| EDIT-01 | Phase 1 | Pending |
+| EDIT-02 | Phase 1 | Pending |
+| EDIT-03 | Phase 1 | Pending |
+| EDIT-04 | Phase 1 | Pending |
+| EDIT-05 | Phase 1 | Pending |
+| EXEC-01 | Phase 1 | Pending |
+| EXEC-02 | Phase 1 | Pending |
+| EXEC-03 | Phase 1 | Pending |
+| EXEC-04 | Phase 1 | Pending |
+| PLAN-01 | Phase 1 | Pending |
+| PLAN-02 | Phase 1 | Pending |
+| SAFE-01 | Phase 1 | Pending |
+| SAFE-02 | Phase 1 | Pending |
+| GRID-01 | Phase 2 | Pending |
+| GRID-02 | Phase 2 | Pending |
+| GRID-03 | Phase 2 | Pending |
+| OBJ-01 | Phase 2 | Pending |
+| OBJ-02 | Phase 2 | Pending |
+| AUTO-01 | Phase 2 | Pending |
+| ER-01 | Phase 3 | Pending |
+| ER-02 | Phase 3 | Pending |
+| ER-03 | Phase 3 | Pending |
+
+**Total: 21/21 requirements mapped (100% coverage)**
+
+---
+
+## Key Constraints (from Research)
+
+- Phase 1 MUST establish `DbPoolRegistry` + `CancellationToken` infrastructure before any query execution command
+- Phase 1 MUST add `sql-formatter` npm dep and `tokio-util` Cargo dep (the only 2 new dependencies for this milestone)
+- Phase 1 MUST enforce readonly at Rust command layer — not from frontend-supplied value
+- Phase 1 MUST add `environment` and `readonly` fields to `DbConnectionConfig` in `shared/schema.ts` and Rust models
+- Phase 2 MUST NOT start until Phase 1 readonly enforcement is proven stable and audited
+- Phase 3 requires `relations.rs` extended FK introspection (separate MySQL and PostgreSQL queries) before ER diagram can render
+- `DbConnectorWorkspace.tsx` refactor into `db-workbench/` subdirectory is Step 4 of 8-step build order — must precede Phase 1 feature delivery
+
+---
+
+*Last updated: 2026-03-24 — Roadmap created for milestone v1.4 DB 工作台*
