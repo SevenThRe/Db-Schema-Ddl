@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-03-24T05:43:24.791Z"
+status: Phase complete — ready for verification
+last_updated: "2026-03-24T05:47:38.010Z"
 progress:
   total_phases: 12
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 50
-  completed_plans: 49
+  completed_plans: 50
 ---
 
 # Project State
@@ -31,8 +31,8 @@ See: `.planning/PROJECT.md` (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 01 (Usable Workbench) — EXECUTING
-Plan: 4 of 4
+Phase: 01 (Usable Workbench) — AWAITING VERIFICATION (Task 3 checkpoint)
+Plan: 4 of 4 (Tasks 1+2 complete; Task 3 = human visual verification)
 
 ## Important Assumptions
 
@@ -71,9 +71,17 @@ Plan: 4 of 4
 - Extension boundary spec at `docs/extension-boundary-spec.md` governs capability model
 - Codebase map refreshed 2026-03-24 at `.planning/codebase/`
 
+## Architecture Decisions (Plan 04 Additions)
+
+- react-window v2 `List` + `rowComponent` used (FixedSizeList API removed in v2.x)
+- ELK layout is async; useMemo derives flat node list, useEffect runs layout and updates state
+- `confirmed=true` in QueryExecutionRequest is the Rust-layer safety gate — frontend dialog is UI only
+- 3-mode export: current-page (client-side) / full-re-execute (backend exportRows) / auto-merge
+
 ## Next Command
 
-- Continue executing Phase 01 Plan 04 — Result Grid + Dangerous SQL dialog
+- Awaiting human visual verification (Task 3 of Plan 04)
+- After approval: mark Phase 01 complete
 
 ---
-*Last updated: 2026-03-24 after completing 01-03-PLAN.md (SQL editor + QueryTabs + ConnectionSidebar)*
+*Last updated: 2026-03-24 after completing 01-04-PLAN.md Tasks 1+2 (result grid + explain + dangerous SQL + export wiring)*

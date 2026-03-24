@@ -28,10 +28,10 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 ### Category: Execution & Results (EXEC)
 
-- [ ] **EXEC-01**: User can execute multi-statement scripts where each segment returns an independent result and elapsed time; user can configure stop-on-error vs continue
+- [x] **EXEC-01**: User can execute multi-statement scripts where each segment returns an independent result and elapsed time; user can configure stop-on-error vs continue
 - [x] **EXEC-02**: User can cancel a running query via a Cancel button (requestId-based CancellationToken on Rust side)
-- [ ] **EXEC-03**: User can view result rows in a virtual-scroll grid limited to 1000 rows per fetch, with column header freeze and column-width drag
-- [ ] **EXEC-04**: User can export the current result as JSON, CSV, Markdown Table, or SQL Insert; full-export mode shows row count warning before proceeding
+- [x] **EXEC-03**: User can view result rows in a virtual-scroll grid limited to 1000 rows per fetch, with column header freeze and column-width drag
+- [x] **EXEC-04**: User can export the current result as JSON, CSV, Markdown Table, or SQL Insert; full-export mode shows row count warning before proceeding
 
 ### Category: Execution Plan (PLAN)
 
@@ -41,7 +41,7 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 ### Category: Dangerous SQL Protection (SAFE)
 
 - [x] **SAFE-01**: User sees a confirmation dialog before executing DROP, TRUNCATE, ALTER TABLE, ALTER DATABASE, DELETE without WHERE, or UPDATE without WHERE (detected via sqlparser AST on Rust side)
-- [ ] **SAFE-02**: The confirmation dialog shows connection name, environment label, database name, and exact SQL; for prod connections the user must type the database name to confirm
+- [x] **SAFE-02**: The confirmation dialog shows connection name, environment label, database name, and exact SQL; for prod connections the user must type the database name to confirm
 
 ### Category: Grid Editing (GRID)
 
@@ -99,14 +99,14 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 | EDIT-03 | Phase 1: Usable Workbench | Complete |
 | EDIT-04 | Phase 1: Usable Workbench | Complete |
 | EDIT-05 | Phase 1: Usable Workbench | Complete |
-| EXEC-01 | Phase 1: Usable Workbench | Pending |
+| EXEC-01 | Phase 1: Usable Workbench | Complete |
 | EXEC-02 | Phase 1: Usable Workbench | Complete |
-| EXEC-03 | Phase 1: Usable Workbench | Pending |
-| EXEC-04 | Phase 1: Usable Workbench | Pending |
+| EXEC-03 | Phase 1: Usable Workbench | Complete |
+| EXEC-04 | Phase 1: Usable Workbench | Complete |
 | PLAN-01 | Phase 1: Usable Workbench | Complete |
 | PLAN-02 | Phase 1: Usable Workbench | Complete |
 | SAFE-01 | Phase 1: Usable Workbench | Complete |
-| SAFE-02 | Phase 1: Usable Workbench | Pending |
+| SAFE-02 | Phase 1: Usable Workbench | Complete |
 | GRID-01 | Phase 2: Editable Workbench | Pending |
 | GRID-02 | Phase 2: Editable Workbench | Pending |
 | GRID-03 | Phase 2: Editable Workbench | Pending |
