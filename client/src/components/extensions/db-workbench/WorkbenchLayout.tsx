@@ -2,14 +2,15 @@
 //
 // 3 ペイン構成:
 //   - 環境帯（28px、接続の environment が設定されている場合のみ）
-//   - 左サイドバー（200px 固定、bg-sidebar）
-//     - 接続名 + 環境インジケーター + 切替ボタン
+//   - 左サイドバー（200px 固定、ConnectionSidebar コンポーネント）
 //   - メインエリア（flex-1）
-//     - タブバープレースホルダー（36px）
-//     - ツールバープレースホルダー（36px）
-//     - エディターエリア（flex-1）— Monaco エディターを後続フェーズで実装
-//     - 結果エリア（min-h-[120px]）— 結果グリッドを後続フェーズで実装
+//     - タブバー（QueryTabs コンポーネント、36px）
+//     - エディター + 結果エリア（SqlEditorPane + 結果プレースホルダー）
+//
+// タブ状態は loadTabs() で localStorage から復元し、変更のたびに saveTabs() で永続化する。
+// クエリ実行は hostApi.connections.executeQuery に委譲する（Plan 04 で結果グリッドに拡張）。
 
+import { useState, useCallback, useEffect } from "react";
 import { Lock } from "lucide-react";
 import {
   ResizablePanelGroup,
@@ -19,6 +20,11 @@ import {
 import { cn } from "@/lib/utils";
 import type { DbConnectionConfig } from "@shared/schema";
 import type { HostApi } from "@/extensions/host-api";
+import { ConnectionSidebar } from "./ConnectionSidebar";
+import { QueryTabs, loadTabs, saveTabs, defaultTab } from "./QueryTabs";
+import type { QueryTab } from "./QueryTabs";
+import { SqlEditorPane } from "./SqlEditorPane";
+import { useQuery } from "@tanstack/react-query";
 
 // ──────────────────────────────────────────────
 // 型定義
@@ -27,7 +33,7 @@ import type { HostApi } from "@/extensions/host-api";
 export interface WorkbenchLayoutProps {
   /** アクティブな接続設定 */
   connection: DbConnectionConfig;
-  /** ホスト API（将来のクエリ実行・キャンセル等で使用） */
+  /** ホスト API（クエリ実行・キャンセル等で使用） */
   hostApi: HostApi;
   /** レガシービューへ切り替えるコールバック */
   onSwitchToLegacy: () => void;
@@ -92,78 +98,239 @@ function EnvironmentBand({
 }
 
 // ──────────────────────────────────────────────
-// 左サイドバーコンポーネント
-// ──────────────────────────────────────────────
-
-/** 接続情報・環境インジケーター・切替リンクを表示する左サイドバー */
-function WorkbenchSidebar({
-  connection,
-  onSwitchToLegacy,
-}: {
-  connection: DbConnectionConfig;
-  onSwitchToLegacy: () => void;
-}) {
-  const env = connection.environment;
-
-  // 環境ドットの色クラスマッピング
-  const envDotClass: Record<string, string> = {
-    prod: "bg-[hsl(var(--env-prod))]",
-    test: "bg-[hsl(var(--env-test))]",
-    dev: "bg-[hsl(var(--env-dev))]",
-  };
-
-  return (
-    <div className="flex h-full w-full flex-col gap-2 bg-sidebar p-3">
-      {/* 接続名と環境インジケーター */}
-      <div className="flex items-center gap-2">
-        {/* 環境カラードット（8px 円） */}
-        {env && envDotClass[env] && (
-          <div
-            className={cn("h-2 w-2 shrink-0 rounded-full", envDotClass[env])}
-            aria-label={`環境: ${env}`}
-          />
-        )}
-        <span className="truncate text-xs font-semibold text-sidebar-foreground">
-          {connection.name || connection.database}
-        </span>
-        {/* 読み取り専用ロックアイコン */}
-        {connection.readonly && (
-          <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="読み取り専用" />
-        )}
-      </div>
-
-      {/* データベース名（サブ情報） */}
-      <span className="truncate text-[11px] text-muted-foreground">
-        {connection.driver}:{connection.host}:{connection.port}/{connection.database}
-      </span>
-
-      {/* 接続切替リンク */}
-      <button
-        type="button"
-        className="mt-auto text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onClick={onSwitchToLegacy}
-      >
-        接続を切り替える
-      </button>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────
 // メインレイアウトシェル
 // ──────────────────────────────────────────────
 
 /**
  * DB 工作台 メインレイアウトシェル
  *
- * 環境帯 + 左サイドバー + エディター/結果分割ペインで構成される。
- * 各子エリア（Monaco エディター・結果グリッド）は後続フェーズで実装する。
+ * 環境帯 + 左サイドバー（ConnectionSidebar）+ タブバー（QueryTabs）+
+ * エディター（SqlEditorPane）+ 結果エリアプレースホルダーで構成される。
+ * 結果グリッドは Plan 04 で実装する。
  */
 export function WorkbenchLayout({
   connection,
-  hostApi: _hostApi,
+  hostApi,
   onSwitchToLegacy,
 }: WorkbenchLayoutProps) {
+  // ──────────────────────────────────────────────
+  // タブ状態管理（localStorage から初期化）
+  // ──────────────────────────────────────────────
+
+  const [tabs, setTabs] = useState<QueryTab[]>(() => loadTabs());
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const loaded = loadTabs();
+    return loaded[0]?.id ?? defaultTab().id;
+  });
+
+  // クエリ実行状態
+  const [isExecuting, setIsExecuting] = useState(false);
+  // 現在実行中のリクエスト ID（キャンセル時に使用）
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+
+  // 接続リスト（切替ドロップダウン用）
+  const { data: connections = [] } = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => hostApi.connections.list(),
+  });
+
+  // ──────────────────────────────────────────────
+  // アクティブタブの SQL 取得
+  // ──────────────────────────────────────────────
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+
+  // ──────────────────────────────────────────────
+  // タブ操作ハンドラー
+  // ──────────────────────────────────────────────
+
+  /** SQL 変更: アクティブタブの SQL を更新して永続化 */
+  const handleSqlChange = useCallback(
+    (sql: string) => {
+      setTabs((prev) => {
+        const updated = prev.map((t) =>
+          t.id === activeTabId ? { ...t, sql } : t,
+        );
+        saveTabs(updated);
+        return updated;
+      });
+    },
+    [activeTabId],
+  );
+
+  /** タブ切替 */
+  const handleTabChange = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+  }, []);
+
+  /** 新規タブ追加 */
+  const handleTabAdd = useCallback(() => {
+    setTabs((prev) => {
+      const newTab: QueryTab = {
+        id: crypto.randomUUID(),
+        label: `Query ${prev.length + 1}`,
+        sql: "",
+        connectionId: connection.id,
+      };
+      const updated = [...prev, newTab];
+      saveTabs(updated);
+      setActiveTabId(newTab.id);
+      return updated;
+    });
+  }, [connection.id]);
+
+  /** タブ削除（最後の 1 タブは削除不可） */
+  const handleTabClose = useCallback(
+    (tabId: string) => {
+      setTabs((prev) => {
+        if (prev.length <= 1) return prev;
+
+        const updated = prev.filter((t) => t.id !== tabId);
+        saveTabs(updated);
+
+        // 削除したタブがアクティブだった場合は隣のタブをアクティブにする
+        if (activeTabId === tabId) {
+          const closedIndex = prev.findIndex((t) => t.id === tabId);
+          const nextTab = updated[Math.max(0, closedIndex - 1)];
+          if (nextTab) setActiveTabId(nextTab.id);
+        }
+
+        return updated;
+      });
+    },
+    [activeTabId],
+  );
+
+  /** タブリネーム */
+  const handleTabRename = useCallback((tabId: string, newLabel: string) => {
+    setTabs((prev) => {
+      const updated = prev.map((t) =>
+        t.id === tabId ? { ...t, label: newLabel } : t,
+      );
+      saveTabs(updated);
+      return updated;
+    });
+  }, []);
+
+  /** 現在のアクティブタブを閉じる（Ctrl+W） */
+  const handleCloseActiveTab = useCallback(() => {
+    handleTabClose(activeTabId);
+  }, [activeTabId, handleTabClose]);
+
+  // ──────────────────────────────────────────────
+  // クエリ実行ハンドラー
+  // ──────────────────────────────────────────────
+
+  /**
+   * 選択範囲またはカーソル位置のステートメントを実行する（Ctrl+Enter）。
+   *
+   * REVIEW FIX: ステートメント区切りはバックエンドに委譲。
+   * - sql に選択テキストが渡された場合: そのまま実行
+   * - cursorOffset が渡された場合: バックエンドがオフセットでターゲットステートメントを解決
+   */
+  const handleExecuteSelection = useCallback(
+    async (sql: string, cursorOffset?: number) => {
+      if (!sql.trim() || isExecuting) return;
+
+      const requestId = crypto.randomUUID();
+      setCurrentRequestId(requestId);
+      setIsExecuting(true);
+
+      try {
+        await hostApi.connections.executeQuery({
+          connectionId: connection.id,
+          sql,
+          requestId,
+          // cursorOffset はバックエンド側でステートメント特定に使用
+          ...(cursorOffset !== undefined && { cursorOffset }),
+        });
+      } catch {
+        // Plan 04 で結果エリアにエラー表示を実装する
+      } finally {
+        setIsExecuting(false);
+        setCurrentRequestId(null);
+      }
+    },
+    [connection.id, hostApi.connections, isExecuting],
+  );
+
+  /**
+   * フルスクリプト実行（Shift+Ctrl+Enter）。
+   * カーソルオフセットなし = バックエンドが全ステートメントを順次実行。
+   */
+  const handleExecuteScript = useCallback(
+    async (sql: string) => {
+      if (!sql.trim() || isExecuting) return;
+
+      const requestId = crypto.randomUUID();
+      setCurrentRequestId(requestId);
+      setIsExecuting(true);
+
+      try {
+        await hostApi.connections.executeQuery({
+          connectionId: connection.id,
+          sql,
+          requestId,
+        });
+      } catch {
+        // Plan 04 で結果エリアにエラー表示を実装する
+      } finally {
+        setIsExecuting(false);
+        setCurrentRequestId(null);
+      }
+    },
+    [connection.id, hostApi.connections, isExecuting],
+  );
+
+  /**
+   * EXPLAIN 実行。
+   * バックエンドの db_query_explain に SQL を渡す（Plan 04 で結果グラフに表示）。
+   */
+  const handleExplain = useCallback(
+    async (sql: string) => {
+      if (!sql.trim() || isExecuting) return;
+
+      setIsExecuting(true);
+
+      try {
+        // ExplainRequest は connectionId + sql のみ（requestId フィールドなし）
+        await hostApi.connections.explainQuery({
+          connectionId: connection.id,
+          sql,
+        });
+      } catch {
+        // Plan 04 で EXPLAIN グラフに表示する
+      } finally {
+        setIsExecuting(false);
+      }
+    },
+    [connection.id, hostApi.connections, isExecuting],
+  );
+
+  /** クエリキャンセル */
+  const handleCancel = useCallback(async () => {
+    if (!currentRequestId) return;
+    try {
+      await hostApi.connections.cancelQuery(currentRequestId);
+    } finally {
+      setIsExecuting(false);
+      setCurrentRequestId(null);
+    }
+  }, [currentRequestId, hostApi.connections]);
+
+  /** 接続切替（サイドバーから） */
+  const handleSwitchConnection = useCallback(
+    (_id: string) => {
+      // 接続切替はレガシービューで行う（Connection フォームを経由）
+      onSwitchToLegacy();
+    },
+    [onSwitchToLegacy],
+  );
+
+  // ──────────────────────────────────────────────
+  // レンダリング
+  // ──────────────────────────────────────────────
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* 環境帯 — prod/test/dev 接続時のみ表示 */}
@@ -171,74 +338,49 @@ export function WorkbenchLayout({
 
       {/* メインボディ: サイドバー + コンテンツエリア */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 左サイドバー — 200px 固定幅 */}
-        <div className="w-[200px] shrink-0 border-r border-border">
-          <WorkbenchSidebar
-            connection={connection}
-            onSwitchToLegacy={onSwitchToLegacy}
-          />
-        </div>
+        {/* 左サイドバー — ConnectionSidebar（200px 固定幅） */}
+        <ConnectionSidebar
+          connection={connection}
+          connections={connections}
+          onSwitchConnection={handleSwitchConnection}
+        />
 
-        {/* コンテンツエリア — タブバー + ツールバー + エディター/結果 */}
+        {/* コンテンツエリア — タブバー + エディター/結果 */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* タブバープレースホルダー（36px） */}
-          <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border bg-panel-muted px-2">
-            <div className="flex h-[26px] items-center rounded-md bg-background px-3 text-xs font-medium text-foreground shadow-sm border border-border">
-              Query 1
-            </div>
-          </div>
-
-          {/* ツールバープレースホルダー（36px） */}
-          <div className="flex h-[36px] shrink-0 items-center gap-2 border-b border-border bg-panel-muted px-3">
-            {/* Run ボタン（無効状態 — Monaco 接続後に有効化） */}
-            <button
-              type="button"
-              disabled
-              className="flex h-6 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground opacity-50"
-            >
-              実行
-            </button>
-            {/* Explain ボタン */}
-            <button
-              type="button"
-              disabled
-              className="flex h-6 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground opacity-50"
-            >
-              実行計画
-            </button>
-            {/* Format ボタン */}
-            <button
-              type="button"
-              disabled
-              className="flex h-6 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground opacity-50"
-            >
-              整形
-            </button>
-            {/* Stop ボタン */}
-            <button
-              type="button"
-              disabled
-              className="flex h-6 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground opacity-50"
-            >
-              中断
-            </button>
-          </div>
+          {/* タブバー（QueryTabs コンポーネント） */}
+          <QueryTabs
+            connectionId={connection.id}
+            activeTabId={activeTab?.id ?? ""}
+            tabs={tabs}
+            onTabChange={handleTabChange}
+            onTabAdd={handleTabAdd}
+            onTabClose={handleTabClose}
+            onTabRename={handleTabRename}
+          />
 
           {/* エディター/結果エリア — react-resizable-panels で縦分割 */}
           <ResizablePanelGroup direction="vertical" className="flex-1">
-            {/* エディターエリア（flex-1） */}
+            {/* エディターエリア: SqlEditorPane（flex-1） */}
             <ResizablePanel defaultSize={60} minSize={20}>
-              <div className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
-                最初のクエリを書いてください
-              </div>
+              <SqlEditorPane
+                sql={activeTab?.sql ?? ""}
+                dialect={connection.driver}
+                onSqlChange={handleSqlChange}
+                onExecuteSelection={handleExecuteSelection}
+                onExecuteScript={handleExecuteScript}
+                onExplain={handleExplain}
+                onCancel={handleCancel}
+                onCloseTab={handleCloseActiveTab}
+                isExecuting={isExecuting}
+              />
             </ResizablePanel>
 
             <ResizableHandle />
 
-            {/* 結果エリア（min-h 120px） */}
+            {/* 結果エリア（Plan 04 で ResultGridPane に置き換え） */}
             <ResizablePanel defaultSize={40} minSize={15}>
               <div className="flex h-full min-h-[120px] items-center justify-center bg-background text-sm text-muted-foreground">
-                クエリを実行すると結果がここに表示されます
+                Run a query to see results
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
