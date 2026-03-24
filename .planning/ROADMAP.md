@@ -38,10 +38,10 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 **Plans**: 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Type foundation + Rust backend (shared types, query.rs, explain.rs, managed state)
-- [ ] 01-02-PLAN.md — IPC bridge + workspace refactor (desktop-bridge, host-api, capabilities, layout shell)
-- [ ] 01-03-PLAN.md — SQL editor + connection UI (Monaco integration, keyboard shortcuts, tabs, sidebar)
-- [ ] 01-04-PLAN.md — Results + EXPLAIN + safety (virtual grid, node graph, dangerous SQL dialog, export)
+- [x] 01-01-PLAN.md — Type foundation + Rust backend (shared types, query.rs, explain.rs, managed state)
+- [x] 01-02-PLAN.md — IPC bridge + workspace refactor (desktop-bridge, host-api, capabilities, layout shell)
+- [x] 01-03-PLAN.md — SQL editor + connection UI (Monaco integration, keyboard shortcuts, tabs, sidebar)
+- [x] 01-04-PLAN.md — Results + EXPLAIN + safety (virtual grid, node graph, dangerous SQL dialog, export)
 
 **UI hint**: yes
 

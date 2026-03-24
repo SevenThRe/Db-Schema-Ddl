@@ -14,16 +14,16 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 ### Category: Connection & Environment (CONN)
 
-- [ ] **CONN-01**: User can assign an environment label (dev / test / prod) and optional color tag to each saved connection
-- [ ] **CONN-02**: User sees a prominent color band on the workbench header when the active connection is test (blue) or prod (red)
-- [ ] **CONN-03**: User can mark a connection as readonly, which disables DML execution and grid editing at the Rust command layer
+- [x] **CONN-01**: User can assign an environment label (dev / test / prod) and optional color tag to each saved connection
+- [x] **CONN-02**: User sees a prominent color band on the workbench header when the active connection is test (blue) or prod (red)
+- [x] **CONN-03**: User can mark a connection as readonly, which disables DML execution and grid editing at the Rust command layer
 
 ### Category: SQL Editor (EDIT)
 
-- [ ] **EDIT-01**: User can write SQL in a Monaco editor with syntax highlighting for the current connection's dialect (MySQL / PostgreSQL)
+- [x] **EDIT-01**: User can write SQL in a Monaco editor with syntax highlighting for the current connection's dialect (MySQL / PostgreSQL)
 - [ ] **EDIT-02**: User can execute the selected SQL with Ctrl/Cmd+Enter; without selection, the current statement block is executed
 - [ ] **EDIT-03**: User can execute the full script with Shift+Ctrl/Cmd+Enter
-- [ ] **EDIT-04**: User can format SQL with Alt+Shift+F (selection or full file) using sql-formatter
+- [x] **EDIT-04**: User can format SQL with Alt+Shift+F (selection or full file) using sql-formatter
 - [ ] **EDIT-05**: User can open multiple query tab pages and switch between them
 
 ### Category: Execution & Results (EXEC)
@@ -91,13 +91,13 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONN-01 | Phase 1: Usable Workbench | Pending |
-| CONN-02 | Phase 1: Usable Workbench | Pending |
-| CONN-03 | Phase 1: Usable Workbench | Pending |
-| EDIT-01 | Phase 1: Usable Workbench | Pending |
+| CONN-01 | Phase 1: Usable Workbench | Complete |
+| CONN-02 | Phase 1: Usable Workbench | Complete |
+| CONN-03 | Phase 1: Usable Workbench | Complete |
+| EDIT-01 | Phase 1: Usable Workbench | Complete |
 | EDIT-02 | Phase 1: Usable Workbench | Pending |
 | EDIT-03 | Phase 1: Usable Workbench | Pending |
-| EDIT-04 | Phase 1: Usable Workbench | Pending |
+| EDIT-04 | Phase 1: Usable Workbench | Complete |
 | EDIT-05 | Phase 1: Usable Workbench | Pending |
 | EXEC-01 | Phase 1: Usable Workbench | Pending |
 | EXEC-02 | Phase 1: Usable Workbench | Pending |
