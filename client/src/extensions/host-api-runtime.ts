@@ -6,6 +6,7 @@
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import type { HostApi, ConnectionsApi, NotificationsApi, ToastOptions } from "./host-api";
+import type { StatusBarController, StatusBarEntryInput } from "@/status-bar/types";
 
 // 全 Capability を付与する定数（後方互換用）
 const ALL_CAPABILITIES: string[] = [
@@ -13,6 +14,8 @@ const ALL_CAPABILITIES: string[] = [
   "db.query",
   "db.schema.read",
   "db.schema.apply",
+  "db.plan.read",
+  "db.result.export",
 ];
 
 /**
@@ -57,6 +60,34 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
       try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.diff(sourceId, targetId);
     },
+    // db.query 権限が必要
+    executeQuery: (request) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.executeQuery(request);
+    },
+    cancelQuery: (requestId) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.cancelQuery(requestId);
+    },
+    previewDangerousSql: (connectionId, sql) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.previewDangerousSql(connectionId, sql);
+    },
+    // db.plan.read 権限が必要
+    explainQuery: (request) => {
+      try { requireCap(granted, "db.plan.read"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.explainQuery(request);
+    },
+    // db.result.export 権限が必要
+    exportRows: (request) => {
+      try { requireCap(granted, "db.result.export"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.exportRows(request);
+    },
+    // db.query 権限が必要（ページネーション）
+    fetchMore: (request) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.fetchMore(request);
+    },
   };
 }
 
@@ -68,6 +99,26 @@ export function createNotificationsApi(
   return { show: toastFn };
 }
 
+function createStatusBarApi(
+  controller: StatusBarController | null,
+  scope: string,
+) {
+  return {
+    set: (entry: StatusBarEntryInput) => {
+      if (!controller) {
+        return () => {};
+      }
+      return controller.setItem(scope, entry);
+    },
+    clear: (id: string) => {
+      controller?.removeItem(scope, id);
+    },
+    clearAll: () => {
+      controller?.clearScope(scope);
+    },
+  };
+}
+
 /**
  * HostApi インスタンスを生成する
  * grantedCapabilities を省略した場合は全権限を付与する（後方互換）
@@ -75,9 +126,12 @@ export function createNotificationsApi(
 export function createHostApi(
   toastFn: (options: ToastOptions) => void,
   grantedCapabilities: string[] = ALL_CAPABILITIES,
+  statusBarController: StatusBarController | null = null,
+  statusBarScope = "host",
 ): HostApi {
   return {
     notifications: createNotificationsApi(toastFn),
     connections: createConnectionsApi(grantedCapabilities),
+    statusBar: createStatusBarApi(statusBarController, statusBarScope),
   };
 }

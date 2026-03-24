@@ -29,6 +29,14 @@ import type {
   TableInfo,
   UploadedFile,
   WorkbookTemplateVariant,
+  QueryExecutionRequest,
+  QueryExecutionResponse,
+  ExplainRequest,
+  DbExplainPlan,
+  DangerousSqlPreview,
+  ExportRowsRequest,
+  FetchMoreRequest,
+  DbQueryBatchResult,
 } from "@shared/schema";
 import { getDesktopCapabilities } from "@/lib/desktop-capabilities";
 
@@ -38,6 +46,14 @@ type ExportResult = {
   successCount: number;
   skippedCount: number;
   skippedTables: string[];
+};
+
+type SaveBinaryFileOptions = {
+  bytes: Uint8Array;
+  defaultFileName: string;
+  defaultDirectory?: string | null;
+  filters?: Array<{ name: string; extensions: string[] }>;
+  revealAfterSave?: boolean;
 };
 
 type SheetSummary = {
@@ -53,6 +69,12 @@ type RuntimeDiagnostics = {
   dbExists: boolean;
   uploadedFileCount: number;
   settingsRowCount: number;
+};
+
+type ProcessMetrics = {
+  pid: number;
+  memoryBytes: number;
+  virtualMemoryBytes: number;
 };
 
 // ──────────────────────────────────────────────
@@ -89,6 +111,17 @@ function sanitizeDownloadFileName(value: string | null | undefined, fallback: st
     return fallback;
   }
   return normalized.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
+}
+
+function buildDefaultSavePath(directory: string | null | undefined, fileName: string): string {
+  const safeFileName = sanitizeDownloadFileName(fileName, "download.bin");
+  const normalizedDirectory = String(directory ?? "").trim();
+  if (!normalizedDirectory) {
+    return safeFileName;
+  }
+  const separator = normalizedDirectory.includes("\\") ? "\\" : "/";
+  const base = normalizedDirectory.replace(/[\\/]+$/, "");
+  return `${base}${separator}${safeFileName}`;
 }
 
 // バイナリコマンド結果を ExportResult に変換
@@ -138,6 +171,29 @@ async function openExcelFileInTauri(): Promise<string | null> {
   return typeof result === "string" ? result : null;
 }
 
+async function saveBinaryFileInTauri(options: SaveBinaryFileOptions): Promise<string | null> {
+  const dialog = await import("@tauri-apps/plugin-dialog");
+  const targetPath = await dialog.save({
+    defaultPath: buildDefaultSavePath(options.defaultDirectory, options.defaultFileName),
+    filters: options.filters,
+  });
+  if (typeof targetPath !== "string" || !targetPath.trim()) {
+    return null;
+  }
+
+  await invoke("core_write_binary_file", {
+    path: targetPath,
+    bytesBase64: bytesToBase64(options.bytes),
+  });
+
+  if (options.revealAfterSave) {
+    const opener = await import("@tauri-apps/plugin-opener");
+    await opener.revealItemInDir(targetPath);
+  }
+
+  return targetPath;
+}
+
 async function uploadFileInTauri(file: File): Promise<UploadedFile> {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -162,6 +218,11 @@ export const desktopBridge = {
   async getRuntimeDiagnostics(): Promise<RuntimeDiagnostics | null> {
     if (getDesktopCapabilities().runtime !== "tauri") return null;
     return await invoke<RuntimeDiagnostics>("core_get_runtime_diagnostics");
+  },
+
+  async getProcessMetrics(): Promise<ProcessMetrics | null> {
+    if (getDesktopCapabilities().runtime !== "tauri") return null;
+    return await invoke<ProcessMetrics>("core_get_process_metrics");
   },
 
   async getAppVersion(): Promise<string> {
@@ -191,6 +252,13 @@ export const desktopBridge = {
       return await openExcelFileInTauri();
     }
     return null;
+  },
+
+  async saveBinaryFile(options: SaveBinaryFileOptions): Promise<string | null> {
+    if (getDesktopCapabilities().runtime !== "tauri") {
+      return null;
+    }
+    return await saveBinaryFileInTauri(options);
   },
 
   files: {
@@ -327,6 +395,26 @@ export const desktopBridge = {
     },
     async diff(sourceConnectionId: string, targetConnectionId: string): Promise<DbSchemaDiffResult> {
       return await invoke<DbSchemaDiffResult>("db_diff", { sourceConnectionId, targetConnectionId });
+    },
+
+    // クエリ実行・取消・エクスポート — Phase 1 DB 工作台
+    async executeQuery(request: QueryExecutionRequest): Promise<QueryExecutionResponse> {
+      return await invoke<QueryExecutionResponse>("db_query_execute", { request });
+    },
+    async explainQuery(request: ExplainRequest): Promise<DbExplainPlan> {
+      return await invoke<DbExplainPlan>("db_query_explain", { request });
+    },
+    async cancelQuery(requestId: string): Promise<void> {
+      await invoke<void>("db_query_cancel", { requestId });
+    },
+    async previewDangerousSql(connectionId: string, sql: string): Promise<DangerousSqlPreview> {
+      return await invoke<DangerousSqlPreview>("db_preview_dangerous_sql", { connectionId, sql });
+    },
+    async exportRows(request: ExportRowsRequest): Promise<string> {
+      return await invoke<string>("db_export_rows", { request });
+    },
+    async fetchMore(request: FetchMoreRequest): Promise<DbQueryBatchResult> {
+      return await invoke<DbQueryBatchResult>("db_query_fetch_more", { request });
     },
   },
 

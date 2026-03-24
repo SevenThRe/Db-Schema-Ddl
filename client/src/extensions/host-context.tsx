@@ -21,6 +21,7 @@ import { desktopBridge } from "@/lib/desktop-bridge";
 import { useToast } from "@/hooks/use-toast";
 import { createHostApi } from "./host-api-runtime";
 import type { HostApi } from "./host-api";
+import { useStatusBarController } from "@/status-bar/context";
 
 // ──────────────────────────────────────────────
 // Context 型定義
@@ -46,6 +47,18 @@ const noopHostApi: HostApi = {
     test: () => Promise.reject(new Error("HostApi not available")),
     introspect: () => Promise.reject(new Error("HostApi not available")),
     diff: () => Promise.reject(new Error("HostApi not available")),
+    // Phase 1 DB 工作台 — フォールバック実装
+    executeQuery: () => Promise.reject(new Error("HostApi not available")),
+    explainQuery: () => Promise.reject(new Error("HostApi not available")),
+    cancelQuery: () => Promise.reject(new Error("HostApi not available")),
+    previewDangerousSql: () => Promise.reject(new Error("HostApi not available")),
+    exportRows: () => Promise.reject(new Error("HostApi not available")),
+    fetchMore: () => Promise.reject(new Error("HostApi not available")),
+  },
+  statusBar: {
+    set: () => () => {},
+    clear: () => {},
+    clearAll: () => {},
   },
 };
 
@@ -68,7 +81,11 @@ const ExtensionHostContext = createContext<ExtensionHostState>(defaultState);
 export function ExtensionHostProvider({ children }: { children: ReactNode }) {
   const capabilities = desktopBridge.getCapabilities();
   const { toast } = useToast();
-  const hostApi = useMemo(() => createHostApi(toast), [toast]);
+  const statusBarController = useStatusBarController();
+  const hostApi = useMemo(
+    () => createHostApi(toast, undefined, statusBarController, "host"),
+    [statusBarController, toast],
+  );
 
   const { data: extensions = [], isLoading } = useQuery<ResolvedExtension[]>({
     queryKey: ["extensions", "all"],
@@ -128,11 +145,12 @@ export function useHostApi(): HostApi {
 export function useHostApiFor(extensionId: string): HostApi {
   const { extensions } = useContext(ExtensionHostContext);
   const { toast } = useToast();
+  const statusBarController = useStatusBarController();
 
   return useMemo(() => {
     const ext = extensions.find((e) => e.manifest.id === extensionId);
     // 未知の extensionId → 全メソッド拒否（権限ゼロ）で安全に失敗させる
     const caps = ext?.manifest.capabilities ?? [];
-    return createHostApi(toast, caps);
-  }, [extensionId, extensions, toast]);
+    return createHostApi(toast, caps, statusBarController, `ext:${extensionId}`);
+  }, [extensionId, extensions, statusBarController, toast]);
 }
