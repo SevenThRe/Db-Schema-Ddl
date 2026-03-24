@@ -42,11 +42,25 @@ pub fn run() {
       let ext_manager = Arc::new(extensions::process::ProcessManager::new(&data_dir));
       app.manage(ext_manager);
 
+      // DB クエリ実行用 managed state を登録
+      use std::collections::HashMap;
+      use std::sync::Mutex;
+      let pool_registry = Arc::new(db_connector::DbPoolRegistry {
+        pools: Mutex::new(HashMap::new()),
+      });
+      let cancel_registry = Arc::new(db_connector::CancellationRegistry {
+        tokens: Mutex::new(HashMap::new()),
+      });
+      app.manage(pool_registry);
+      app.manage(cancel_registry);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
       commands::core_get_app_version,
       commands::core_get_runtime_diagnostics,
+      commands::core_get_process_metrics,
+      commands::core_write_binary_file,
       commands::files_list,
       commands::files_list_templates,
       commands::files_create_from_template,
@@ -94,6 +108,11 @@ pub fn run() {
       db_connector::commands::db_conn_test,
       db_connector::commands::db_introspect,
       db_connector::commands::db_diff,
+      db_connector::query::db_query_execute,
+      db_connector::query::db_query_cancel,
+      db_connector::query::db_query_fetch_more,
+      db_connector::query::db_preview_dangerous_sql,
+      db_connector::explain::db_query_explain,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
