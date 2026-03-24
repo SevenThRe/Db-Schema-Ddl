@@ -1,5 +1,11 @@
-// DB 接続管理ワークスペース
-// MySQL / PostgreSQL への接続設定管理・スキーマ閲覧・差分比較 UI
+// DB 接続管理ワークスペース — ルーティングシェル
+//
+/**
+ * レガシービュー回帰保護：
+ * - workbenchMode === "legacy" || 接続未選択 → 既存UI（接続フォーム・スキーマ・Diff）
+ * - workbenchMode === "workbench" && 接続選択済 → WorkbenchLayout
+ * 既存機能（接続管理・スキーマ閲覧・Diff比較）は削除禁止
+ */
 
 import { useState, useCallback, useMemo } from "react";
 import {
@@ -24,6 +30,7 @@ import type { StructuredDiffEntry } from "@/components/diff-viewer/structured-ty
 import type {
   DbConnectionConfig, DbDriver, DbSchemaSnapshot, DbSchemaDiffResult,
 } from "@shared/schema";
+import { WorkbenchLayout } from "./db-workbench/WorkbenchLayout";
 
 const DEFAULT_PORTS: Record<DbDriver, number> = { mysql: 3306, postgres: 5432 };
 
@@ -522,6 +529,9 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
   const toast = host.notifications.show;
   const qc = useQueryClient();
 
+  // 工作台モード: "workbench" = WorkbenchLayout, "legacy" = 既存UI
+  const [workbenchMode, setWorkbenchMode] = useState<"legacy" | "workbench">("workbench");
+
   const [editingConfig, setEditingConfig] = useState<DbConnectionConfig | null>(null);
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [diffSourceId, setDiffSourceId] = useState<string>("");
@@ -592,6 +602,22 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
     }
   }, [diffSourceId, diffTargetId, clearDiff, toast]);
 
+  // アクティブ接続オブジェクト（selectedConnId から解決）
+  const activeConnection = selectedConnId
+    ? connections.find((c) => c.id === selectedConnId) ?? null
+    : null;
+
+  // ── 工作台モード: 接続選択済 && workbench モード → WorkbenchLayout ──
+  if (workbenchMode === "workbench" && activeConnection) {
+    return (
+      <WorkbenchLayout
+        connection={activeConnection}
+        hostApi={host}
+        onSwitchToLegacy={() => setWorkbenchMode("legacy")}
+      />
+    );
+  }
+
   // ── 接続フォーム表示中 ──────────────────────
   if (editingConfig) {
     return (
@@ -635,7 +661,13 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
               ) : connections.map((conn) => (
                 <div key={conn.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
                   <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => { setSelectedConnId(conn.id); setWorkbenchMode("workbench"); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === "Enter" && (setSelectedConnId(conn.id), setWorkbenchMode("workbench"))}
+                  >
                     <p className="text-xs font-medium truncate">{conn.name}</p>
                     <p className="text-[10px] text-muted-foreground truncate">
                       {conn.driver}://{conn.host}:{conn.port}/{conn.database}

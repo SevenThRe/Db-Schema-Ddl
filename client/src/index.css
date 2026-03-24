@@ -8,7 +8,7 @@
   --font-sans: 'IBM Plex Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  --background: 210 33% 98%;
+  --background: 214 36% 97%;
   --foreground: 221 39% 13%;
 
   --card: 0 0% 100%;
@@ -23,8 +23,8 @@
   --secondary: 215 38% 95%;
   --secondary-foreground: 221 39% 13%;
 
-  --muted: 216 28% 93%;
-  --muted-foreground: 220 16% 43%;
+  --muted: 214 30% 92%;
+  --muted-foreground: 220 16% 40%;
 
   --accent: 214 49% 94%;
   --accent-foreground: 221 39% 13%;
@@ -32,8 +32,8 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 218 29% 85%;
-  --input: 218 29% 85%;
+  --border: 217 28% 84%;
+  --input: 217 28% 84%;
   --ring: 221 80% 54%;
   --button-outline: hsl(var(--border) / 0.95);
   --panel: 0 0% 100%;
@@ -43,6 +43,13 @@
   --workspace-glow: 215 100% 68%;
   --workspace-grid: 218 22% 88%;
   --workspace-shadow: 220 53% 10%;
+  --statusbar-bg: 214 32% 92%;
+  --statusbar-fg: 221 35% 18%;
+  --statusbar-muted: 220 14% 42%;
+  --statusbar-border: 217 22% 78%;
+  --statusbar-accent: 217 74% 54%;
+  --statusbar-item-bg: 0 0% 100%;
+  --statusbar-meter-bg: 216 24% 83%;
 
   --radius: 0.375rem;
 
@@ -53,45 +60,93 @@
   --muted-border: hsl(216 20% 88%);
   --accent-border: hsl(214 32% 88%);
   --popover-border: 218 29% 85%;
+
+  /* DB 工作台 — 環境帯カラー */
+  --env-prod: 0 84% 60%;
+  --env-test: 217 74% 54%;
+  --env-dev: 142 71% 45%;
+  --env-prod-fg: 0 0% 100%;
+  --env-test-fg: 0 0% 100%;
+  --env-dev-fg: 0 0% 100%;
+
+  /* EXPLAIN グラフ — リスクハイライト */
+  --explain-risk-high: 0 84% 60%;
+  --explain-risk-med: 38 95% 56%;
+  --explain-safe: 142 71% 45%;
+  --explain-node-bg: var(--card);
+  --explain-node-border: var(--border);
 }
 
 .dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
+  --background: 0 0% 6%;
+  --foreground: 0 0% 80%;
 
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
+  --card: 0 0% 6%;
+  --card-foreground: 0 0% 80%;
 
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 0 0% 12%;
+  --popover-foreground: 0 0% 80%;
 
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
+  --primary: 203 100% 40%;
+  --primary-foreground: 210 40% 98%;
 
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 80%;
 
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 53%;
 
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 0 0% 14%;
+  --accent-foreground: 0 0% 92%;
 
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  --border: 0 0% 18%;
+  --input: 0 0% 18%;
+  --ring: 203 100% 40%;
   --button-outline: hsl(var(--border) / 0.8);
+  --statusbar-bg: 0 0% 12%;
+  --statusbar-fg: 0 0% 80%;
+  --statusbar-muted: 0 0% 53%;
+  --statusbar-border: 0 0% 18%;
+  --statusbar-accent: 203 100% 40%;
+  --statusbar-item-bg: 0 0% 8%;
+  --statusbar-meter-bg: 0 0% 18%;
 
-  --card-border: 217.2 32.6% 17.5%;
-  --primary-border: hsl(217 80% 50%);
-  --secondary-border: hsl(217 25% 22%);
+  --card-border: 0 0% 18%;
+  --primary-border: hsl(203 100% 40%);
+  --secondary-border: hsl(0 0% 18%);
   --destructive-border: hsl(0 50% 35%);
-  --muted-border: hsl(217 20% 22%);
-  --accent-border: hsl(217 25% 22%);
-  --popover-border: 217.2 32.6% 17.5%;
+  --muted-border: hsl(0 0% 18%);
+  --accent-border: hsl(0 0% 18%);
+  --popover-border: 0 0% 18%;
+
+  /* DB 工作台 — 環境帯カラー（絶対色 — テーマ非依存） */
+  --env-prod: 0 84% 60%;
+  --env-test: 217 74% 54%;
+  --env-dev: 142 71% 45%;
+  --env-prod-fg: 0 0% 100%;
+  --env-test-fg: 0 0% 100%;
+  --env-dev-fg: 0 0% 100%;
+
+  /* EXPLAIN グラフ — リスクハイライト */
+  --explain-risk-high: 0 84% 60%;
+  --explain-risk-med: 38 95% 56%;
+  --explain-safe: 142 71% 45%;
+  --explain-node-bg: var(--card);
+  --explain-node-border: var(--border);
+
+  --sidebar: 0 0% 12%;
+  --sidebar-foreground: 0 0% 80%;
+  --sidebar-border: 0 0% 18%;
+  --sidebar-ring: 203 100% 40%;
+  --sidebar-primary: 203 100% 40%;
+  --sidebar-primary-foreground: 210 40% 98%;
+  --sidebar-primary-border: hsl(203 100% 40%);
+  --sidebar-accent: 0 0% 15%;
+  --sidebar-accent-foreground: 0 0% 92%;
+  --sidebar-accent-border: hsl(0 0% 18%);
 }
 
 @layer base {
@@ -111,12 +166,27 @@
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    background-image: none;
     min-height: 100vh;
+  }
+
+  .dark body {
+    background-image: none;
+  }
+
+  body {
+    background-image: none;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-bold tracking-tight text-foreground;
+  }
+
+  button,
+  [role="button"],
+  [role="tab"],
+  label,
+  summary {
+    user-select: none;
   }
 
   button:focus-visible,
@@ -159,24 +229,23 @@ code {
   }
 
   .workbench-shell {
-    @apply relative overflow-hidden bg-background;
+    @apply relative overflow-hidden rounded-[4px] border border-slate-300 bg-slate-100 shadow-none dark:border-[#2d2d2d] dark:bg-[#0f0f0f];
   }
 
   .workbench-shell::before {
-    content: "";
-    position: absolute;
-    inset: 0;
+    content: none;
+  }
+
+  .dark .workbench-shell::before {
     background: none;
-    mask-image: none;
-    pointer-events: none;
   }
 
   .panel-surface {
-    @apply border border-border bg-background shadow-sm shadow-black/[0.03] dark:shadow-black/20;
+    @apply border border-slate-300 bg-white shadow-none dark:border-[#2d2d2d] dark:bg-[#0f0f0f];
   }
 
   .panel-surface-muted {
-    @apply border border-border bg-muted/20 shadow-sm shadow-black/[0.02] dark:shadow-black/15;
+    @apply border border-slate-300 bg-slate-100 shadow-none dark:border-[#2d2d2d] dark:bg-[#1e1e1e];
   }
 
   .section-kicker {
@@ -193,5 +262,62 @@ code {
 
   .status-pill {
     @apply inline-flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-[11px] font-medium text-muted-foreground;
+  }
+
+  .workspace-topbar {
+    @apply relative z-10 rounded-[4px] border border-slate-300 bg-white shadow-none dark:border-[#2d2d2d] dark:bg-[#1e1e1e];
+  }
+
+  .workspace-panel {
+    @apply relative overflow-hidden rounded-[4px] border border-slate-300 bg-white shadow-none dark:border-[#2d2d2d] dark:bg-[#0f0f0f];
+  }
+
+  .workspace-nav-pane {
+    @apply bg-[#f6f8fa] dark:bg-[#1e1e1e];
+  }
+
+  .workspace-panel::before {
+    content: none;
+  }
+
+  .dark .workspace-panel::before {
+    background: none;
+  }
+
+  .workspace-panel > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .workspace-subtle-grid {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+
+  .status-bar-shell {
+    background: hsl(var(--statusbar-bg));
+    color: hsl(var(--statusbar-fg));
+    border: 1px solid hsl(var(--statusbar-border));
+  }
+
+  .status-bar-item {
+    @apply inline-flex min-w-0 items-center gap-1.5 rounded-[3px] px-1.5 py-0.5;
+    background: hsl(var(--statusbar-item-bg) / 0.72);
+  }
+
+  .status-bar-item-detail {
+    color: hsl(var(--statusbar-muted));
+  }
+
+  .status-bar-meter {
+    @apply h-1 w-10 overflow-hidden rounded-full;
+    background: hsl(var(--statusbar-meter-bg));
+  }
+
+  .status-bar-meter-fill {
+    @apply block h-full rounded-full;
+    background: hsl(var(--statusbar-accent));
   }
 }
