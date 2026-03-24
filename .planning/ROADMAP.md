@@ -35,7 +35,14 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
   3. User can execute a query and see results in a virtual-scroll grid limited to 1000 rows, with sticky column headers, column-width drag, elapsed time, row count, a cancel button that stops the running query, and export to CSV/JSON/Markdown/SQL Insert
   4. User can request an EXPLAIN plan for any SELECT query and see it rendered as a node graph with full-table-scan nodes highlighted in red and large-row-estimate nodes flagged with a risk badge
   5. User sees a confirmation dialog showing connection name, environment, database name, and exact SQL before any DROP/TRUNCATE/ALTER/WHERE-less DELETE or UPDATE executes; prod connections require typing the database name to confirm; readonly connections reject DML at the Rust command layer
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Type foundation + Rust backend (shared types, query.rs, explain.rs, managed state)
+- [ ] 01-02-PLAN.md — IPC bridge + workspace refactor (desktop-bridge, host-api, capabilities, layout shell)
+- [ ] 01-03-PLAN.md — SQL editor + connection UI (Monaco integration, keyboard shortcuts, tabs, sidebar)
+- [ ] 01-04-PLAN.md — Results + EXPLAIN + safety (virtual grid, node graph, dangerous SQL dialog, export)
+
 **UI hint**: yes
 
 ### Phase 2: Editable Workbench
@@ -67,7 +74,7 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Usable Workbench | 0/0 | Not started | - |
+| 1. Usable Workbench | 0/4 | Planning complete | - |
 | 2. Editable Workbench | 0/0 | Not started | - |
 | 3. Structural Workbench | 0/0 | Not started | - |
 
@@ -119,4 +126,4 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 ---
 
-*Last updated: 2026-03-24 — Roadmap created for milestone v1.4 DB 工作台*
+*Last updated: 2026-03-24 — Phase 1 plans created (4 plans, 2 waves)*
