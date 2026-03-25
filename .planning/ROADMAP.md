@@ -3,8 +3,8 @@ milestone: v1.4
 milestone_name: DB 工作台
 created: "2026-03-24"
 granularity: coarse
-total_phases: 3
-total_requirements: 21
+total_phases: 4
+total_requirements: 29
 ---
 
 # Roadmap: DB 工作台 v1.4
@@ -20,6 +20,7 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 - [ ] **Phase 1: Usable Workbench** - User can connect, write SQL, execute with Ctrl+Enter, browse results, view EXPLAIN plans, export, and is protected from dangerous SQL on prod
 - [ ] **Phase 2: Editable Workbench** - User can browse schema objects, edit single-table grid cells with transaction safety, and get schema-aware autocomplete
 - [ ] **Phase 3: Structural Workbench** - User can visualize the schema as an ER diagram with FK relationships, search nodes, and inspect table details
+- [ ] **Phase 4: DDL 导入 & 扩展功能管理** - User can import DDL SQL files into a live database with statement preview and safety gates; extensions are managed from a dedicated page and no longer pollute the primary navigation sidebar
 
 ---
 
@@ -68,6 +69,26 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 4: DDL 导入 & 扩展功能管理
+**Goal**: Users can import DDL SQL files against any live database connection with statement-level preview and the same dangerous-SQL safety gate as query execution; the main navigation sidebar is cleaned up so extension-type items no longer appear there; a dedicated Extension Management page lists all builtin and external extensions with enable/disable controls; DB 工作台 is visible and manageable from that page
+**Depends on**: Phase 1 (dangerous-SQL confirmation dialog; query execution pipeline reused for DDL execution)
+**Requirements**: IMP-01, IMP-02, IMP-03, EXTUI-01, EXTUI-02, EXTUI-03, EXTUI-04, EXTUI-05
+**Success Criteria** (what must be TRUE):
+  1. User opens DDL 导入 dialog from the workbench toolbar (not a stray header button), selects a `.sql` file, sees a parsed statement list preview, clicks Execute, and sees per-statement success/error with line number reference
+  2. Prod connections require typing the database name before DDL import proceeds; dangerous statements (DROP/TRUNCATE/ALTER) trigger the standard confirmation dialog
+  3. Primary sidebar contains no extension-type direct entries (数据库, Schema Diff, DDL→Excel, Enum生成 are absent from top-level navigation)
+  4. Clicking 扩展功能 routes to a full-page Extension Management view listing all extensions as cards with name, description, version, enabled toggle, and an Open/Launch button
+  5. DB 工作台 (db-connector builtin) appears in Extension Management as enabled by default; toggling it off hides the workbench entry from all navigation surfaces
+**Plans**: 4 plans
+
+Plans:
+- [x] 04-01-PLAN.md — Rust builtin cleanup + sidebar refactor + MainSurface extension
+- [ ] 04-02-PLAN.md — Extension Management full-page surface
+- [ ] 04-03-PLAN.md — DDL import live-DB execution flow
+- [ ] 04-04-PLAN.md — Visual verification checkpoint
+
+**UI hint**: yes
+
 ---
 
 ## Progress
@@ -77,6 +98,7 @@ Plans:
 | 1. Usable Workbench | 0/4 | Planning complete | - |
 | 2. Editable Workbench | 0/0 | Not started | - |
 | 3. Structural Workbench | 0/0 | Not started | - |
+| 4. DDL 导入 & 扩展功能管理 | 0/4 | Planning complete | - |
 
 ---
 
@@ -109,8 +131,16 @@ Plans:
 | ER-01 | Phase 3 | Pending |
 | ER-02 | Phase 3 | Pending |
 | ER-03 | Phase 3 | Pending |
+| IMP-01 | Phase 4 | Pending |
+| IMP-02 | Phase 4 | Pending |
+| IMP-03 | Phase 4 | Pending |
+| EXTUI-01 | Phase 4 | Pending |
+| EXTUI-02 | Phase 4 | Pending |
+| EXTUI-03 | Phase 4 | Pending |
+| EXTUI-04 | Phase 4 | Pending |
+| EXTUI-05 | Phase 4 | Pending |
 
-**Total: 21/21 requirements mapped (100% coverage)**
+**Total: 29/29 requirements mapped (100% coverage)**
 
 ---
 
@@ -123,7 +153,8 @@ Plans:
 - Phase 2 MUST NOT start until Phase 1 readonly enforcement is proven stable and audited
 - Phase 3 requires `relations.rs` extended FK introspection (separate MySQL and PostgreSQL queries) before ER diagram can render
 - `DbConnectorWorkspace.tsx` refactor into `db-workbench/` subdirectory is Step 4 of 8-step build order — must precede Phase 1 feature delivery
+- Phase 4 requires ZERO new npm or Cargo dependencies — all infrastructure already exists
 
 ---
 
-*Last updated: 2026-03-24 — Phase 1 plans created (4 plans, 2 waves)*
+*Last updated: 2026-03-25 — Phase 4 plans created (4 plans in 3 waves)*

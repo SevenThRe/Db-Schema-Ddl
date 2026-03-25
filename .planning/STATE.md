@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: milestone
-status: Milestone complete
-last_updated: "2026-03-25T04:11:45.827Z"
+status: Ready to execute
+last_updated: "2026-03-25T05:11:13.624Z"
 progress:
-  total_phases: 12
-  completed_phases: 12
-  total_plans: 50
-  completed_plans: 50
+  total_phases: 14
+  completed_phases: 13
+  total_plans: 58
+  completed_plans: 55
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-24)
 
 **Core value:** Users can write SQL, browse results, visualize execution plans, safely edit data, and explore ER diagrams — all within the db-connector workbench — forming a closed loop with Excel DDL definition and schema comparison.
-**Current focus:** Phase 01 — Usable Workbench
+**Current focus:** Phase 04 — ddl-import-and-extension-management-v1_4
 
 ## Current Status
 
@@ -31,8 +31,8 @@ See: `.planning/PROJECT.md` (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 04 (ddl-import-and-extension-management-v1_4) — EXECUTING
+Plan: 2 of 4
 
 ## Important Assumptions
 
@@ -78,10 +78,15 @@ Plan: Not started
 - `confirmed=true` in QueryExecutionRequest is the Rust-layer safety gate — frontend dialog is UI only
 - 3-mode export: current-page (client-side) / full-re-execute (backend exportRows) / auto-merge
 
+## Architecture Decisions (Plan 04-01 Additions)
+
+- Phase 4 nav model: ddl-to-excel, excel-to-java-enum, schema-diff navigation cleared from Rust manifests; static sidebar entries replace extension contributions for built-in features
+- MainSurface union extended with `{ kind: "extensions" }` — extensions surface placeholder added; Plan 02 replaces with ExtensionManagement component
+- DDL import button removed from Dashboard header; sidebar is now the canonical entry point
+
 ## Next Command
 
-- Awaiting human visual verification (Task 3 of Plan 04)
-- After approval: mark Phase 01 complete
+- Execute 04-02-PLAN.md (Extension Management page)
 
 ---
-*Last updated: 2026-03-24 after completing 01-04-PLAN.md Tasks 1+2 (result grid + explain + dangerous SQL + export wiring)*
+*Last updated: 2026-03-25 after completing 04-01-PLAN.md (sidebar nav foundation + extensions surface)*
