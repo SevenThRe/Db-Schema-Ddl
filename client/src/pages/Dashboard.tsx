@@ -20,6 +20,7 @@ import { type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ExtensionWorkspaceHost } from "@/extensions/ExtensionWorkspaceHost";
+import { ExtensionManagementPage } from "@/components/extension-management/ExtensionManagementPage";
 import type { MainSurface } from "@/extensions/host-api";
 import { StatusBar } from "@/components/StatusBar";
 import { useStatusBarScope } from "@/status-bar/context";
@@ -909,9 +910,7 @@ export default function Dashboard() {
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden">
               {activeSurface.kind === "extensions" ? (
-                <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                  扩展功能管理（Plan 02 で実装）
-                </div>
+                <ExtensionManagementPage onNavigate={setActiveSurface} />
               ) : activeSurface.kind === "extension" ? (
                 <ExtensionWorkspaceHost
                   extensionId={activeSurface.extensionId}
