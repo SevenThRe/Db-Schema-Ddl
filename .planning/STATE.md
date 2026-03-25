@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-03-25T05:11:13.624Z"
+last_updated: "2026-03-25T05:20:07.670Z"
 progress:
   total_phases: 14
   completed_phases: 13
   total_plans: 58
-  completed_plans: 55
+  completed_plans: 56
 ---
 
 # Project State
@@ -32,7 +32,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-24)
 ## Current Position
 
 Phase: 04 (ddl-import-and-extension-management-v1_4) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Important Assumptions
 
@@ -84,9 +84,16 @@ Plan: 2 of 4
 - MainSurface union extended with `{ kind: "extensions" }` — extensions surface placeholder added; Plan 02 replaces with ExtensionManagement component
 - DDL import button removed from Dashboard header; sidebar is now the canonical entry point
 
+## Architecture Decisions (Plan 04-02 Additions)
+
+- Extension filter: show `db-connector` (DbConnector) + `kind === "external"` only; builtin Transformer/Utility are framework features, not user-managed extensions
+- Enable toggle: `ext_set_enabled` IPC + `invalidateQueries(["extensions","all"])` overrides 60s staleTime for immediate sidebar sync
+- Uninstall in Phase 4: `ext_set_enabled(false)` + local `uninstalledIds` Set as stub; real uninstall IPC deferred to future phase
+- 打開 button: navigates to `{ kind: "extension", extensionId, panelId }` via `onNavigate` prop from Dashboard
+
 ## Next Command
 
-- Execute 04-02-PLAN.md (Extension Management page)
+- Execute 04-03-PLAN.md
 
 ---
-*Last updated: 2026-03-25 after completing 04-01-PLAN.md (sidebar nav foundation + extensions surface)*
+*Last updated: 2026-03-25 after completing 04-02-PLAN.md (Extension Management page)*
