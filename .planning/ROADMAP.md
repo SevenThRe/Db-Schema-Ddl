@@ -84,7 +84,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Rust builtin cleanup + sidebar refactor + MainSurface extension
 - [x] 04-02-PLAN.md — Extension Management full-page surface
-- [ ] 04-03-PLAN.md — DDL import live-DB execution flow
+- [x] 04-03-PLAN.md — DDL import live-DB execution flow
 - [ ] 04-04-PLAN.md — Visual verification checkpoint
 
 **UI hint**: yes
@@ -98,7 +98,7 @@ Plans:
 | 1. Usable Workbench | 0/4 | Planning complete | - |
 | 2. Editable Workbench | 0/0 | Not started | - |
 | 3. Structural Workbench | 0/0 | Not started | - |
-| 4. DDL 导入 & 扩展功能管理 | 2/4 | In Progress|  |
+| 4. DDL 导入 & 扩展功能管理 | 3/4 | In Progress|  |
 
 ---
 
