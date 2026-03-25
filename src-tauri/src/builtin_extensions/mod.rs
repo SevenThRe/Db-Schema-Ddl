@@ -106,6 +106,8 @@ pub struct BuiltinExtensionManifest {
     pub contributes: ExtensionContributes,
 }
 
+// Phase 4: built-in feature (DDL 生成器, DDL 導入, Schema Diff) はナビゲーションを宣言しない。
+// 外部拡張 (db-connector) のみがナビゲーションを contribution として宣言する。
 /// 全組み込み拡張機能のマニフェストを返す
 pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
     vec![
@@ -121,12 +123,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             input_formats: vec!["sql".to_string()],
             output_formats: vec!["xlsx".to_string()],
             contributes: ExtensionContributes {
-                navigation: vec![NavigationItem {
-                    id: "ddl-to-excel".to_string(),
-                    label: "DDL → Excel".to_string(),
-                    icon: Some("FileSpreadsheet".to_string()),
-                    order: 20,
-                }],
+                navigation: vec![],
                 workspace_panels: vec![WorkspacePanel {
                     id: "ddl-to-excel-workspace".to_string(),
                     title: "DDL → Excel".to_string(),
@@ -146,12 +143,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["java".to_string()],
             contributes: ExtensionContributes {
-                navigation: vec![NavigationItem {
-                    id: "enum-gen".to_string(),
-                    label: "Enum 生成".to_string(),
-                    icon: Some("Zap".to_string()),
-                    order: 30,
-                }],
+                navigation: vec![],
                 workspace_panels: vec![WorkspacePanel {
                     id: "enum-gen-workspace".to_string(),
                     title: "Enum 生成".to_string(),
@@ -221,12 +213,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["sql".to_string()],
             contributes: ExtensionContributes {
-                navigation: vec![NavigationItem {
-                    id: "schema-diff".to_string(),
-                    label: "Schema Diff".to_string(),
-                    icon: Some("ArrowLeftRight".to_string()),
-                    order: 15,
-                }],
+                navigation: vec![],
                 workspace_panels: vec![WorkspacePanel {
                     id: "schema-diff-workspace".to_string(),
                     title: "Schema Diff".to_string(),

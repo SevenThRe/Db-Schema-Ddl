@@ -29,6 +29,7 @@ export interface ToastOptions {
 export type MainSurface =
   | { kind: "workspace" }
   | { kind: "ddl-import" }
+  | { kind: "extensions" }
   | { kind: "extension"; extensionId: string; panelId: string };
 
 /** データベース接続操作 API */
