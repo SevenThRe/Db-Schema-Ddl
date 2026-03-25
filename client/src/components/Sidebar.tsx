@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2, Puzzle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2, Puzzle, ArrowDownAZ, FileCode2, GitCompareArrows } from "lucide-react";
 import type { CreateWorkbookFromTemplateRequest } from "@shared/schema";
-import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
+import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useSheets, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -20,7 +20,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { translateApiError } from "@/lib/api-error";
@@ -28,15 +38,19 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
-import { ExtensionPanel } from "./ExtensionPanel";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useExtensionHost } from "@/extensions/host-context";
 import type { MainSurface } from "@/extensions/host-api";
 import * as LucideIcons from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface SidebarProps {
   selectedFileId: number | null;
+  selectedFileIds?: Set<number>;
+  selectedSheet?: string | null;
   onSelectFile: (id: number | null) => void;
+  onSelectedFileIdsChange?: (next: Set<number>) => void;
+  onSelectSheetForFile?: (fileId: number, sheetName: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   activeSurface?: MainSurface;
@@ -53,7 +67,11 @@ function getLucideIcon(name?: string): LucideIcons.LucideIcon | null {
 
 export function Sidebar({
   selectedFileId,
+  selectedFileIds,
+  selectedSheet,
   onSelectFile,
+  onSelectedFileIdsChange,
+  onSelectSheetForFile,
   collapsed,
   onToggleCollapse,
   activeSurface,
@@ -63,20 +81,24 @@ export function Sidebar({
   const docsUrl = "https://seventhre.github.io/Db-Schema-Ddl/docs/manual-architecture";
   const { data: files, isLoading } = useFiles();
   const { mutate: uploadFile, isPending: isUploading } = useUploadFile();
-  const { mutate: deleteFile } = useDeleteFile();
+  const deleteFileMutation = useDeleteFile();
   const { toast } = useToast();
   const { t } = useTranslation();
   const [hoverFileId, setHoverFileId] = useState<number | null>(null);
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: number; name: string } | null>(null);
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
+  const [sheetPickerFileId, setSheetPickerFileId] = useState<number | null>(null);
+  const [sortMode, setSortMode] = useState<"recent" | "name">("recent");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [pendingBatchDeleteIds, setPendingBatchDeleteIds] = useState<number[] | null>(null);
   const desktopCapabilities = desktopBridge.getCapabilities();
   const { navigation: extNavItems } = useExtensionHost();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const dragEnterDepthRef = useRef(0);
   const { data: workbookTemplates = [], isLoading: isTemplatesLoading } = useWorkbookTemplates();
   const { mutate: createWorkbookFromTemplate, isPending: isCreatingTemplate } = useCreateWorkbookFromTemplate();
+  const { data: sheetPickerSheets, isLoading: isSheetPickerLoading } = useSheets(sheetPickerFileId);
 
   const parseUploadedAt = (uploadedAt?: string | Date | null): Date | null => {
     if (!uploadedAt) {
@@ -130,11 +152,13 @@ export function Sidebar({
     return map;
   }, [files]);
 
+  const effectiveSelectedFileIds = selectedFileIds ?? new Set<number>(selectedFileId != null ? [selectedFileId] : []);
+
   const sortedFiles = useMemo(() => {
     if (!files) {
       return [];
     }
-    return [...files].sort((a, b) => {
+    const ranked = [...files].sort((a, b) => {
       const tA = parseUploadedAt(a.uploadedAt)?.getTime() ?? 0;
       const tB = parseUploadedAt(b.uploadedAt)?.getTime() ?? 0;
       if (tA !== tB) {
@@ -142,7 +166,11 @@ export function Sidebar({
       }
       return b.id - a.id;
     });
-  }, [files]);
+    if (sortMode === "name") {
+      ranked.sort((a, b) => a.originalName.localeCompare(b.originalName, undefined, { numeric: true, sensitivity: "base" }));
+    }
+    return ranked;
+  }, [files, sortMode]);
 
   const formatUploadedAt = (uploadedAt?: string | Date | null) => {
     const date = parseUploadedAt(uploadedAt);
@@ -165,6 +193,19 @@ export function Sidebar({
     if (withoutExtension.length <= 7) return withoutExtension;
     return `${withoutExtension.slice(0, 6)}…`;
   };
+  const sheetPickerFile = useMemo(
+    () => sortedFiles.find((file) => file.id === sheetPickerFileId) ?? null,
+    [sheetPickerFileId, sortedFiles],
+  );
+  useEffect(() => {
+    if (!sheetPickerFileId) {
+      return;
+    }
+    const stillExists = sortedFiles.some((file) => file.id === sheetPickerFileId);
+    if (!stillExists) {
+      setSheetPickerFileId(null);
+    }
+  }, [sheetPickerFileId, sortedFiles]);
 
   const uploadSelectedFile = (file?: File | null) => {
     if (!file) return;
@@ -263,7 +304,7 @@ export function Sidebar({
   const confirmDelete = () => {
     if (!pendingDeleteFile) return;
     const deletingFileId = pendingDeleteFile.id;
-    deleteFile(deletingFileId, {
+    deleteFileMutation.mutate(deletingFileId, {
       onSuccess: () => {
         toast({ title: t("toast.fileDeleted"), variant: "success" });
       },
@@ -282,6 +323,92 @@ export function Sidebar({
     if (selectedFileId === deletingFileId) {
       onSelectFile(null);
     }
+  };
+
+  const handleFileSelection = (fileId: number, options?: { multiKey?: boolean }) => {
+    if (selectionMode) {
+      const next = new Set(effectiveSelectedFileIds);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      onSelectedFileIdsChange?.(next);
+      return;
+    }
+
+    if (options?.multiKey) {
+      const next = new Set(effectiveSelectedFileIds);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+        const fallbackFileId = Array.from(next).at(-1) ?? null;
+        onSelectedFileIdsChange?.(next);
+        onSelectFile(fallbackFileId);
+        return;
+      } else {
+        next.add(fileId);
+        onSelectedFileIdsChange?.(next);
+        onSelectFile(fileId);
+        return;
+      }
+    }
+
+    onSelectedFileIdsChange?.(new Set<number>([fileId]));
+    onSelectFile(fileId);
+  };
+
+  const handleSelectionModeToggle = () => {
+    setSelectionMode((prev) => {
+      const next = !prev;
+      if (next) {
+        onSelectedFileIdsChange?.(new Set<number>(selectedFileId != null ? [selectedFileId] : []));
+      } else {
+        onSelectedFileIdsChange?.(new Set<number>(selectedFileId != null ? [selectedFileId] : []));
+      }
+      return next;
+    });
+  };
+
+  const handleBatchDelete = () => {
+    const ids = Array.from(effectiveSelectedFileIds).filter((id) =>
+      sortedFiles.some((file) => file.id === id),
+    );
+    if (ids.length === 0) {
+      return;
+    }
+    setPendingBatchDeleteIds(ids);
+  };
+
+  const confirmBatchDelete = async () => {
+    const ids = pendingBatchDeleteIds ?? [];
+    if (ids.length === 0) {
+      return;
+    }
+    for (const fileId of ids) {
+      if (!sortedFiles.some((file) => file.id === fileId)) {
+        continue;
+      }
+      try {
+        await deleteFileMutation.mutateAsync(fileId);
+      } catch (error) {
+        const translated = translateApiError(error, t, { includeIssues: false });
+        toast({
+          title: t("errors.api.FILE_DELETE_FAILED.title"),
+          description: translated.description,
+          variant: "destructive",
+        });
+        setPendingBatchDeleteIds(null);
+        return;
+      }
+    }
+
+    onSelectedFileIdsChange?.(new Set());
+    if (selectedFileId != null && ids.includes(selectedFileId)) {
+      onSelectFile(null);
+    }
+    setSelectionMode(false);
+    setPendingBatchDeleteIds(null);
+    toast({ title: t("toast.fileDeleted"), variant: "success" });
   };
 
   const openDocs = async () => {
@@ -358,6 +485,60 @@ export function Sidebar({
     );
   };
 
+  const selectedCount = effectiveSelectedFileIds.size;
+  const renderExtensionWorkspaceButton = (
+    item: (typeof extNavItems)[number],
+    compact: boolean,
+  ) => {
+    const Icon = getLucideIcon(item.icon) ?? Puzzle;
+    const isActive =
+      activeSurface?.kind === "extension" &&
+      activeSurface.extensionId === item.extensionId &&
+      activeSurface.panelId === item.panelId;
+
+    if (compact) {
+      return (
+        <Tooltip key={`${item.extensionId}:${item.id}`}>
+          <TooltipTrigger asChild>
+            <Button
+              variant={isActive ? "secondary" : "ghost"}
+              size="icon"
+              className="h-8 w-8 rounded-md"
+              onClick={() =>
+                onNavigate?.({
+                  kind: "extension",
+                  extensionId: item.extensionId,
+                  panelId: item.panelId,
+                })
+              }
+            >
+              <Icon className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{item.label}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <Button
+        key={`${item.extensionId}:${item.id}`}
+        variant={isActive ? "secondary" : "ghost"}
+        className="h-8 w-full justify-start gap-2 rounded-md text-xs"
+        onClick={() =>
+          onNavigate?.({
+            kind: "extension",
+            extensionId: item.extensionId,
+            panelId: item.panelId,
+          })
+        }
+      >
+        <Icon className="w-3.5 h-3.5" />
+        {item.label}
+      </Button>
+    );
+  };
+
   const templateDialog = (
     <TemplateCreateDialog
       open={templateDialogOpen}
@@ -372,7 +553,7 @@ export function Sidebar({
   // Collapsed mini sidebar
   if (collapsed) {
     return (
-      <div className={cn("z-20 flex h-full w-[92px] shrink-0 flex-col border-r border-border bg-background", className)}>
+      <div className={cn("z-20 flex h-full w-[92px] shrink-0 flex-col border-r border-border bg-background dark:bg-[#1e1e1e]", className)}>
         <div className="flex flex-col items-center gap-1.5 border-b border-border px-2 py-2">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -413,66 +594,120 @@ export function Sidebar({
               sortedFiles.map((file) => {
                 const meta = fileVersionMetaById.get(file.id);
                 return (
-                <Tooltip key={file.id}>
-                  <TooltipTrigger asChild>
-                    <div className="relative group">
-                      <button
-                        onClick={() => onSelectFile(file.id)}
-                        className={cn(
-                          "flex w-full flex-col items-center gap-1 border border-transparent px-1 py-1.5 transition-colors",
-                          selectedFileId === file.id
-                            ? "border-border bg-muted/40 text-foreground"
-                            : "text-foreground hover:bg-muted/30",
-                        )}
-                      >
-                        <FileSpreadsheet className={cn(
-                          "w-3.5 h-3.5 shrink-0",
-                          selectedFileId === file.id ? "text-foreground" : "text-muted-foreground",
-                        )} />
-                        <span className={cn(
-                          "w-full text-center text-[10px] leading-tight truncate",
-                          selectedFileId === file.id ? "text-foreground" : "text-muted-foreground",
-                        )}>
-                          {meta && meta.versionCount > 1
-                            ? `${getCompactFileLabel(file.originalName)} v${meta.versionNumber}`
-                            : getCompactFileLabel(file.originalName)}
-                        </span>
-                      </button>
-                        <button
-                          onClick={(e) => requestDelete(e, file.id, file.originalName)}
-                          className={cn(
-                          "absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-md transition-opacity",
-                          selectedFileId === file.id
-                            ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-500"
-                            : "text-muted-foreground/70 hover:bg-red-500/15 hover:text-red-500",
-                          selectedFileId === file.id
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100",
-                        )}
-                        title={t("sidebar.deleteFile")}
-                        aria-label={t("sidebar.deleteFile")}
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-[320px] break-all text-xs">
-                    <div className="space-y-1">
-                      <div>{file.originalName}</div>
-                      <div className="text-[10px] opacity-80">
-                        {meta && meta.versionCount > 1 ? `v${meta.versionNumber}/${meta.versionCount} · ` : ""}
-                        {formatUploadedAt(file.uploadedAt)}
-                        {meta?.shortHash ? ` · #${meta.shortHash}` : ""}
+                <ContextMenu key={file.id}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ContextMenuTrigger asChild>
+                        <div className="relative group">
+                          <button
+                            onClick={(event) => handleFileSelection(file.id, { multiKey: event.ctrlKey || event.metaKey })}
+                            className={cn(
+                              "flex w-full flex-col items-center gap-1 border border-transparent px-1 py-1.5 transition-colors",
+                              effectiveSelectedFileIds.has(file.id)
+                                ? "border-border bg-muted/40 text-foreground"
+                                : "text-foreground hover:bg-muted/30",
+                            )}
+                          >
+                            <FileSpreadsheet className={cn(
+                              "w-3.5 h-3.5 shrink-0",
+                              effectiveSelectedFileIds.has(file.id) ? "text-foreground" : "text-muted-foreground",
+                            )} />
+                            <span className={cn(
+                              "w-full text-center text-[10px] leading-tight truncate",
+                              effectiveSelectedFileIds.has(file.id) ? "text-foreground" : "text-muted-foreground",
+                            )}>
+                              {meta && meta.versionCount > 1
+                                ? `${getCompactFileLabel(file.originalName)} v${meta.versionNumber}`
+                                : getCompactFileLabel(file.originalName)}
+                            </span>
+                          </button>
+                          <button
+                            onClick={(e) => requestDelete(e, file.id, file.originalName)}
+                            className={cn(
+                              "absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-md transition-opacity",
+                              effectiveSelectedFileIds.has(file.id)
+                                ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-500"
+                                : "text-muted-foreground/70 hover:bg-red-500/15 hover:text-red-500",
+                              effectiveSelectedFileIds.has(file.id)
+                                ? "opacity-100"
+                                : "opacity-0 group-hover:opacity-100",
+                            )}
+                            title={t("sidebar.deleteFile")}
+                            aria-label={t("sidebar.deleteFile")}
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </ContextMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-[320px] break-all text-xs">
+                      <div className="space-y-1">
+                        <div>{file.originalName}</div>
+                        <div className="text-[10px] opacity-80">
+                          {meta && meta.versionCount > 1 ? `v${meta.versionNumber}/${meta.versionCount} · ` : ""}
+                          {formatUploadedAt(file.uploadedAt)}
+                          {meta?.shortHash ? ` · #${meta.shortHash}` : ""}
+                        </div>
+                        <div className="text-[10px] opacity-80">{t("sidebar.rightClickSheetHint")}</div>
                       </div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
+                    </TooltipContent>
+                  </Tooltip>
+                  <ContextMenuContent className="w-44 rounded-lg border-slate-200/90 p-1.5 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
+                    <ContextMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-[#808080]">
+                      File
+                    </ContextMenuLabel>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onClick={() => handleFileSelection(file.id)}
+                      className="rounded-md px-2 py-1.5 text-xs"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-slate-500 dark:text-[#808080]" />
+                      {t("sidebar.openFile")}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => setSheetPickerFileId(file.id)}
+                      className="rounded-md px-2 py-1.5 text-xs"
+                    >
+                      <Database className="h-3.5 w-3.5 text-slate-500 dark:text-[#808080]" />
+                      {t("sheet.selectSheet")}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               )})
             )}
           </div>
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
+          {/* Built-in ワークスペース — 静的ナビゲーションエントリ */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeSurface?.kind === "ddl-import" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-8 w-8 rounded-md"
+                onClick={() => onNavigate?.({ kind: "ddl-import" })}
+              >
+                <FileCode2 className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">DDL 导入</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeSurface?.kind === "extension" && activeSurface.extensionId === "schema-diff" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-8 w-8 rounded-md"
+                onClick={() => onNavigate?.({ kind: "extension", extensionId: "schema-diff", panelId: "schema-diff-workspace" })}
+              >
+                <GitCompareArrows className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Schema Diff</TooltipContent>
+          </Tooltip>
+          {/* 有効な拡張が Contribution で宣言したナビゲーション */}
+          {extNavItems.map((item) => renderExtensionWorkspaceButton(item, true))}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={openDocs}>
@@ -484,7 +719,12 @@ export function Sidebar({
           {desktopCapabilities.features.extensions ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={() => setExtensionPanelOpen(true)}>
+                <Button
+                  variant={activeSurface?.kind === "extensions" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8 rounded-md"
+                  onClick={() => onNavigate?.({ kind: "extensions" })}
+                >
                   <Puzzle className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
@@ -504,32 +744,87 @@ export function Sidebar({
           <div className="scale-[0.9] origin-center">
             <LanguageSwitcher />
           </div>
-        </div>
-
-        {templateDialog}
-        <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} selectedFileId={selectedFileId} />
       </div>
+
+      <Dialog open={sheetPickerFileId != null} onOpenChange={(open) => !open && setSheetPickerFileId(null)}>
+        <DialogContent className="max-w-sm overflow-hidden border-slate-200/90 p-0 shadow-2xl dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
+          <DialogHeader className="border-b border-slate-200/80 px-4 py-2.5 dark:border-[#2d2d2d]">
+            <DialogTitle className="truncate text-xs font-medium text-slate-600 dark:text-[#cccccc]">
+              {sheetPickerFile?.originalName ?? t("sheet.selectSheet")}
+            </DialogTitle>
+          </DialogHeader>
+          <Command className="rounded-none border-none shadow-none">
+            <CommandInput placeholder={t("search.placeholder")} className="border-0 focus:ring-0" />
+            <CommandList className="max-h-[320px]">
+              {isSheetPickerLoading ? (
+                <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("sheet.loading")}
+                </div>
+              ) : (
+                <>
+                  <CommandEmpty>{t("sheet.noSheets")}</CommandEmpty>
+                  <CommandGroup heading={t("sheet.selectSheet")}>
+                    {(sheetPickerSheets ?? []).map((sheet: any) => {
+                      const sheetName = typeof sheet === "string" ? sheet : sheet?.name;
+                      if (!sheetName) return null;
+                      const isCurrent = sheetPickerFileId === selectedFileId && selectedSheet === sheetName;
+                      return (
+                        <CommandItem
+                          key={sheetName}
+                          value={sheetName}
+                          onSelect={() => {
+                            if (sheetPickerFileId != null) {
+                              onSelectSheetForFile?.(sheetPickerFileId, sheetName);
+                            }
+                            setSheetPickerFileId(null);
+                          }}
+                          className="cursor-pointer rounded-md px-2 py-2 text-xs"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium">{sheetName}</div>
+                          </div>
+                          {isCurrent ? (
+                            <span className="rounded-md border border-slate-200/80 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
+                              current
+                            </span>
+                          ) : null}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </>
+              )}
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+
+      {templateDialog}
+    </div>
     );
   }
 
   return (
     <div
-      className={cn(
-        "relative z-20 flex h-full w-[272px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950",
-        className,
-      )}
+      className={cn("workspace-panel relative z-20 flex h-full w-[268px] shrink-0 flex-col", className)}
       onDragEnter={handleUploadDragEnter}
       onDragOver={handleUploadDragOver}
       onDragLeave={handleUploadDragLeave}
       onDrop={handleUploadDrop}
     >
-      <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
+      <div className="border-b border-slate-200/80 bg-slate-50/75 px-3 py-3 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-              <h2 className="truncate text-[16px] font-semibold leading-none text-slate-950 dark:text-slate-50">{t("app.title")}</h2>
+              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-500 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
+                <Database className="h-4 w-4" />
+              </div>
+              <h2 className="truncate text-[16px] font-semibold leading-none text-slate-950 dark:text-[#cccccc]">{t("app.title")}</h2>
             </div>
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-[#888888]">
+              Excel schema in, review and DDL out.
+            </p>
           </div>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-md text-muted-foreground" aria-label={t("sidebar.collapseSidebar")}>
             <PanelLeftClose className="w-4 h-4" />
@@ -553,12 +848,52 @@ export function Sidebar({
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="space-y-2 px-3 py-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              {t("sidebar.definitionFiles")}
-            </h3>
-            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-              {sortedFiles.length}
-            </span>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200/80 bg-white text-slate-500 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+              </div>
+              <h3 className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-[#888888]">
+                {t("sidebar.definitionFiles")}
+              </h3>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant={selectionMode ? "secondary" : "outline"}
+                size="sm"
+                className="h-7 rounded-md px-2 text-[10px]"
+                onClick={handleSelectionModeToggle}
+              >
+                {selectionMode
+                  ? t("common.cancel")
+                  : t("sidebar.batchSelectMode", { defaultValue: "批量选择" })}
+              </Button>
+              {selectionMode && selectedCount > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 rounded-md px-2 text-[10px]"
+                  onClick={handleBatchDelete}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  {t("sidebar.deleteSelected")} ({selectedCount})
+                </Button>
+              ) : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 rounded-md px-2 text-[10px]">
+                    <ArrowDownAZ className="mr-1 h-3 w-3" />
+                    {sortMode === "recent" ? t("sidebar.sortRecent") : t("sidebar.sortName")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={() => setSortMode("recent")}>{t("sidebar.sortRecent")}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortMode("name")}>{t("sidebar.sortName")}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <span className="rounded-md border border-slate-200/80 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
+                {sortedFiles.length}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -571,7 +906,7 @@ export function Sidebar({
                 ))}
               </div>
             ) : sortedFiles.length === 0 ? (
-              <div className="mx-1 rounded-lg border border-dashed border-slate-300/80 bg-slate-50/80 p-5 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+              <div className="mx-1 rounded-xl border border-dashed border-slate-300/80 bg-gradient-to-b from-slate-50/95 to-white p-5 text-center text-xs text-slate-500 shadow-sm dark:border-[#2d2d2d] dark:from-[#1e1e1e] dark:to-[#161616] dark:text-[#888888]">
                 {t("sidebar.noFilesYet")}
               </div>
             ) : (
@@ -586,43 +921,57 @@ export function Sidebar({
                       onMouseLeave={() => setHoverFileId(null)}
                       style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}
                       className={cn(
-                        "animate-enter group relative overflow-hidden rounded-md transition-all duration-150",
-                        selectedFileId === file.id
-                          ? "bg-slate-100 text-foreground dark:bg-slate-900"
-                          : "text-foreground hover:bg-slate-50 dark:hover:bg-slate-900/60"
+                        "animate-enter group relative overflow-hidden rounded-lg border border-transparent transition-all duration-150",
+                        effectiveSelectedFileIds.has(file.id)
+                          ? "border-slate-200/90 bg-gradient-to-r from-blue-50 via-white to-white text-foreground shadow-sm dark:border-[#2d2d2d] dark:from-[#242424] dark:via-[#1e1e1e] dark:to-[#1e1e1e]"
+                          : "text-foreground hover:border-slate-200/70 hover:bg-slate-50/90 dark:text-[#888888] dark:hover:border-[#2d2d2d] dark:hover:bg-[#242424] dark:hover:text-white"
                       )}
                     >
                       <div
                         className={cn(
-                          "absolute inset-y-0 left-0 w-0.5 transition-colors",
-                          selectedFileId === file.id ? "bg-slate-500 dark:bg-slate-400" : "bg-transparent",
+                          "absolute inset-y-2 left-0.5 w-1 rounded-full transition-colors",
+                          effectiveSelectedFileIds.has(file.id) ? "bg-blue-500/90 dark:bg-[#007acc]" : "bg-transparent",
                         )}
                       />
                       <button
-                        onClick={() => onSelectFile(file.id)}
-                        className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-3 py-2 text-left"
+                        onClick={(event) => handleFileSelection(file.id, { multiKey: event.ctrlKey || event.metaKey })}
+                        className={cn(
+                          "grid w-full min-w-0 items-start gap-3 px-3 py-2 text-left",
+                          selectionMode ? "grid-cols-[auto_auto_minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)]",
+                        )}
                       >
-                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                        {selectionMode ? (
+                          <div className="mt-1 flex items-center">
+                            <Checkbox
+                              checked={effectiveSelectedFileIds.has(file.id)}
+                              aria-label={t("sidebar.selectFileForBatch", {
+                                defaultValue: "选择 {{name}}",
+                                name: file.originalName,
+                              })}
+                            />
+                          </div>
+                        ) : null}
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200/80 bg-white text-slate-500 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
                           <FileSpreadsheet className="h-3.5 w-3.5" />
                         </div>
                         <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="mb-0.5 flex items-center gap-1.5 truncate text-xs font-medium leading-tight">
+                          <p className={cn("mb-0.5 flex items-center gap-1.5 truncate text-xs font-medium leading-tight", effectiveSelectedFileIds.has(file.id) ? "dark:text-white" : "dark:text-[#cccccc]")}>
                             {file.originalName}
                             {meta && meta.versionCount > 1 ? (
                               <span
                                 className={cn(
                                   "text-[9px] leading-tight",
-                                  "border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400",
+                                  "border-slate-200 text-slate-500 dark:border-[#333333] dark:text-[#808080]",
                                 )}
                               >
                                 v{meta.versionNumber}
                               </span>
                             ) : null}
                           </p>
-                          <p className={cn("text-[10px]", selectedFileId === file.id ? "text-slate-600 dark:text-slate-300" : "text-muted-foreground")}>
+                          <p className={cn("text-[10px]", effectiveSelectedFileIds.has(file.id) ? "text-slate-600 dark:text-[#cccccc]" : "text-muted-foreground dark:text-[#888888]")}>
                             {uploadedAtLabel || t("sidebar.timestampUnavailable")}
                           </p>
-                          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                          <div className="mt-1 text-[10px] text-slate-500 dark:text-[#888888]">
                             {meta?.shortHash ? `#${meta.shortHash}` : ""}
                           </div>
                         </div>
@@ -634,7 +983,7 @@ export function Sidebar({
                           className={cn(
                             "flex h-6 w-6 items-center justify-center rounded-md transition-all",
                             "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
-                            hoverFileId === file.id || selectedFileId === file.id
+                            hoverFileId === file.id || effectiveSelectedFileIds.has(file.id)
                               ? "opacity-100"
                               : "opacity-0 group-hover:opacity-90"
                           )}
@@ -663,15 +1012,37 @@ export function Sidebar({
         </ScrollArea>
       </div>
 
-      {/* Settings and Language Switcher at the bottom */}
-      <div className="space-y-1.5 border-t border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
-        {/* 拡張が Contribution で宣言したナビゲーション */}
+      {/* ナビゲーション + ユーティリティ下部セクション */}
+      <div className="space-y-1.5 border-t border-slate-200/80 bg-slate-50/80 p-2 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
+        {/* Built-in ワークスペース — 拡張ではなくアプリ本体の機能 */}
+        <Button
+          variant={activeSurface?.kind === "ddl-import" ? "secondary" : "ghost"}
+          className="h-8 w-full justify-start gap-2 rounded-md text-xs"
+          onClick={() => onNavigate?.({ kind: "ddl-import" })}
+        >
+          <FileCode2 className="w-3.5 h-3.5" />
+          DDL 导入
+        </Button>
+        <Button
+          variant={activeSurface?.kind === "extension" && activeSurface.extensionId === "schema-diff" ? "secondary" : "ghost"}
+          className="h-8 w-full justify-start gap-2 rounded-md text-xs"
+          onClick={() => onNavigate?.({ kind: "extension", extensionId: "schema-diff", panelId: "schema-diff-workspace" })}
+        >
+          <GitCompareArrows className="w-3.5 h-3.5" />
+          Schema Diff
+        </Button>
+        {/* 有効な拡張が Contribution で宣言したナビゲーション */}
+        {extNavItems.map((item) => renderExtensionWorkspaceButton(item, false))}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}
         </Button>
         {desktopCapabilities.features.extensions ? (
-          <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={() => setExtensionPanelOpen(true)}>
+          <Button
+            variant={activeSurface?.kind === "extensions" ? "secondary" : "ghost"}
+            className="h-8 w-full justify-start gap-2 rounded-md text-xs"
+            onClick={() => onNavigate?.({ kind: "extensions" })}
+          >
             <Puzzle className="w-3.5 h-3.5" />
             {t("extensions.navLabel")}
           </Button>
@@ -686,9 +1057,9 @@ export function Sidebar({
       </div>
 
       {isDragOverUpload ? (
-        <div className="pointer-events-none absolute inset-0 z-40 border-2 border-dashed border-primary bg-primary/8">
+        <div className="pointer-events-none absolute inset-0 z-40 border-2 border-dashed border-primary bg-primary/8 backdrop-blur-[2px]">
           <div className="h-full w-full flex items-center justify-center p-4">
-            <div className="border border-primary/50 bg-background px-4 py-3 text-center">
+            <div className="rounded-2xl border border-primary/40 bg-white/95 px-5 py-4 text-center shadow-xl dark:bg-[#1e1e1e]">
               <div className="text-sm font-semibold text-primary">{t("sidebar.dropExcelToUpload")}</div>
               <div className="text-xs text-muted-foreground mt-1">{t("sidebar.dropFileHint")}</div>
             </div>
@@ -720,7 +1091,32 @@ export function Sidebar({
       </AlertDialog>
 
       {templateDialog}
-      <ExtensionPanel open={extensionPanelOpen} onOpenChange={setExtensionPanelOpen} selectedFileId={selectedFileId} />
+      <AlertDialog
+        open={!!pendingBatchDeleteIds?.length}
+        onOpenChange={(open) => !open && setPendingBatchDeleteIds(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("sidebar.deleteSelected")}</AlertDialogTitle>
+            <AlertDialogDescription className="break-all">
+              {t("sidebar.batchDeleteConfirm", {
+                defaultValue: "确认删除已选择的 {{count}} 个文件吗？",
+                count: pendingBatchDeleteIds?.length ?? 0,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void confirmBatchDelete()}
+            >
+              {t("sidebar.deleteSelected")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

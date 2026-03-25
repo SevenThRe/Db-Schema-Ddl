@@ -12,22 +12,25 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { FileCode2, Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, Sparkles } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, RotateCcw, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useFiles, useSheets } from "@/hooks/use-ddl";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFiles, useSettings, useSheets } from "@/hooks/use-ddl";
 import { type TableInfo } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ExtensionWorkspaceHost } from "@/extensions/ExtensionWorkspaceHost";
-import { useExtensionHost } from "@/extensions/host-context";
 import type { MainSurface } from "@/extensions/host-api";
+import { StatusBar } from "@/components/StatusBar";
+import { useStatusBarScope } from "@/status-bar/context";
+import { parseUploadedAtMillis } from "@/components/ddl/name-fix-display-utils";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
 const LAST_SELECTED_FILE_STORAGE_KEY = "dashboard:lastSelectedFile";
 const WORKSPACE_CHROME_STORAGE_KEY = "dashboard:workspaceChrome";
 const PREVIEW_ACTION_BUTTON_CLASS =
-  "h-8 gap-1.5 shrink-0 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900";
+  "h-8 gap-1.5 shrink-0 rounded-lg border border-slate-200/80 bg-white px-2.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900";
 
 type StoredSheetSelections = Record<string, string>;
 interface StoredFileSelection {
@@ -37,6 +40,7 @@ interface StoredFileSelection {
 }
 
 interface StoredWorkspaceChrome {
+  sidebarCollapsed?: boolean;
   showSheetPane?: boolean;
   showDdlPane?: boolean;
 }
@@ -117,6 +121,9 @@ function readStoredWorkspaceChrome(): StoredWorkspaceChrome {
     }
 
     const result: StoredWorkspaceChrome = {};
+    if (typeof (parsed as { sidebarCollapsed?: unknown }).sidebarCollapsed === "boolean") {
+      result.sidebarCollapsed = (parsed as { sidebarCollapsed: boolean }).sidebarCollapsed;
+    }
     if (typeof (parsed as { showSheetPane?: unknown }).showSheetPane === "boolean") {
       result.showSheetPane = (parsed as { showSheetPane: boolean }).showSheetPane;
     }
@@ -152,8 +159,31 @@ function getSheetName(sheet: unknown): string | null {
   return null;
 }
 
+function buildStoredSheetSelectionEntries(
+  file: { id: number; fileHash?: string | null },
+  sheetName: string,
+): Record<string, string> {
+  return {
+    [buildSheetStorageKey(file)]: sheetName,
+    [`id:${file.id}`]: sheetName,
+    [String(file.id)]: sheetName,
+  };
+}
+
+function formatMemoryLabel(memoryBytes: number): string {
+  if (!Number.isFinite(memoryBytes) || memoryBytes <= 0) {
+    return "0 MB";
+  }
+  const inMiB = memoryBytes / (1024 * 1024);
+  if (inMiB >= 1024) {
+    return `${(inMiB / 1024).toFixed(1)} GB`;
+  }
+  return `${Math.round(inMiB)} MB`;
+}
+
 export default function Dashboard() {
   const desktopCapabilities = desktopBridge.getCapabilities();
+  const statusBar = useStatusBarScope("app");
   const [isDdlImportTestMode] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -167,10 +197,15 @@ export default function Dashboard() {
     return typeof fileId === "number" ? fileId : null;
   });
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(() => {
+    const fileId = initialFileSelectionRef.current?.fileId;
+    return new Set<number>(typeof fileId === "number" ? [fileId] : []);
+  });
+  const [diffCompareOldFileId, setDiffCompareOldFileId] = useState<number | null>(null);
   const [activeSurface, setActiveSurface] = useState<MainSurface>(
     () => (isDdlImportTestMode ? { kind: "ddl-import" } : { kind: "workspace" }),
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredWorkspaceChrome().sidebarCollapsed ?? false);
   const [viewMode, setViewMode] = useState<"auto" | "spreadsheet" | "diff">("auto");
   const [regionTables, setRegionTables] = useState<TableInfo[] | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -190,6 +225,7 @@ export default function Dashboard() {
   );
 
   const { data: files } = useFiles();
+  const { data: settings } = useSettings();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
   const { t } = useTranslation();
 
@@ -224,6 +260,22 @@ export default function Dashboard() {
   }, [files, selectedFileId]);
 
   useEffect(() => {
+    if (selectedFileId == null) {
+      setSelectedFileIds((previous) => (previous.size === 0 ? previous : new Set<number>()));
+      return;
+    }
+    setSelectedFileIds((previous) => {
+      if (previous.size === 0) {
+        return new Set<number>([selectedFileId]);
+      }
+      if (previous.has(selectedFileId)) {
+        return previous;
+      }
+      return previous;
+    });
+  }, [selectedFileId]);
+
+  useEffect(() => {
     if (selectedFileId == null || !files) {
       return;
     }
@@ -232,6 +284,52 @@ export default function Dashboard() {
       setSelectedFileId(null);
     }
   }, [files, selectedFileId]);
+
+  useEffect(() => {
+    if (!files) {
+      return;
+    }
+    const validIds = new Set(files.map((file) => file.id));
+    setSelectedFileIds((previous) => {
+      const next = new Set(Array.from(previous).filter((id) => validIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [files]);
+
+  useEffect(() => {
+    if (!desktopCapabilities.features.schemaDiff) {
+      setDiffCompareOldFileId(null);
+      return;
+    }
+    if (!files || selectedFileIds.size !== 2) {
+      setDiffCompareOldFileId(null);
+      return;
+    }
+
+    const pair = Array.from(selectedFileIds)
+      .map((id) => files.find((file) => file.id === id) ?? null)
+      .filter((file): file is NonNullable<typeof file> => Boolean(file))
+      .sort((a, b) => {
+        const timeDiff = parseUploadedAtMillis(b.uploadedAt) - parseUploadedAtMillis(a.uploadedAt);
+        if (timeDiff !== 0) {
+          return timeDiff;
+        }
+        return b.id - a.id;
+      });
+
+    if (pair.length !== 2) {
+      setDiffCompareOldFileId(null);
+      return;
+    }
+
+    const [newerFile, olderFile] = pair;
+    setDiffCompareOldFileId((previous) => (previous === olderFile.id ? previous : olderFile.id));
+    if (selectedFileId !== newerFile.id) {
+      setSelectedSheet(null);
+      setSelectedFileId(newerFile.id);
+    }
+    setViewMode("diff");
+  }, [desktopCapabilities.features.schemaDiff, files, selectedFileId, selectedFileIds]);
 
   useEffect(() => {
     if (selectedFileId == null || !files) {
@@ -291,8 +389,23 @@ export default function Dashboard() {
     const rememberedSheetName = sheetStorageKeys
       .map((key) => lastSelectedSheetByFile[key])
       .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const hideSheetsWithoutDefinitions = settings?.hideSheetsWithoutDefinitions ?? true;
     const rememberedSheet = rememberedSheetName
-      ? sheets.find((sheet: unknown) => getSheetName(sheet) === rememberedSheetName)
+      ? sheets.find((sheet: unknown) => {
+          const matchesName = getSheetName(sheet) === rememberedSheetName;
+          if (!matchesName) {
+            return false;
+          }
+          if (!hideSheetsWithoutDefinitions) {
+            return true;
+          }
+          return !(
+            typeof sheet === "object"
+            && sheet !== null
+            && "hasTableDefinitions" in sheet
+            && !(sheet as { hasTableDefinitions?: unknown }).hasTableDefinitions
+          );
+        })
       : null;
     const preferredSheet =
       rememberedSheet ??
@@ -309,7 +422,7 @@ export default function Dashboard() {
     if (preferredSheetName) {
       setSelectedSheet(preferredSheetName);
     }
-  }, [files, selectedFileId, selectedSheet, sheets, lastSelectedSheetByFile]);
+  }, [files, selectedFileId, selectedSheet, sheets, lastSelectedSheetByFile, settings]);
 
   useEffect(() => {
     if (!selectedFileId || !selectedSheet || !files) {
@@ -381,12 +494,12 @@ export default function Dashboard() {
     try {
       window.localStorage.setItem(
         WORKSPACE_CHROME_STORAGE_KEY,
-        JSON.stringify({ showSheetPane, showDdlPane }),
+        JSON.stringify({ sidebarCollapsed, showSheetPane, showDdlPane }),
       );
     } catch {
       // Ignore storage write errors.
     }
-  }, [showSheetPane, showDdlPane]);
+  }, [sidebarCollapsed, showSheetPane, showDdlPane]);
 
   useEffect(() => {
     setRegionTables(null);
@@ -407,6 +520,47 @@ export default function Dashboard() {
       setSheetSelectorOpen(false);
     }
   }, [isCompactLayout]);
+
+  useEffect(() => {
+    if (desktopCapabilities.runtime !== "tauri" || !settings?.statusBarItems.includes("memory")) {
+      statusBar.clear("memory");
+      return;
+    }
+
+    let disposed = false;
+
+    const syncProcessMetrics = async () => {
+      try {
+        const metrics = await desktopBridge.getProcessMetrics();
+        if (disposed || !metrics) {
+          return;
+        }
+        statusBar.set({
+          id: "memory",
+          label: t("dashboard.statusMemory"),
+          detail: formatMemoryLabel(metrics.memoryBytes),
+          align: "right",
+          order: 100,
+          mono: true,
+        });
+      } catch {
+        if (!disposed) {
+          statusBar.clear("memory");
+        }
+      }
+    };
+
+    void syncProcessMetrics();
+    const timer = window.setInterval(() => {
+      void syncProcessMetrics();
+    }, 15_000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      statusBar.clear("memory");
+    };
+  }, [desktopCapabilities.runtime, settings?.statusBarItems, statusBar, t]);
 
   const handleRegionParsed = useCallback((tables: TableInfo[]) => {
     setRegionTables(tables);
@@ -439,6 +593,31 @@ export default function Dashboard() {
       setSheetSelectorOpen(false);
     }
   }, [isCompactLayout]);
+
+  const handleSelectSheetFromSidebar = useCallback((fileId: number, sheetName: string) => {
+    if (!files) {
+      return;
+    }
+    const targetFile = files.find((file) => file.id === fileId);
+    if (!targetFile) {
+      return;
+    }
+
+    const nextEntries = buildStoredSheetSelectionEntries(targetFile, sheetName);
+    setLastSelectedSheetByFile((previous) => ({ ...previous, ...nextEntries }));
+
+    if (selectedFileId === fileId) {
+      setSelectedSheet(sheetName);
+      return;
+    }
+
+    setSelectedFileIds(new Set<number>([fileId]));
+    setSelectedFileId(fileId);
+  }, [files, selectedFileId]);
+
+  const handleSelectedFileIdsChange = useCallback((next: Set<number>) => {
+    setSelectedFileIds(new Set(next));
+  }, []);
 
   // Keyboard shortcut for search (Ctrl+P or Cmd+P)
   useEffect(() => {
@@ -483,32 +662,39 @@ export default function Dashboard() {
     typeof window !== "undefined" && /Mac|iPhone|iPod|iPad/i.test(window.navigator.platform)
       ? "⌘ P"
       : "Ctrl P";
+  const resetWorkspaceChrome = useCallback(() => {
+    setSidebarCollapsed(false);
+    setShowSheetPane(true);
+    setShowDdlPane(true);
+    setViewMode("auto");
+    setSheetSelectorOpen(false);
+  }, []);
   const renderPreviewPane = (showSheetTrigger: boolean) => (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-950">
-      <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+    <div className="workspace-panel flex h-full min-w-0 flex-col">
+      <div className="shrink-0 border-b border-slate-200/80 bg-slate-50/75 px-4 py-2 dark:border-slate-800 dark:bg-slate-950/70">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-slate-950 dark:text-slate-50">
+            <div className="truncate text-[13px] font-medium text-slate-950 dark:text-slate-50">
               {selectedFileName || t("sidebar.noFilesYet")}
             </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
               {selectedSheet ?? t("dashboard.noSheetSelected")}
               {currentTable ? ` · ${currentTable.physicalTableName}` : ""}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
-              <TabsList className="h-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-950">
-                <TabsTrigger value="auto" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
+              <TabsList className="h-auto rounded-lg border border-slate-200/80 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-950">
+                <TabsTrigger value="auto" className="h-7 gap-1.5 rounded-md px-2 text-[11px] font-medium">
                   <TableProperties className="h-3 w-3" />
                   {t("view.autoParse")}
                 </TabsTrigger>
-                <TabsTrigger value="spreadsheet" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
+                <TabsTrigger value="spreadsheet" className="h-7 gap-1.5 rounded-md px-2 text-[11px] font-medium">
                   <Grid3X3 className="h-3 w-3" />
                   {t("view.spreadsheet")}
                 </TabsTrigger>
                 {desktopCapabilities.features.schemaDiff ? (
-                  <TabsTrigger value="diff" className="h-8 gap-1.5 rounded-md px-3 text-xs font-medium">
+                  <TabsTrigger value="diff" className="h-7 gap-1.5 rounded-md px-2 text-[11px] font-medium">
                     <Sparkles className="h-3 w-3" />
                     Diff
                   </TabsTrigger>
@@ -548,7 +734,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden bg-white dark:bg-slate-950">
+      <div className="workspace-subtle-grid flex-1 overflow-hidden bg-white/80 dark:bg-slate-950/95">
         {viewMode === "auto" ? (
           isResolvingDefaultSheet ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
@@ -577,7 +763,7 @@ export default function Dashboard() {
             onRegionParsed={handleRegionParsed}
           />
         ) : desktopCapabilities.features.schemaDiff ? (
-          <SchemaDiffPanel fileId={selectedFileId} sheetName={selectedSheet} />
+          <SchemaDiffPanel fileId={selectedFileId} sheetName={selectedSheet} compareOldFileId={diffCompareOldFileId} />
         ) : (
           <TablePreview
             fileId={selectedFileId}
@@ -600,6 +786,7 @@ export default function Dashboard() {
   const renderDdlImportWorkspace = () => (
     <DdlImportWorkspace
       onActivateFile={(fileId: number) => {
+        setSelectedFileIds(new Set<number>([fileId]));
         setSelectedFileId(fileId);
         setActiveSurface({ kind: "workspace" });
       }}
@@ -609,30 +796,19 @@ export default function Dashboard() {
   return (
     <div className="h-screen w-full overflow-hidden bg-slate-100 dark:bg-slate-950">
       <div className="workbench-shell flex h-full flex-col p-2.5">
-        <header className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+        <header className="workspace-topbar shrink-0 px-4 py-2.5">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex flex-1 items-center gap-3">
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   variant={activeSurface.kind === "workspace" ? "default" : "outline"}
                   size="sm"
-                  className="h-8 rounded-md px-3 text-xs"
+                  className="h-8 rounded-lg px-3 text-xs font-medium"
                   onClick={() => setActiveSurface({ kind: "workspace" })}
                 >
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   {t("dashboard.workspace")}
                 </Button>
-                {desktopCapabilities.features.ddlImport ? (
-                  <Button
-                    variant={activeSurface.kind === "ddl-import" ? "default" : "outline"}
-                    size="sm"
-                    className="h-8 rounded-md px-3 text-xs"
-                    onClick={() => setActiveSurface({ kind: "ddl-import" })}
-                  >
-                    <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
-                    {t("dashboard.ddlImport")}
-                  </Button>
-                ) : null}
               </div>
               <p className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
                 {selectedFileName || t("sidebar.noFilesYet")}
@@ -641,25 +817,73 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 xl:flex dark:border-slate-800 dark:bg-slate-950">
-                <Button
-                  variant={showSheetPane ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 rounded-md px-2.5 text-xs"
-                  onClick={() => setShowSheetPane((prev) => !prev)}
-                >
-                  <PanelLeft className="mr-1.5 h-3.5 w-3.5" />
-                  {t("dashboard.sheetsPane")}
-                </Button>
-                <Button
-                  variant={showDdlPane ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 rounded-md px-2.5 text-xs"
-                  onClick={() => setShowDdlPane((prev) => !prev)}
-                >
-                  <PanelRight className="mr-1.5 h-3.5 w-3.5" />
-                  {t("dashboard.inspectorPane")}
-                </Button>
+              <div className="hidden items-center gap-1.5 lg:flex">
+                <span className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-white px-2.5 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  {viewMode === "auto" ? t("view.autoParse") : viewMode === "spreadsheet" ? t("view.spreadsheet") : "Diff"}
+                </span>
+                {selectedSheet ? (
+                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-white px-2.5 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    {selectedSheet}
+                  </span>
+                ) : null}
+              </div>
+              <div className="hidden items-center gap-0.5 rounded-lg border border-slate-200/80 bg-slate-50/80 p-0.5 xl:flex dark:border-slate-800 dark:bg-slate-950">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={!sidebarCollapsed ? "secondary" : "ghost"}
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      onClick={() => setSidebarCollapsed((prev) => !prev)}
+                      aria-label={t("dashboard.filesPane")}
+                    >
+                      <PanelLeft className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("dashboard.filesPane")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={showSheetPane ? "secondary" : "ghost"}
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      onClick={() => setShowSheetPane((prev) => !prev)}
+                      aria-label={t("dashboard.sheetsPane")}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("dashboard.sheetsPane")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={showDdlPane ? "secondary" : "ghost"}
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      onClick={() => setShowDdlPane((prev) => !prev)}
+                      aria-label={t("dashboard.inspectorPane")}
+                    >
+                      <PanelRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("dashboard.inspectorPane")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      onClick={resetWorkspaceChrome}
+                      aria-label={t("dashboard.resetLayout")}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("dashboard.resetLayout")}</TooltipContent>
+                </Tooltip>
               </div>
               {desktopCapabilities.features.updater ? <UpdateNotifier /> : null}
               <ThemeToggle />
@@ -667,20 +891,28 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <div className="mt-2.5 flex flex-1 overflow-hidden gap-2.5">
+        <div className="mt-2.5 flex flex-1 overflow-hidden gap-2">
           <Sidebar
             selectedFileId={selectedFileId}
+            selectedFileIds={selectedFileIds}
+            selectedSheet={selectedSheet}
             onSelectFile={setSelectedFileId}
+            onSelectedFileIdsChange={handleSelectedFileIdsChange}
+            onSelectSheetForFile={handleSelectSheetFromSidebar}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             activeSurface={activeSurface}
             onNavigate={setActiveSurface}
-            className="overflow-hidden"
+            className="workspace-nav-pane overflow-hidden"
           />
 
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden">
-              {activeSurface.kind === "extension" ? (
+              {activeSurface.kind === "extensions" ? (
+                <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                  扩展功能管理（Plan 02 で実装）
+                </div>
+              ) : activeSurface.kind === "extension" ? (
                 <ExtensionWorkspaceHost
                   extensionId={activeSurface.extensionId}
                   panelId={activeSurface.panelId}
@@ -692,15 +924,15 @@ export default function Dashboard() {
               ) : isCompactLayout ? (
                 <>
                   {showDdlPane ? (
-                    <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-compact-workspace" className="flex-1 gap-2.5">
-                      <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={65} minSize={45}>
+                    <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-compact-workspace" className="flex-1 gap-2">
+                      <ResizablePanel id="dashboard-compact-preview" order={1} defaultSize={70} minSize={50}>
                         {renderPreviewPane(true)}
                       </ResizablePanel>
 
                       <ResizableHandle />
 
-                      <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={35} minSize={25}>
-                        <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                      <ResizablePanel id="dashboard-compact-ddl" order={2} defaultSize={30} minSize={22}>
+                        <div className="workspace-panel h-full overflow-hidden">
                           <DdlGenerator
                             fileId={selectedFileId}
                             sheetName={selectedSheet}
@@ -735,9 +967,9 @@ export default function Dashboard() {
                   </Sheet>
                 </>
               ) : showSheetPane && showDdlPane ? (
-                  <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-desktop-all" className="flex-1 gap-2.5">
-                    <ResizablePanel id="dashboard-desktop-sheets" order={1} defaultSize={15} minSize={11} maxSize={24}>
-                      <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                  <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-desktop-all" className="flex-1 gap-2">
+                    <ResizablePanel id="dashboard-desktop-sheets" order={1} defaultSize={13} minSize={10} maxSize={20}>
+                      <div className="workspace-panel workspace-nav-pane h-full overflow-hidden">
                         <SheetSelector
                           fileId={selectedFileId}
                           selectedSheet={selectedSheet}
@@ -748,14 +980,14 @@ export default function Dashboard() {
 
                   <ResizableHandle />
 
-                  <ResizablePanel id="dashboard-desktop-preview" order={2} defaultSize={54} minSize={30}>
+                  <ResizablePanel id="dashboard-desktop-preview" order={2} defaultSize={60} minSize={38}>
                     {renderPreviewPane(false)}
                   </ResizablePanel>
 
                   <ResizableHandle />
 
                   <ResizablePanel id="dashboard-desktop-ddl" order={3} defaultSize={27} minSize={18}>
-                    <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                    <div className="workspace-panel h-full overflow-hidden">
                       <DdlGenerator
                         fileId={selectedFileId}
                         sheetName={selectedSheet}
@@ -771,9 +1003,9 @@ export default function Dashboard() {
                     </ResizablePanel>
                   </ResizablePanelGroup>
               ) : showSheetPane ? (
-                <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-desktop-sheets-preview" className="flex-1 gap-2.5">
-                  <ResizablePanel id="dashboard-desktop-sheets-only" order={1} defaultSize={18} minSize={12} maxSize={28}>
-                    <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-desktop-sheets-preview" className="flex-1 gap-2">
+                  <ResizablePanel id="dashboard-desktop-sheets-only" order={1} defaultSize={16} minSize={11} maxSize={24}>
+                    <div className="workspace-panel workspace-nav-pane h-full overflow-hidden">
                       <SheetSelector
                         fileId={selectedFileId}
                         selectedSheet={selectedSheet}
@@ -784,20 +1016,20 @@ export default function Dashboard() {
 
                   <ResizableHandle />
 
-                  <ResizablePanel id="dashboard-desktop-preview-wide" order={2} defaultSize={82} minSize={40}>
+                  <ResizablePanel id="dashboard-desktop-preview-wide" order={2} defaultSize={84} minSize={48}>
                     {renderPreviewPane(false)}
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : showDdlPane ? (
                 <ResizablePanelGroup direction="horizontal" autoSaveId="dashboard-desktop-preview-inspector" className="flex-1 gap-2.5">
-                  <ResizablePanel id="dashboard-desktop-preview-main" order={1} defaultSize={68} minSize={40}>
+                  <ResizablePanel id="dashboard-desktop-preview-main" order={1} defaultSize={72} minSize={48}>
                     {renderPreviewPane(false)}
                   </ResizablePanel>
 
                   <ResizableHandle />
 
-                  <ResizablePanel id="dashboard-desktop-ddl-only" order={2} defaultSize={32} minSize={20}>
-                    <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                  <ResizablePanel id="dashboard-desktop-ddl-only" order={2} defaultSize={28} minSize={18}>
+                    <div className="workspace-panel h-full overflow-hidden">
                       <DdlGenerator
                         fileId={selectedFileId}
                         sheetName={selectedSheet}
@@ -820,6 +1052,8 @@ export default function Dashboard() {
             </div>
           </main>
         </div>
+
+        <StatusBar />
       </div>
 
       <SearchDialog
