@@ -102,6 +102,29 @@ Each panel component:
 - **UI State**: React local state (selected file, selected sheet, selected dialect)
 - **No global state library**: Data flows via React Query cache and URL parameters
 
+### Desktop UI Design Baseline
+
+This project should feel like a native desktop database tool, not a marketing-style web app.
+
+- Prefer **panes over cards**:
+  Use tight pane boundaries, shared borders, and resizable splits. Avoid large floating cards with generous outside margins.
+- Prefer **density and alignment** over “breathing room”:
+  Lists, inspectors, and table-like views should stay compact and grid-aligned. Tighten row heights before adding decorative spacing.
+- Prefer **borders over shadows**:
+  Main workspace surfaces should be separated primarily by 1px borders and slight background contrast. Shadows should be reserved for transient overlays such as dialogs, menus, and tooltips.
+- Prefer **small radii**:
+  Use square corners or micro-radius surfaces. Avoid 12px+ rounding on primary work areas.
+- Prefer **functional background contrast**:
+  Navigation and utility panes may use a slightly different neutral background from the primary editor/output surface so users can distinguish navigation from work canvas instantly.
+- Prefer **monospace in code/data contexts**:
+  DDL output, column metadata, identifiers, and structured technical content should use the mono font to reinforce tool semantics.
+- Prefer **persistent workspace control**:
+  Panel visibility, resizable widths, and similar workspace chrome should remember user preference whenever practical.
+- Avoid **web-style ornamentation**:
+  Do not reintroduce dashboard hero blocks, oversized pills, heavy drop shadows, glassmorphism, or decorative gradients into the main tool surfaces.
+- Use **non-selectable chrome**:
+  Buttons, tabs, labels, sidebars, and inspector chrome should generally disable text selection. Leave text selection enabled in editors, textareas, code previews, and other content surfaces where copy is useful.
+
 ## Debugging Tools
 
 ### Excel Inspection Script

@@ -207,6 +207,7 @@ pub struct CreateWorkbookFromTemplateResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DdlSettings {
+  pub status_bar_items: Vec<String>,
   pub mysql_engine: String,
   pub mysql_charset: String,
   pub mysql_collate: String,
@@ -225,6 +226,7 @@ pub struct DdlSettings {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub custom_header_template: Option<String>,
   pub use_custom_header: bool,
+  pub hide_sheets_without_definitions: bool,
   pub mysql_data_type_case: String,
   pub mysql_boolean_mode: String,
   pub pk_markers: Vec<String>,
@@ -258,6 +260,7 @@ pub struct DdlSettings {
 impl Default for DdlSettings {
   fn default() -> Self {
     Self {
+      status_bar_items: vec!["activity".into(), "memory".into()],
       mysql_engine: "InnoDB".into(),
       mysql_charset: "utf8mb4".into(),
       mysql_collate: "utf8mb4_bin".into(),
@@ -273,6 +276,7 @@ impl Default for DdlSettings {
       excel_read_path: None,
       custom_header_template: None,
       use_custom_header: false,
+      hide_sheets_without_definitions: true,
       mysql_data_type_case: "lower".into(),
       mysql_boolean_mode: "tinyint(1)".into(),
       pk_markers: vec![DEFAULT_PK_MARKER.into()],
@@ -321,6 +325,14 @@ pub struct RuntimeDiagnostics {
   pub db_exists: bool,
   pub uploaded_file_count: i64,
   pub settings_row_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessMetrics {
+  pub pid: u32,
+  pub memory_bytes: u64,
+  pub virtual_memory_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,6 +11,7 @@ import Settings from "@/pages/Settings";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ExtensionHostProvider } from "@/extensions/host-context";
 import { registerBuiltinPanels } from "@/extensions/builtin/register-all";
+import { StatusBarProvider } from "@/status-bar/context";
 
 // builtin パネルを起動時に一度だけ登録
 registerBuiltinPanels();
@@ -82,9 +83,11 @@ function App() {
           </div>
         ) : null}
         <Toaster />
-        <ExtensionHostProvider>
-          <Router />
-        </ExtensionHostProvider>
+        <StatusBarProvider>
+          <ExtensionHostProvider>
+            <Router />
+          </ExtensionHostProvider>
+        </StatusBarProvider>
       </TooltipProvider>
     </QueryClientProvider>
     </ThemeProvider>

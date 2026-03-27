@@ -1166,7 +1166,7 @@ fn build_snapshot(app: &tauri::AppHandle, file_id: i64) -> Result<SnapshotPayloa
     let file_path = Path::new(&file.file_path);
     let parse_options = resolve_parse_options_pub(app);
 
-    let sheet_summaries = excel::list_sheet_summaries(file_path)?;
+    let sheet_summaries = excel::list_sheet_summaries(file_path, &parse_options)?;
     let mut sheets = Vec::new();
 
     for summary in &sheet_summaries {

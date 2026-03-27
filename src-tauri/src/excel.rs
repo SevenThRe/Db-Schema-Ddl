@@ -1299,7 +1299,7 @@ pub fn validate_excel_file(file_path: &Path) -> Result<(), String> {
     .map_err(|error| format!("{INVALID_WORKBOOK_MESSAGE}: {error}"))
 }
 
-pub fn list_sheet_summaries(file_path: &Path) -> Result<Vec<SheetSummary>, String> {
+pub fn list_sheet_summaries(file_path: &Path, options: &ParseOptions) -> Result<Vec<SheetSummary>, String> {
   let mut workbook = open_excel_workbook(file_path)?;
   let sheet_names = workbook.sheet_names().to_owned();
   let mut summaries = Vec::with_capacity(sheet_names.len());
@@ -1308,9 +1308,7 @@ pub fn list_sheet_summaries(file_path: &Path) -> Result<Vec<SheetSummary>, Strin
     let has_table_definitions = workbook
       .worksheet_range(&sheet_name)
       .map(|range| {
-        range
-          .rows()
-          .any(|row| row.iter().any(|cell| cell_to_text(cell) == TABLE_MARKER))
+        !parse_tables_from_sheet(&sheet_name, &range_to_string_matrix(&range), options).is_empty()
       })
       .unwrap_or(false);
 
@@ -1561,7 +1559,7 @@ mod tests {
   #[test]
   fn lists_all_sheets_from_workbook() {
     let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
-    let summaries = list_sheet_summaries(&file_path).expect("sheet summaries should load");
+    let summaries = list_sheet_summaries(&file_path, &ParseOptions::default()).expect("sheet summaries should load");
     // 給与ワークブックは143シートを持つことが実績で確認済み
     assert!(summaries.len() > 10, "should return many sheets, got {}", summaries.len());
   }
@@ -1569,7 +1567,7 @@ mod tests {
   #[test]
   fn marks_table_definition_sheets_correctly() {
     let file_path = fixture_path("uploads/0ce665cb_1772791159950_30.データベース定義書-給与_ISI_20260303.xlsx");
-    let summaries = list_sheet_summaries(&file_path).expect("sheet summaries should load");
+    let summaries = list_sheet_summaries(&file_path, &ParseOptions::default()).expect("sheet summaries should load");
 
     // テーブル定義を含むシートは has_table_definitions = true であること
     let definition_sheet = summaries

@@ -4,6 +4,14 @@ const CAMEL_BOUNDARY_PATTERN = /([a-z0-9])([A-Z])/g;
 const NON_ALNUM_UNDERSCORE_PATTERN = /[^A-Za-z0-9_]+/g;
 const MULTIPLE_UNDERSCORE_PATTERN = /_+/g;
 const EDGE_UNDERSCORE_PATTERN = /^_+|_+$/g;
+const INVISIBLE_CHAR_LABELS = new Map<number, string>([
+  [0x00A0, "NBSP"],
+  [0x200B, "ZWSP"],
+  [0x200C, "ZWNJ"],
+  [0x200D, "ZWJ"],
+  [0x2060, "WJ"],
+  [0xFEFF, "BOM"],
+]);
 
 const DEFAULT_TABLE_FALLBACK = "unnamed_table";
 const DEFAULT_COLUMN_FALLBACK_PREFIX = "column_";
@@ -252,6 +260,37 @@ function resolveDuplicate(
 export function isValidPhysicalName(name?: string): boolean {
   if (!name) return false;
   return PHYSICAL_NAME_PATTERN.test(name.trim());
+}
+
+export function hasInvisibleCharacters(name?: string): boolean {
+  if (!name) return false;
+  return Array.from(name).some((char) => {
+    const codePoint = char.codePointAt(0);
+    if (codePoint == null) {
+      return false;
+    }
+    return INVISIBLE_CHAR_LABELS.has(codePoint) || codePoint <= 0x001f || (codePoint >= 0x007f && codePoint <= 0x009f);
+  });
+}
+
+export function visualizeInvisibleCharacters(name?: string): string {
+  if (!name) return "";
+  return Array.from(name)
+    .map((char) => {
+      const codePoint = char.codePointAt(0);
+      if (codePoint == null) {
+        return char;
+      }
+      const knownLabel = INVISIBLE_CHAR_LABELS.get(codePoint);
+      if (knownLabel) {
+        return `⟦${knownLabel}⟧`;
+      }
+      if (codePoint <= 0x001f || (codePoint >= 0x007f && codePoint <= 0x009f)) {
+        return `⟦U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}⟧`;
+      }
+      return char;
+    })
+    .join("");
 }
 
 export function normalizePhysicalName(name?: string, fallback = "unnamed"): string {
@@ -533,4 +572,3 @@ export function autoFixTablePhysicalNames<TTable extends PhysicalNameTable>(tabl
   const result = applyNameFixPlan([table]);
   return result.fixedTables[0] as TTable;
 }
-

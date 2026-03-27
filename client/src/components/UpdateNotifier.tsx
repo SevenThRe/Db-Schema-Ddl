@@ -110,7 +110,7 @@ export function UpdateNotifier({ className }: UpdateNotifierProps) {
           variant="ghost"
           size="sm"
           className={cn(
-            "relative h-7 rounded-md border border-border px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+            "relative h-8 rounded-md border border-slate-200/80 bg-white px-2.5 text-xs font-semibold text-muted-foreground hover:bg-slate-50 hover:text-foreground dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900",
             className,
           )}
         >

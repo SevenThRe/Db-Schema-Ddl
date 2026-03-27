@@ -294,7 +294,7 @@ fn validate_round_trip(
     return base_validation;
   }
 
-  let sheet_summaries = match excel::list_sheet_summaries(&temp_path) {
+  let sheet_summaries = match excel::list_sheet_summaries(&temp_path, &excel::ParseOptions::default()) {
     Ok(s) => s,
     Err(_) => {
       let _ = std::fs::remove_file(&temp_path);

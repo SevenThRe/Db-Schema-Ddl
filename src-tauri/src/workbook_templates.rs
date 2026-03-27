@@ -98,7 +98,7 @@ fn validate_template_file(
   template: &WorkbookTemplateVariant,
 ) -> Result<WorkbookTemplateValidation, String> {
   excel::validate_excel_file(file_path)?;
-  let sheet_summaries = excel::list_sheet_summaries(file_path)?;
+  let sheet_summaries = excel::list_sheet_summaries(file_path, &excel::ParseOptions::default())?;
   let checked_sheet_name = sheet_summaries
     .first()
     .map(|sheet| sheet.name.clone())

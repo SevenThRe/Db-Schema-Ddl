@@ -1,7 +1,7 @@
 // DDL → Excel 変換ワークスペース
 // SQL DDL テキストを解析し、データベース定義書 XLSX として出力する内蔵拡張
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { FileDown, Loader2, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePreviewDdlImport, useExportWorkbookFromDdl } from "@/hooks/use-ddl";
 import { cn } from "@/lib/utils";
 import type { DdlImportTable } from "@shared/schema";
+import { useScopedHostApi } from "@/extensions/ExtensionWorkspaceHost";
 
 import type { WorkbookTemplateVariantId } from "@shared/schema";
 
@@ -96,6 +97,7 @@ function TableSelectCard({
 
 export function DdlToExcelWorkspace() {
   const { toast } = useToast();
+  const host = useScopedHostApi();
 
   const [sqlText, setSqlText] = useState("");
   const [templateId, setTemplateId] = useState<WorkbookTemplateVariantId>(TEMPLATES[0].id);
@@ -105,12 +107,24 @@ export function DdlToExcelWorkspace() {
   const previewMutation = usePreviewDdlImport();
   const exportMutation = useExportWorkbookFromDdl();
 
+  useEffect(() => () => {
+    host?.statusBar.clearAll();
+  }, [host]);
+
   // ── 解析 ──────────────────────────────────────
 
   const handleParse = useCallback(async () => {
     const trimmed = sqlText.trim();
     if (!trimmed) return;
     try {
+      host?.statusBar.set({
+        id: "ddl-to-excel-parse",
+        label: "Parsing DDL",
+        detail: "MySQL",
+        tone: "progress",
+        progress: null,
+        order: 30,
+      });
       const result = await previewMutation.mutateAsync({
         sourceMode: "mysql-paste",
         sqlText: trimmed,
@@ -119,16 +133,40 @@ export function DdlToExcelWorkspace() {
       setParsedTables(tables);
       // 全テーブルをデフォルト選択
       setSelectedNames(new Set(tables.map((t: DdlImportTable) => t.name)));
+      host?.statusBar.set({
+        id: "ddl-to-excel-parse",
+        label: "DDL parsed",
+        detail: `${tables.length} tables`,
+        tone: "success",
+        order: 30,
+        expiresInMs: 4_000,
+      });
     } catch (e) {
+      host?.statusBar.set({
+        id: "ddl-to-excel-parse",
+        label: "DDL parse failed",
+        detail: String(e),
+        tone: "error",
+        order: 30,
+        expiresInMs: 6_000,
+      });
       toast({ title: "解析失败", description: String(e), variant: "destructive" });
     }
-  }, [sqlText, previewMutation, toast]);
+  }, [host, previewMutation, sqlText, toast]);
 
   // ── エクスポート ──────────────────────────────
 
   const handleExport = useCallback(async () => {
     if (!parsedTables || selectedNames.size === 0) return;
     try {
+      host?.statusBar.set({
+        id: "ddl-to-excel-export",
+        label: "Exporting workbook",
+        detail: `${selectedNames.size} tables`,
+        tone: "progress",
+        progress: null,
+        order: 31,
+      });
       await exportMutation.mutateAsync({
         sourceMode: "mysql-paste",
         sqlText: sqlText.trim(),
@@ -136,11 +174,27 @@ export function DdlToExcelWorkspace() {
         selectedTableNames: Array.from(selectedNames),
         allowLossyExport: true,
       });
+      host?.statusBar.set({
+        id: "ddl-to-excel-export",
+        label: "Workbook exported",
+        detail: `${selectedNames.size} tables`,
+        tone: "success",
+        order: 31,
+        expiresInMs: 5_000,
+      });
       toast({ title: "导出成功", description: "已保存到文件列表，可在左侧打开。", variant: "success" });
     } catch (e) {
+      host?.statusBar.set({
+        id: "ddl-to-excel-export",
+        label: "Workbook export failed",
+        detail: String(e),
+        tone: "error",
+        order: 31,
+        expiresInMs: 6_000,
+      });
       toast({ title: "导出失败", description: String(e), variant: "destructive" });
     }
-  }, [parsedTables, selectedNames, sqlText, templateId, exportMutation, toast]);
+  }, [exportMutation, host, parsedTables, selectedNames, sqlText, templateId, toast]);
 
   const toggleAll = useCallback(() => {
     if (!parsedTables) return;

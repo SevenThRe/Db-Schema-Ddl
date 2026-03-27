@@ -4,7 +4,7 @@
 // 左ペイン: 設定（シート選択・言語・パッケージ名）
 // 右ペイン: リアルタイムプレビュー
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Download, AlertTriangle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,6 +22,7 @@ import { useSheets } from "@/hooks/use-ddl";
 import { useEnumGenPreview, useEnumGenExport } from "@/hooks/use-ddl";
 import { useToast } from "@/hooks/use-toast";
 import type { EnumGenRequest } from "@shared/schema";
+import { useScopedHostApi } from "@/extensions/ExtensionWorkspaceHost";
 
 // ──────────────────────────────────────────────
 // Props 型
@@ -38,6 +39,7 @@ interface EnumGenWorkspaceProps {
 
 export function EnumGenWorkspace({ fileId, fileName }: EnumGenWorkspaceProps) {
   const { toast } = useToast();
+  const host = useScopedHostApi();
 
   // ── 設定ステート ────────────────────────────
   const [selectedSheet, setSelectedSheet] = useState<string>("");
@@ -69,12 +71,33 @@ export function EnumGenWorkspace({ fileId, fileName }: EnumGenWorkspaceProps) {
   // ダウンロード mutation
   const { mutate: exportEnum, isPending: isExporting } = useEnumGenExport();
 
+  useEffect(() => () => {
+    host?.statusBar.clearAll();
+  }, [host]);
+
   // ── ハンドラー ──────────────────────────────
 
   const handleDownload = () => {
     if (!previewRequest) return;
+    host?.statusBar.set({
+      id: "enum-gen-export",
+      label: "Generating enums",
+      detail: `${targetLang}:${selectedSheet}`,
+      tone: "progress",
+      progress: null,
+      order: 32,
+      mono: true,
+    });
     exportEnum(previewRequest, {
       onSuccess: (result) => {
+        host?.statusBar.set({
+          id: "enum-gen-export",
+          label: "Enums exported",
+          detail: `${result.successCount} generated`,
+          tone: "success",
+          order: 32,
+          expiresInMs: 5_000,
+        });
         toast({
           title: "ダウンロード完了",
           description: `${result.successCount} クラス生成、${result.skippedCount} スキップ`,
@@ -82,6 +105,14 @@ export function EnumGenWorkspace({ fileId, fileName }: EnumGenWorkspaceProps) {
         });
       },
       onError: (error) => {
+        host?.statusBar.set({
+          id: "enum-gen-export",
+          label: "Enum export failed",
+          detail: String(error),
+          tone: "error",
+          order: 32,
+          expiresInMs: 6_000,
+        });
         toast({
           title: "エクスポート失敗",
           description: String(error),

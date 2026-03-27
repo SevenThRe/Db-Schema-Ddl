@@ -52,6 +52,7 @@ export const DEFAULT_DDL_SETTINGS_VALUES = {
   mysqlDataTypeCase: "lower",
   mysqlBooleanMode: "tinyint(1)",
   useCustomHeader: false,
+  hideSheetsWithoutDefinitions: true,
   pkMarkers: APP_DEFAULTS.excel.pkMarkers,
   maxConsecutiveEmptyRows: APP_DEFAULTS.excel.maxConsecutiveEmptyRows,
   uploadRateLimitWindowMs: APP_DEFAULTS.rateLimit.uploadWindowMs,
@@ -76,6 +77,7 @@ export const DEFAULT_DDL_SETTINGS_VALUES = {
   nameFixMaxBatchConcurrency: APP_DEFAULTS.nameFix.maxBatchConcurrency,
   allowOverwriteInElectron: APP_DEFAULTS.nameFix.allowOverwriteInElectron,
   allowExternalPathWrite: APP_DEFAULTS.nameFix.allowExternalPathWrite,
+  statusBarItems: ["activity", "memory"],
 } as const;
 
 export function createDefaultDdlSettings() {
@@ -86,5 +88,7 @@ export function createDefaultDdlSettings() {
     downloadPath: undefined,
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
+    hideSheetsWithoutDefinitions: DEFAULT_DDL_SETTINGS_VALUES.hideSheetsWithoutDefinitions,
+    statusBarItems: [...DEFAULT_DDL_SETTINGS_VALUES.statusBarItems],
   };
 }

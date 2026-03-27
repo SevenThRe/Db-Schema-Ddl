@@ -33,6 +33,7 @@ import type { StructuredDiffEntry } from "@/components/diff-viewer/structured-ty
 interface SchemaDiffPanelProps {
   fileId: number | null;
   sheetName: string | null;
+  compareOldFileId?: number | null;
 }
 
 type RenameDecisionDraft = "pending" | "accept" | "reject";
@@ -877,7 +878,7 @@ function buildColumnFieldDiffs(change: DiffColumn): Array<{ field: string; oldVa
     .filter((item) => !(item.oldValue === "-" && item.newValue === "-"));
 }
 
-export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
+export function SchemaDiffPanel({ fileId, sheetName, compareOldFileId = null }: SchemaDiffPanelProps) {
   const { t } = useTranslation();
   // SchemaDiffPanel の業務は Express API hooks 経由のため Capability スコープは不要
   const { notifications } = useHostApi();
@@ -928,6 +929,15 @@ export function SchemaDiffPanel({ fileId, sheetName }: SchemaDiffPanelProps) {
     setHideFormattingOnly(true);
     setInspectorTab("inspect");
   }, [fileId, sheetName]);
+
+  useEffect(() => {
+    if (!compareOldFileId || !fileId || compareOldFileId === fileId) {
+      return;
+    }
+    setSelectionMode("manual");
+    setManualOldFileId(compareOldFileId);
+    setScope("all_sheets");
+  }, [compareOldFileId, fileId]);
 
 
   useEffect(() => {

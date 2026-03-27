@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { translateApiError } from "@/lib/api-error";
+import { cn } from "@/lib/utils";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { autoFixTablePhysicalNames, validateTablePhysicalNames } from "@/lib/physical-name-utils";
 import {
@@ -40,8 +41,9 @@ import {
 } from "@/components/ddl/name-fix-options";
 import { NameFixExecutionPanels } from "@/components/ddl/name-fix-panels";
 import type { NameFixApplyResultState } from "@/components/ddl/name-fix-types";
-import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle, WandSparkles } from "lucide-react";
+import { Copy, Check, Code, Database, ArrowRight, Download, Search, SortAsc, AlertTriangle, WandSparkles, TextSelect } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useStatusBarScope } from "@/status-bar/context";
 
 interface DdlGeneratorProps {
   fileId: number | null;
@@ -216,15 +218,31 @@ const SQL_TYPE_NAMES = new Set([
 ]);
 
 const SQL_TOKEN_CLASS_MAP: Record<SqlTokenType, string> = {
-  plain: "text-slate-700 dark:text-slate-200",
-  keyword: "font-semibold text-cyan-700 dark:text-cyan-300",
-  type: "text-sky-700 dark:text-sky-300",
-  identifier: "text-amber-700 dark:text-amber-300",
-  string: "text-emerald-700 dark:text-emerald-300",
-  comment: "italic text-slate-400 dark:text-slate-500",
-  number: "text-violet-700 dark:text-violet-300",
-  operator: "text-slate-500 dark:text-slate-300",
+  plain: "text-slate-800 dark:text-[#cccccc]",
+  keyword: "font-semibold text-slate-700 dark:text-[#569cd6]",
+  type: "text-sky-700 dark:text-[#4ec9b0]",
+  identifier: "text-slate-900 dark:text-[#d4d4d4]",
+  string: "text-emerald-800 dark:text-[#ce9178]",
+  comment: "italic text-slate-500 dark:text-[#6a9955]",
+  number: "text-violet-700 dark:text-[#b5cea8]",
+  operator: "text-slate-500 dark:text-[#888888]",
 };
+
+function DialectMark({ dialect }: { dialect: "mysql" | "oracle" }) {
+  const isMySql = dialect === "mysql";
+  return (
+    <span
+      className={
+        isMySql
+          ? "inline-flex h-5 w-5 items-center justify-center rounded-sm border border-sky-300/80 bg-sky-50 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
+          : "inline-flex h-5 w-5 items-center justify-center rounded-sm border border-rose-300/80 bg-rose-50 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+      }
+      aria-hidden="true"
+    >
+      {isMySql ? "MY" : "OR"}
+    </span>
+  );
+}
 
 interface NameFixFileVersionMeta {
   versionNumber: number;
@@ -408,6 +426,14 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function buildSqlDownloadFilename(
+  prefix: string,
+  suffix: string,
+  physicalName: string,
+): string {
+  return `${prefix}${physicalName}${suffix}.sql`;
+}
+
 function toDdlTablePayload(table: TableInfo): TableInfo {
   return {
     logicalTableName: table.logicalTableName,
@@ -557,7 +583,7 @@ export function DdlGenerator({
   onSelectedTableNamesChange,
   onOpenImportWorkspace,
 }: DdlGeneratorProps) {
-  const CONTROL_BUTTON_CLASS = "h-8 rounded-md text-xs";
+  const CONTROL_BUTTON_CLASS = "h-8 rounded-lg text-xs";
   const desktopCapabilities = desktopBridge.getCapabilities();
   const supportsNameFix = desktopCapabilities.features.nameFix;
   const supportsDirectNameFixWrite = desktopCapabilities.runtime === "tauri";
@@ -623,7 +649,9 @@ export function DdlGenerator({
   const { data: settings } = useSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const statusBar = useStatusBarScope("app:ddl");
   const highlightedDdlTokens = useMemo(() => (generatedDdl ? tokenizeSql(generatedDdl) : []), [generatedDdl]);
+  const codeRef = useRef<HTMLElement | null>(null);
   const nameFixFileVersionMetaById = useMemo(() => {
     const map = new Map<number, NameFixFileVersionMeta>();
     if (uploadedFiles.length === 0) {
@@ -761,6 +789,21 @@ export function DdlGenerator({
     const next = updater(new Set(effectiveSelectedTableNames));
     commitSelectedTableNames(next);
   }, [commitSelectedTableNames, effectiveSelectedTableNames]);
+  const selectAllCurrentTables = useCallback(() => {
+    if (!tables || tables.length === 0) {
+      return;
+    }
+    commitSelectedTableNames(
+      new Set(tables.map((table: TableInfo) => table.physicalTableName).filter(Boolean)),
+    );
+  }, [commitSelectedTableNames, tables]);
+  const clearSelectedTables = useCallback(() => {
+    commitSelectedTableNames(new Set());
+  }, [commitSelectedTableNames]);
+
+  useEffect(() => () => {
+    statusBar.clearAll();
+  }, [statusBar]);
 
   useEffect(() => {
     if (!tables || tables.length === 0) {
@@ -1330,9 +1373,17 @@ export function DdlGenerator({
       return;
     }
 
-    const targetTable = currentTable || (tables.length === 1 ? tables[0] : null);
+    const selectedEntries: SelectedTableEntry[] = tables
+      .map((table: TableInfo, sourceIndex: number) => ({ sourceIndex, table }))
+      .filter((entry: SelectedTableEntry) => effectiveSelectedTableNames.has(entry.table.physicalTableName));
+    const fallbackTargetTable = currentTable || (tables.length === 1 ? tables[0] : null);
+    const targetEntries = selectedEntries.length > 0
+      ? selectedEntries
+      : fallbackTargetTable
+        ? [{ sourceIndex: findTableIndex(tables, fallbackTargetTable), table: fallbackTargetTable }]
+        : [];
 
-    if (!targetTable) {
+    if (targetEntries.length === 0) {
       toast({
         title: t("ddl.noTableSelected"),
         description: t("ddl.pleaseSelectTable"),
@@ -1341,28 +1392,26 @@ export function DdlGenerator({
       return;
     }
 
-    const tablesForGeneration = await askAutoFixIfNeeded([targetTable]);
+    const tablesForGeneration = await askAutoFixIfNeeded(targetEntries.map((entry) => entry.table));
     if (!tablesForGeneration) {
       return;
     }
 
     const canUseReferenceMode = fileId != null && sheetName != null;
-    const sourceTableIndex = canUseReferenceMode ? findTableIndex(tables, targetTable) : -1;
+    const nameFixedEntries = tablesForGeneration.map((table: TableInfo, index: number) => ({
+      sourceIndex: targetEntries[index]?.sourceIndex ?? index,
+      table,
+    }));
 
-    if (canUseReferenceMode && sourceTableIndex >= 0) {
-      const referenceTable = toDdlTablePayload(tablesForGeneration[0]);
-      const sourceSerialized = JSON.stringify(toDdlTablePayload(tables[sourceTableIndex]));
-      const currentSerialized = JSON.stringify(referenceTable);
-      const tableOverrides = sourceSerialized === currentSerialized
-        ? []
-        : [{ tableIndex: sourceTableIndex, table: referenceTable }];
+    if (canUseReferenceMode && nameFixedEntries.every((entry) => entry.sourceIndex >= 0)) {
+      const tableOverrides = buildReferenceOverrides(tables, nameFixedEntries);
 
       try {
         setIsGeneratingByReference(true);
         const data = await desktopBridge.ddl.generateByReference({
           fileId,
           sheetName,
-          selectedTableIndexes: [sourceTableIndex],
+          selectedTableIndexes: nameFixedEntries.map((entry) => entry.sourceIndex),
           tableOverrides,
           dialect,
           settings,
@@ -1373,7 +1422,7 @@ export function DdlGenerator({
         notifyDdlWarnings(data.warnings);
         toast({
           title: t("ddl.generated"),
-          description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
+          description: t("ddl.generatedSuccess", { count: tablesForGeneration.length, dialect: dialect.toUpperCase() }),
           variant: "success",
         });
         return;
@@ -1403,7 +1452,7 @@ export function DdlGenerator({
           notifyDdlWarnings(data.warnings);
           toast({
             title: t("ddl.generated"),
-            description: t("ddl.generatedSuccess", { count: 1, dialect: dialect.toUpperCase() }),
+            description: t("ddl.generatedSuccess", { count: tablesForGeneration.length, dialect: dialect.toUpperCase() }),
             variant: "success",
           });
         },
@@ -1452,6 +1501,14 @@ export function DdlGenerator({
     }
 
     try {
+      statusBar.set({
+        id: "export",
+        label: "Exporting ZIP",
+        detail: `${tablesForExport.length} tables`,
+        tone: "progress",
+        progress: null,
+        order: 10,
+      });
       const fallbackSheetNameHint = sheetName ?? deriveSheetNameHintFromTables(tablesForExport);
       const fallbackZipFilename = buildZipDownloadFilename(dialect, fallbackSheetNameHint);
       let exportResult: Awaited<ReturnType<typeof desktopBridge.ddl.exportZip>> | null = null;
@@ -1485,7 +1542,28 @@ export function DdlGenerator({
       const successCount = exportResult.successCount > 0 ? exportResult.successCount : tablesForExport.length;
       const skippedCount = exportResult.skippedCount;
       const skippedTables = exportResult.skippedTables;
-      downloadBlob(exportResult.blob, exportResult.fileName || fallbackZipFilename);
+      const zipFileName = exportResult.fileName || fallbackZipFilename;
+      statusBar.set({
+        id: "export",
+        label: "Saving ZIP",
+        detail: zipFileName,
+        tone: "progress",
+        progress: null,
+        order: 10,
+        mono: true,
+      });
+      const exportBytes = new Uint8Array(await exportResult.blob.arrayBuffer());
+      const savedPath = await desktopBridge.saveBinaryFile({
+        bytes: exportBytes,
+        defaultFileName: zipFileName,
+        defaultDirectory: settings?.downloadPath,
+        filters: [{ name: "ZIP", extensions: ["zip"] }],
+        revealAfterSave: true,
+      });
+
+      if (!savedPath) {
+        downloadBlob(exportResult.blob, zipFileName);
+      }
 
       toast({
         title: t("ddl.exported"),
@@ -1494,6 +1572,17 @@ export function DdlGenerator({
             ? t("ddl.exportedZipPartial", { successCount, skippedCount })
             : t("ddl.exportedZip", { count: successCount }),
         variant: "success",
+      });
+      statusBar.set({
+        id: "export",
+        label: t("ddl.exported"),
+        detail:
+          skippedCount > 0
+            ? t("ddl.exportedZipPartial", { successCount, skippedCount })
+            : t("ddl.exportedZip", { count: successCount }),
+        tone: "success",
+        order: 10,
+        expiresInMs: 5_000,
       });
 
       setZipExportSummary({
@@ -1508,6 +1597,14 @@ export function DdlGenerator({
     } catch (error) {
       console.error('ZIP export error:', error);
       const translated = translateApiError(error, t);
+      statusBar.set({
+        id: "export",
+        label: translated.title || t("ddl.exportFailed"),
+        detail: translated.description,
+        tone: "error",
+        order: 10,
+        expiresInMs: 6_000,
+      });
       toast({
         title: translated.title || t("ddl.exportFailed"),
         description: translated.description,
@@ -1545,6 +1642,16 @@ export function DdlGenerator({
     });
   };
 
+  const selectAllOutput = useCallback(() => {
+    if (!codeRef.current || typeof window === "undefined") return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(codeRef.current);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
+
   const substituteVariables = (template: string, table: TableInfo): string => {
     const today = new Date();
     const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
@@ -1571,23 +1678,65 @@ export function DdlGenerator({
       columns: []
     });
     const suffix = suffixTemplate ? substituteVariables(suffixTemplate, table) : "";
-    const filename = `${prefix}${table.physicalTableName}${suffix}.sql`;
+    const selectedGeneratedCount = generatedTables?.length ?? 1;
+    const physicalName = selectedGeneratedCount > 1
+      ? (sheetName?.trim() || "selected_tables")
+      : table.physicalTableName;
+    const filename = buildSqlDownloadFilename(prefix, suffix, physicalName);
 
-    const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    try {
+      statusBar.set({
+        id: "export",
+        label: "Exporting SQL",
+        detail: filename,
+        tone: "progress",
+        progress: null,
+        order: 10,
+        mono: true,
+      });
+      const blob = new Blob([generatedDdl], { type: "text/plain;charset=utf-8" });
+      const savedPath = await desktopBridge.saveBinaryFile({
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        defaultFileName: filename,
+        defaultDirectory: settings?.downloadPath,
+        filters: [{ name: "SQL", extensions: ["sql"] }],
+        revealAfterSave: true,
+      });
 
-    toast({
-      title: t("ddl.exported"),
-      description: t("ddl.exportedAs", { filename }),
-      variant: "success",
-    });
+      if (!savedPath) {
+        downloadBlob(blob, filename);
+      }
+
+      statusBar.set({
+        id: "export",
+        label: t("ddl.exported"),
+        detail: t("ddl.exportedAs", { filename }),
+        tone: "success",
+        order: 10,
+        expiresInMs: 5_000,
+        mono: true,
+      });
+      toast({
+        title: t("ddl.exported"),
+        description: t("ddl.exportedAs", { filename }),
+        variant: "success",
+      });
+    } catch (error) {
+      const translated = translateApiError(error, t);
+      statusBar.set({
+        id: "export",
+        label: translated.title || t("ddl.exportFailed"),
+        detail: translated.description,
+        tone: "error",
+        order: 10,
+        expiresInMs: 6_000,
+      });
+      toast({
+        title: translated.title || t("ddl.exportFailed"),
+        description: translated.description,
+        variant: "destructive",
+      });
+    }
   };
 
   const resolveNameFixTargetFileIds = (): number[] => {
@@ -1839,24 +1988,24 @@ export function DdlGenerator({
   if (!tables || tables.length === 0) {
     return (
       <div className="flex h-full flex-col bg-transparent">
-        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+        <div className="border-b border-slate-200/80 bg-slate-50/75 px-4 py-3 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-slate-50" data-testid="text-ddl-header">
-              <Code className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-[#cccccc]" data-testid="text-ddl-header">
+              <Code className="h-4 w-4 text-slate-500 dark:text-[#888888]" />
               DDL
             </h3>
-            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#888888]">
               {t("ddl.inspectorHint")}
             </p>
           </div>
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center text-muted-foreground">
-          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
-            <Database className="h-8 w-8 text-slate-500 dark:text-slate-400" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200/90 bg-white dark:border-[#2d2d2d] dark:bg-[#161616]">
+            <Database className="h-8 w-8 text-slate-500 dark:text-[#888888]" />
           </div>
           <div className="max-w-sm">
             <p className="text-base font-semibold text-foreground">{t("ddl.emptySelectionTitle")}</p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("ddl.emptySelectionDescription")}</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-[#888888]">{t("ddl.emptySelectionDescription")}</p>
           </div>
         </div>
       </div>
@@ -1865,27 +2014,37 @@ export function DdlGenerator({
 
   return (
     <div className="flex h-full flex-col bg-transparent">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+      <div className="border-b border-slate-200/80 bg-slate-50/75 px-4 py-3 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
         <div className="space-y-2">
           <div className="flex min-w-0 items-center justify-between gap-4">
             <div className="min-w-0">
-              <h3 className="flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-slate-50" data-testid="text-ddl-header">
-                <Code className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <h3 className="flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-[#cccccc]" data-testid="text-ddl-header">
+                <Code className="h-4 w-4 text-slate-500 dark:text-[#888888]" />
                 {t("ddl.generatedPanelTitle")}
               </h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-slate-500 dark:text-[#888888]">
                 {t("ddl.selectionSummary", {
                   dialect: dialect.toUpperCase(),
                   selected: selectedTableCount,
                   total: candidateTableCount,
                 })}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="rounded-md border border-slate-200/80 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888]">
+                  {t("ddl.selected")}: {selectedTableCount}/{candidateTableCount}
+                </span>
+                {generatedDdl ? (
+                  <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/8 dark:text-emerald-300">
+                    {t("ddl.generated")}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-x-auto pb-0.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/80 p-2 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
             <Select value={dialect} onValueChange={(v) => setDialect(v as any)}>
-              <SelectTrigger className="h-8 w-[108px] shrink-0 rounded-md border-slate-200/90 bg-white text-xs dark:border-slate-800 dark:bg-slate-950 sm:w-[116px]" data-testid="select-dialect">
+              <SelectTrigger className="h-8 w-[108px] shrink-0 rounded-lg border-slate-200/90 bg-white text-xs dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888] sm:w-[116px]" data-testid="select-dialect">
                 <SelectValue placeholder={t("ddl.dialectPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
@@ -1895,7 +2054,7 @@ export function DdlGenerator({
             </Select>
 
             <Select value={exportMode} onValueChange={(v) => setExportMode(v as any)}>
-              <SelectTrigger className="h-8 w-[128px] shrink-0 rounded-md border-slate-200/90 bg-white text-xs dark:border-slate-800 dark:bg-slate-950 sm:w-[138px]" data-testid="select-export-mode">
+              <SelectTrigger className="h-8 w-[128px] shrink-0 rounded-lg border-slate-200/90 bg-white text-xs dark:border-[#2d2d2d] dark:bg-[#161616] dark:text-[#888888] sm:w-[138px]" data-testid="select-export-mode">
                 <SelectValue placeholder={t("ddl.exportModePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
@@ -1908,7 +2067,7 @@ export function DdlGenerator({
               size="sm"
               onClick={handleGenerate}
               disabled={isPending || isGeneratingByReference}
-              className="h-8 shrink-0 rounded-md px-4 text-xs font-semibold"
+              className="h-8 shrink-0 rounded-lg px-4 text-xs font-semibold"
               data-testid="button-generate"
             >
               {isPending || isGeneratingByReference ? t("ddl.generating") : (
@@ -1922,20 +2081,47 @@ export function DdlGenerator({
                 size="sm"
                 variant="outline"
                 onClick={openSyncNameFixDialog}
-                className="h-8 shrink-0 rounded-md px-3 text-xs"
+                className="h-8 shrink-0 rounded-lg px-3 text-xs"
               >
                 <WandSparkles className="mr-1 h-3 w-3" />
                 {t("ddl.nameFix.button")}
               </Button>
             ) : null}
+            {tables && tables.length > 1 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowTableSelector(true)}
+                className="h-8 shrink-0 rounded-lg px-3 text-xs"
+              >
+                <Search className="mr-1 h-3.5 w-3.5" />
+                {t("ddl.selectTables")}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={selectAllCurrentTables}
+              className="h-8 shrink-0 rounded-lg px-3 text-xs"
+            >
+              {t("common.selectAll")}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={clearSelectedTables}
+              className="h-8 shrink-0 rounded-lg px-3 text-xs"
+            >
+              {t("common.clearSelection")}
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden bg-white dark:bg-slate-950">
+      <div className="relative flex-1 overflow-hidden bg-gradient-to-b from-slate-50/30 to-white dark:from-[#0f0f0f] dark:to-[#0f0f0f]">
         {!generatedDdl ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-muted-foreground">
-            <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200/90 bg-white dark:border-[#2d2d2d] dark:bg-[#161616]">
               <Database className="h-7 w-7 opacity-70" />
             </div>
             {generationError ? (
@@ -1946,7 +2132,7 @@ export function DdlGenerator({
             ) : (
               <div className="mt-5 max-w-sm text-center">
                 <p className="text-base font-semibold text-foreground">{t("ddl.readyToGenerate")}</p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-xs text-slate-500 dark:text-[#888888]">
                   {t("ddl.readyHint")}
                 </p>
               </div>
@@ -1954,44 +2140,56 @@ export function DdlGenerator({
           </div>
         ) : (
           <div className="flex h-full flex-col bg-transparent">
-            <div className="flex justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+            <div className="flex justify-between gap-3 border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-950 dark:text-slate-50">
+                <p className="flex items-center gap-2 truncate text-sm font-medium text-slate-950 dark:text-[#cccccc]">
+                  <DialectMark dialect={dialect} />
                   {outputTargetLabel}
                 </p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {dialect.toUpperCase()} · {generatedTables?.length ?? 1} table payload{(generatedTables?.length ?? 1) > 1 ? "s" : ""}
                 </p>
               </div>
-              <div className="flex justify-end gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExport}
-                  className={`${CONTROL_BUTTON_CLASS} rounded-md`}
-                  data-testid="button-export"
-                >
-                  <Download className="mr-1 h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{t("ddl.export")}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyToClipboard}
-                  className={`${CONTROL_BUTTON_CLASS} rounded-md`}
-                  data-testid="button-copy"
-                >
-                  {copied ? <Check className="mr-1 h-3.5 w-3.5" /> : <Copy className="mr-1 h-3.5 w-3.5" />}
-                  <span className="hidden sm:inline">{copied ? t("ddl.copied") : t("ddl.copy")}</span>
-                </Button>
-              </div>
             </div>
-            <div className="flex-1 overflow-auto bg-slate-50/70 custom-scrollbar dark:bg-slate-950">
+            <div className="group relative flex-1 overflow-auto border-t border-slate-200 bg-[#f6f7f9] custom-scrollbar dark:border-[#2d2d2d] dark:bg-[#0f0f0f]">
+              <div className="pointer-events-none sticky top-0 z-10 flex justify-end p-2">
+                <div className="pointer-events-auto inline-flex items-center gap-0.5 rounded-md border border-slate-200/80 bg-white/78 p-0.5 opacity-100 backdrop-blur sm:opacity-0 sm:transition-opacity sm:duration-150 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 dark:border-[#2d2d2d] dark:bg-[#161616]/88">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleExport}
+                    className="h-6 gap-1 rounded-sm px-2 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#888888] dark:hover:bg-[#1e1e1e] dark:hover:text-white"
+                    data-testid="button-export"
+                  >
+                    <Download className="h-3 w-3" />
+                    <span className="hidden sm:inline">{t("ddl.export")}</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={copyToClipboard}
+                    className="h-6 gap-1 rounded-sm px-2 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#888888] dark:hover:bg-[#1e1e1e] dark:hover:text-white"
+                    data-testid="button-copy"
+                  >
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    <span className="hidden sm:inline">{copied ? t("ddl.copied") : t("ddl.copy")}</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllOutput}
+                    className="h-6 gap-1 rounded-sm px-2 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#888888] dark:hover:bg-[#1e1e1e] dark:hover:text-white"
+                  >
+                    <TextSelect className="h-3 w-3" />
+                    <span className="hidden sm:inline">{t("ddl.selectAllCode")}</span>
+                  </Button>
+                </div>
+              </div>
               <pre
-                className="min-h-full bg-slate-50/90 p-4 font-mono text-[12px] leading-relaxed text-slate-700 selection:bg-primary/20 dark:bg-slate-950 dark:text-slate-200"
+                className="min-h-full bg-[#f6f7f9] p-4 font-mono text-[12px] leading-7 text-slate-800 selection:bg-sky-200/60 dark:bg-[#0f0f0f] dark:text-[#cccccc] dark:selection:bg-[#007acc]/25"
                 data-testid="text-ddl-output"
               >
-                <code>
+                <code ref={codeRef}>
                   {highlightedDdlTokens.map((token, tokenIndex) => (
                     <span key={`${tokenIndex}-${token.type}-${token.text.length}`} className={SQL_TOKEN_CLASS_MAP[token.type]}>
                       {token.text}
@@ -2535,8 +2733,18 @@ export function DdlGenerator({
             <Button variant="outline" onClick={() => setShowTableSelector(false)}>
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleGenerateZip} disabled={effectiveSelectedTableNames.size === 0}>
-              {t("ddl.generateZip")} ({effectiveSelectedTableNames.size})
+            <Button
+              onClick={async () => {
+                if (exportMode === "single") {
+                  setShowTableSelector(false);
+                  await handleGenerate();
+                  return;
+                }
+                await handleGenerateZip();
+              }}
+              disabled={effectiveSelectedTableNames.size === 0}
+            >
+              {exportMode === "single" ? t("ddl.generate") : t("ddl.generateZip")} ({effectiveSelectedTableNames.size})
             </Button>
           </DialogFooter>
         </DialogContent>

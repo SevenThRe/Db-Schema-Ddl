@@ -232,13 +232,6 @@ fn build_comment_header_lines(table: &TableInfo, settings: &DdlSettings) -> Vec<
 
 fn resolve_mysql_auto_increment_plan(table: &TableInfo) -> (Vec<usize>, Vec<(usize, String)>) {
   let integer_types = ["tinyint", "smallint", "int", "integer", "bigint"];
-  let pk_columns = table
-    .columns
-    .iter()
-    .enumerate()
-    .filter_map(|(index, column)| column.is_pk.unwrap_or(false).then_some(index))
-    .collect::<Vec<_>>();
-
   let mut enabled = Vec::new();
   let mut ignored = Vec::new();
 
@@ -259,10 +252,6 @@ fn resolve_mysql_auto_increment_plan(table: &TableInfo) -> (Vec<usize>, Vec<(usi
     };
     if !integer_types.contains(&normalized_type.as_str()) {
       ignored.push((index, "non_numeric_type".into()));
-      continue;
-    }
-    if pk_columns.iter().position(|pk_index| *pk_index == index).unwrap_or(usize::MAX) != 0 {
-      ignored.push((index, "pk_order_incompatible".into()));
       continue;
     }
     enabled.push(index);
@@ -407,16 +396,23 @@ fn render_mysql_table(table: &TableInfo, settings: &DdlSettings) -> String {
     lines.push(line);
 
     if column.is_pk.unwrap_or(false) {
-      pk_columns.push(column_name.to_string());
+      pk_columns.push((index, column_name.to_string()));
     }
   }
 
   if !pk_columns.is_empty() {
+    pk_columns.sort_by_key(|(index, _)| {
+      if enabled_auto_increment.contains(index) {
+        0usize
+      } else {
+        1usize
+      }
+    });
     lines.push(format!(
       "  PRIMARY KEY ({}) USING BTREE",
       pk_columns
         .iter()
-        .map(|column| format!("`{column}`"))
+        .map(|(_, column)| format!("`{column}`"))
         .collect::<Vec<_>>()
         .join(", ")
     ));
@@ -543,9 +539,6 @@ fn collect_warnings(request: &GenerateDdlRequest) -> Vec<DdlGenerationWarning> {
             }
             "non_numeric_type" => {
               format!("AUTO_INCREMENT is ignored because data type is not integer-based.")
-            }
-            "pk_order_incompatible" => {
-              format!("AUTO_INCREMENT is ignored because MySQL requires the column to be the first column in a key.")
             }
             _ => {
               format!("AUTO_INCREMENT is ignored because MySQL allows only one AUTO_INCREMENT column per table.")

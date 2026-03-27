@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { DdlSettings } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 import { translateApiError } from "@/lib/api-error";
@@ -26,6 +26,7 @@ import {
   UTF8_COLLATIONS,
   DEFAULT_HEADER_TEMPLATE,
 } from "@shared/mysql-constants";
+import { Reorder, useDragControls } from "framer-motion";
 
 const MYSQL_DATA_TYPE_CASE_OPTIONS = [
   { value: "lower", label: "lowercase (varchar, bigint, datetime)" },
@@ -43,10 +44,127 @@ const SETTINGS_SECTIONS = [
   { id: "mysql", label: "MySQL" },
   { id: "varchar", label: "VARCHAR" },
   { id: "export", label: "导出" },
+  { id: "status-bar", label: "状态栏" },
   { id: "parsing", label: "解析" },
   { id: "name-fix", label: "命名修复" },
   { id: "developer", label: "开发者" },
 ] as const;
+
+const STATUS_BAR_MODULE_OPTIONS = [
+  {
+    id: "activity",
+    label: "活动状态",
+    description: "显示导出、解析、扩展写入的临时状态和进度消息。",
+  },
+  {
+    id: "memory",
+    label: "内存",
+    description: "显示当前桌面宿主进程的内存占用。",
+  },
+] as const;
+type StatusBarModuleId = (typeof STATUS_BAR_MODULE_OPTIONS)[number]["id"];
+
+function DragDotsIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      {[2.5, 7, 11.5].flatMap((y) => [4, 10].map((x) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r="1.2" fill="currentColor" />
+      )))}
+    </svg>
+  );
+}
+
+function StatusBarModulePreview({ moduleId }: { moduleId: StatusBarModuleId }) {
+  return (
+    <div className="status-bar-shell flex h-7 min-w-0 items-center gap-1.5 overflow-hidden px-2 text-[10px] font-medium">
+      {moduleId === "activity" ? (
+        <>
+          <span className="status-bar-item text-sky-700 dark:text-sky-300">
+            <span className="inline-flex h-3 w-3 items-center justify-center">
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            </span>
+            <span>Exporting ZIP</span>
+          </span>
+          <span className="status-bar-item font-mono text-[hsl(var(--statusbar-fg))]">schema-report.zip</span>
+          <span className="status-bar-item text-sky-700 dark:text-sky-300">
+            <span>68%</span>
+            <span className="status-bar-meter" aria-hidden="true">
+              <span className="status-bar-meter-fill" style={{ width: "68%" }} />
+            </span>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="status-bar-item text-[hsl(var(--statusbar-fg))]">Memory</span>
+          <span className="status-bar-item font-mono text-[hsl(var(--statusbar-fg))]">128 MB</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusBarModuleRow({
+  module,
+  enabled,
+  orderLabel,
+  onToggle,
+}: {
+  module: (typeof STATUS_BAR_MODULE_OPTIONS)[number];
+  enabled: boolean;
+  orderLabel: string;
+  onToggle: (checked: boolean) => void;
+}) {
+  const dragControls = useDragControls();
+
+  return (
+    <Reorder.Item
+      value={module.id}
+      dragListener={false}
+      dragControls={dragControls}
+      whileDrag={{ scale: 1.01, opacity: 0.96 }}
+      transition={{ duration: 0.16 }}
+      className={`group flex min-w-0 items-start gap-3 px-3 py-3 ${enabled ? "" : "opacity-45"}`}
+    >
+      <button
+        type="button"
+        onPointerDown={(event) => {
+          if (!enabled) {
+            return;
+          }
+          dragControls.start(event);
+        }}
+        className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors ${
+          enabled ? "cursor-grab hover:bg-background/80 hover:text-foreground" : "cursor-not-allowed"
+        }`}
+        aria-label={`拖拽排序 ${module.label}`}
+      >
+        <DragDotsIcon />
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-foreground">{module.label}</span>
+              <span className="text-[10px] text-muted-foreground">{orderLabel}</span>
+            </div>
+            <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{module.description}</p>
+          </div>
+
+          <div className="hidden min-w-[220px] max-w-[280px] flex-1 xl:block">
+            <StatusBarModulePreview moduleId={module.id} />
+          </div>
+
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={module.label} />
+        </div>
+
+        <div className="mt-2 xl:hidden">
+          <StatusBarModulePreview moduleId={module.id} />
+        </div>
+      </div>
+    </Reorder.Item>
+  );
+}
 
 function normalizePkMarkersInput(input: string): string[] {
   const markers = input
@@ -75,10 +193,12 @@ export default function Settings() {
   const { mutate: updateSettings, isPending } = useUpdateSettings();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const desktopCapabilities = desktopBridge.getCapabilities();
   const visibleSettingsSections = SETTINGS_SECTIONS;
 
   const [formData, setFormData] = useState<DdlSettings>({
+    statusBarItems: ["activity", "memory"],
     mysqlEngine: "InnoDB",
     mysqlCharset: "utf8mb4",
     mysqlCollate: "utf8mb4_bin",
@@ -94,6 +214,7 @@ export default function Settings() {
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
     useCustomHeader: false,
+    hideSheetsWithoutDefinitions: true,
     mysqlDataTypeCase: "lower",
     mysqlBooleanMode: "tinyint(1)",
     pkMarkers: DEFAULT_PK_MARKERS,
@@ -206,6 +327,7 @@ export default function Settings() {
           title: t("settings.saved"),
           description: t("settings.savedSuccess"),
         });
+        setLocation("/");
       },
       onError: (error) => {
         const translated = translateApiError(error, t, { includeIssues: false });
@@ -218,7 +340,7 @@ export default function Settings() {
     });
   };
 
-  const handleChange = (field: keyof DdlSettings, value: string | boolean | number | undefined) => {
+  const handleChange = <K extends keyof DdlSettings>(field: K, value: DdlSettings[K]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -251,6 +373,32 @@ export default function Settings() {
     handleChange("customHeaderTemplate", DEFAULT_HEADER_TEMPLATE);
   };
 
+  const toggleStatusBarModule = (moduleId: (typeof STATUS_BAR_MODULE_OPTIONS)[number]["id"], enabled: boolean) => {
+    const nextItems = enabled
+      ? Array.from(new Set([...formData.statusBarItems, moduleId]))
+      : formData.statusBarItems.filter((item) => item !== moduleId);
+    handleChange("statusBarItems", nextItems);
+  };
+  const [draggingStatusBarModule, setDraggingStatusBarModule] = useState<StatusBarModuleId | null>(null);
+  const [statusBarDropTarget, setStatusBarDropTarget] = useState<StatusBarModuleId | null>(null);
+
+  const reorderStatusBarModule = (fromId: StatusBarModuleId, toId: StatusBarModuleId) => {
+    if (fromId === toId) {
+      return;
+    }
+
+    const enabledModules = [...formData.statusBarItems];
+    const fromIndex = enabledModules.indexOf(fromId);
+    const toIndex = enabledModules.indexOf(toId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+
+    enabledModules.splice(fromIndex, 1);
+    enabledModules.splice(toIndex, 0, fromId);
+    handleChange("statusBarItems", enabledModules);
+  };
+
   // 照合順序の選択肢を文字セットに応じて動的に変更
   const getCollationOptions = (charset: string) => {
     if (charset === 'utf8mb4') {
@@ -261,6 +409,13 @@ export default function Settings() {
     // その他の文字セットの場合はデフォルトのみ
     return [{ value: `${charset}_bin`, label: `${charset}_bin` }];
   };
+
+  const orderedStatusBarModules: StatusBarModuleId[] = [
+    ...formData.statusBarItems,
+    ...STATUS_BAR_MODULE_OPTIONS
+      .map((module) => module.id)
+      .filter((moduleId) => !formData.statusBarItems.includes(moduleId)),
+  ];
 
   if (isLoading) {
     return (
@@ -684,6 +839,48 @@ export default function Settings() {
             </div>
           </div>
 
+          <div id="settings-section-status-bar" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
+            <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">状态栏</h2>
+
+            <div className="px-1">
+              <p className="text-sm font-medium text-foreground">拖拽编排</p>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                用拖拽把手调整顺序，右侧预览直接对应底部状态栏的真实样式。关闭模块后会从状态栏里移除。
+              </p>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl bg-muted/20">
+              <Reorder.Group
+                axis="y"
+                values={orderedStatusBarModules}
+                onReorder={(nextOrder) => {
+                  const enabledSet = new Set(formData.statusBarItems);
+                  handleChange("statusBarItems", nextOrder.filter((moduleId) => enabledSet.has(moduleId)));
+                }}
+                className="divide-y divide-border/50"
+              >
+                {orderedStatusBarModules.map((moduleId) => {
+                  const module = STATUS_BAR_MODULE_OPTIONS.find((item) => item.id === moduleId);
+                  if (!module) {
+                    return null;
+                  }
+                  const enabled = formData.statusBarItems.includes(module.id);
+                  const enabledIndex = formData.statusBarItems.indexOf(module.id);
+
+                  return (
+                    <StatusBarModuleRow
+                      key={module.id}
+                      module={module}
+                      enabled={enabled}
+                      orderLabel={enabled ? `#${enabledIndex + 1}` : "hidden"}
+                      onToggle={(checked) => toggleStatusBarModule(module.id, checked)}
+                    />
+                  );
+                })}
+              </Reorder.Group>
+            </div>
+          </div>
+
           {/* Excel Parsing Settings */}
           <div id="settings-section-parsing" className="border border-border bg-background px-4 py-4 space-y-4 scroll-mt-16">
             <h2 className="-mx-4 -mt-4 mb-4 border-b border-border px-4 py-3 text-sm font-semibold">{t("settings.parsing.title")}</h2>
@@ -718,6 +915,20 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">
                 {t("settings.parsing.pkMarkersDesc")}
               </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 border border-border bg-muted/10 px-3 py-2.5">
+              <div className="space-y-0.5">
+                <Label htmlFor="hideSheetsWithoutDefinitions">{t("settings.parsing.hideSheetsWithoutDefinitions")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.parsing.hideSheetsWithoutDefinitionsDesc")}
+                </p>
+              </div>
+              <Switch
+                id="hideSheetsWithoutDefinitions"
+                checked={formData.hideSheetsWithoutDefinitions}
+                onCheckedChange={(checked) => handleChange("hideSheetsWithoutDefinitions", checked)}
+              />
             </div>
           </div>
 

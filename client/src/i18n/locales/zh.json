@@ -21,7 +21,12 @@
     "docs": "文档",
     "docsHint": "导入或解析不清楚时，可打开快速开始和故障排查。",
     "openGuide": "打开指南",
+    "openFile": "打开文件",
+    "rightClickSheetHint": "右键可直接切换工作表",
     "deleteFile": "删除文件",
+    "deleteSelected": "批量删除",
+    "sortRecent": "按时间",
+    "sortName": "按名称",
     "timestampUnavailable": "无时间戳",
     "deleteConfirm": "确认删除这个文件吗？"
   },
@@ -41,6 +46,7 @@
     "columns": "列",
     "logicalName": "逻辑名",
     "physicalName": "物理名",
+    "physicalType": "Physical Type",
     "type": "类型",
     "size": "大小",
     "null": "可空",
@@ -55,6 +61,7 @@
     "tablesParsedFromSelection": "从选择区域解析了 {{count}} 个表",
     "compactView": "Compact",
     "standardView": "Standard",
+    "filtersApplied": "已应用筛选",
     "namingWarningBadge": "命名警告",
     "namingWarningTitle": "检测到不合法的物理名。",
     "namingWarningColumns": "{{count}} 个字段物理名不符合规范。",
@@ -71,6 +78,7 @@
     "generationFailed": "生成失败",
     "copy": "复制",
     "copied": "已复制",
+    "selectAllCode": "全选代码",
     "copiedToClipboard": "已复制到剪贴板",
     "generatedPanelTitle": "SQL 输出",
     "inspectorHint": "输出检查器",
@@ -156,7 +164,7 @@
       "scopeMultiFileHint": "多文件模式会固定使用 all_sheets。",
       "applyModeLabel": "执行模式",
       "applyModeCopy": "copy",
-      "applyModeOverwrite": "overwrite (Electron)",
+      "applyModeOverwrite": "overwrite（桌面版）",
       "applyModeReplaceDownload": "replace_download (Web)",
       "browserReplaceDownloadHint": "浏览器可使用 replace_download，执行后直接下载修复文件。",
       "conflictStrategyLabel": "重名冲突策略",
@@ -226,7 +234,7 @@
       "toastPreviewRequiredTitle": "需要先预览",
       "toastPreviewRequiredDescription": "请先执行预览，再执行 apply。",
       "toastOverwriteUnavailableTitle": "overwrite 不可用",
-      "toastOverwriteUnavailableDescription": "overwrite 仅支持 Electron，浏览器请使用 copy。",
+      "toastOverwriteUnavailableDescription": "overwrite 仅支持桌面版，浏览器请使用 copy。",
       "toastApplyFinishedTitle": "Name Fix 执行完成",
       "toastApplyFinishedDescription": "success={{successCount}}, failed={{failedCount}}",
       "toastApplyFailedTitle": "执行失败",
@@ -400,8 +408,14 @@
     "workspace": "定义",
     "ddlImport": "DDL 导入",
     "noSheetSelected": "未选择工作表",
+    "filesPane": "Files",
     "sheetsPane": "Sheets",
-    "inspectorPane": "Inspector"
+    "inspectorPane": "Inspector",
+    "resetLayout": "恢复默认",
+    "statusReady": "Ready",
+    "statusIdle": "Idle",
+    "statusSelected": "{{count}} selected",
+    "statusMemory": "Memory"
   },
   "search": {
     "button": "搜索",
@@ -483,7 +497,9 @@
       "maxConsecutiveEmptyRows": "连续空行容忍度",
       "maxConsecutiveEmptyRowsDesc": "解析表格时，遇到多少连续空行后停止解析。如果表格中间有大量空行，请增加此值。范围：1-100，默认：10",
       "pkMarkers": "PK 标记列表",
-      "pkMarkersDesc": "用于识别主键列的标记，支持逗号或换行分隔，默认：〇"
+      "pkMarkersDesc": "用于识别主键列的标记，支持逗号或换行分隔，默认：〇",
+      "hideSheetsWithoutDefinitions": "默认隐藏未解析出表定义的工作表",
+      "hideSheetsWithoutDefinitionsDesc": "启用后，未解析出 DDL/表结构的 sheet 会在工作表列表中默认隐藏。"
     },
     "nameFix": {
       "title": "Name Fix 设置",
@@ -491,7 +507,7 @@
       "modePlaceholder": "请选择模式",
       "defaultApplyModeOptions": {
         "copy": "copy（生成修复后文件）",
-        "overwrite": "overwrite（仅 Electron）",
+        "overwrite": "overwrite（仅桌面版）",
         "replaceDownload": "replace_download（Web 下载）"
       },
       "duplicateConflictStrategy": "重名冲突策略",
@@ -514,13 +530,13 @@
       "maxIdentifierLength": "标识符最大长度",
       "backupRetentionDays": "备份保留天数",
       "maxBatchConcurrency": "最大批处理并发数",
-      "allowOverwriteInElectron": "允许在 Electron 中覆盖写入",
-      "allowOverwriteInElectronDesc": "在 Electron 环境下启用后，可直接原地替换源文件。",
+      "allowOverwriteInElectron": "允许桌面版直接覆盖写入",
+      "allowOverwriteInElectronDesc": "在桌面版运行时启用后，可直接原地替换源文件。",
       "allowExternalPathWrite": "允许写入外部路径",
       "allowExternalPathWriteDesc": "禁用时，输出路径将限制在应用上传目录内。"
     },
     "notInElectron": "仅桌面版可用",
-    "notInElectronDesc": "此功能仅在 Electron 桌面应用中可用",
+    "notInElectronDesc": "此功能仅在桌面版应用中可用",
     "developer": {
       "title": "开发者选项",
       "modeLabel": "开发者模式",

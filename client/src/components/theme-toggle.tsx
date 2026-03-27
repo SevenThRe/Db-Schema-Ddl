@@ -1,43 +1,73 @@
-import { Moon, Sun, Monitor } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
-/** テーマ切替ドロップダウンボタン */
+type ThemeMode = "light" | "dark" | "system";
+
+const THEME_CYCLE: ThemeMode[] = ["light", "dark", "system"];
+
 export function ThemeToggle() {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
+  const cycleTheme = () => {
+    const currentIndex = THEME_CYCLE.indexOf((theme as ThemeMode) ?? "system");
+    const nextTheme = THEME_CYCLE[(currentIndex + 1) % THEME_CYCLE.length];
+    setTheme(nextTheme);
+  };
+
+  const currentLabel = theme === "system" ? `system (${resolvedTheme})` : theme;
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          {resolvedTheme === "dark" ? (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-md border border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+          onClick={cycleTheme}
+          title={`Theme: ${currentLabel}. Right click for direct select.`}
+        >
+          {theme === "system" ? (
+            <Monitor className="h-4 w-4" />
+          ) : resolvedTheme === "dark" ? (
             <Moon className="h-4 w-4" />
           ) : (
             <Sun className="h-4 w-4" />
           )}
-          <span className="sr-only">Toggle theme</span>
+          <span className="sr-only">Cycle theme</span>
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme("light")} className={theme === "light" ? "bg-accent" : ""}>
-          <Sun className="mr-2 h-4 w-4" />
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-40 rounded-lg border-slate-200/90 p-1.5 dark:border-slate-800">
+        <ContextMenuItem
+          onClick={() => setTheme("light")}
+          className="rounded-md px-2 py-1.5 text-xs"
+        >
+          <Sun className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
           Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")} className={theme === "dark" ? "bg-accent" : ""}>
-          <Moon className="mr-2 h-4 w-4" />
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setTheme("dark")}
+          className="rounded-md px-2 py-1.5 text-xs"
+        >
+          <Moon className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
           Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")} className={theme === "system" ? "bg-accent" : ""}>
-          <Monitor className="mr-2 h-4 w-4" />
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => setTheme("system")}
+          className="rounded-md px-2 py-1.5 text-xs"
+        >
+          <Monitor className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
           System
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

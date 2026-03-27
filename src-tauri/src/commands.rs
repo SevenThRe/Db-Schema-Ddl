@@ -1,6 +1,7 @@
 use std::{fmt::Display, path::Path};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use sysinfo::{Pid, System};
 use tauri::Manager;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     CreateWorkbookFromTemplateResponse, DdlGenerationResponse, DdlSettings, DeleteFileResponse,
     ExportZipByReferenceRequest, ExportZipRequest, GenerateDdlByReferenceRequest, GenerateDdlRequest,
     RuntimeDiagnostics, SearchIndexItem, SheetSummary, TableInfo, UploadedFileRecord,
-    WorkbookTemplateVariant,
+    WorkbookTemplateVariant, ProcessMetrics,
   },
   name_fix,
   name_fix_apply,
@@ -167,6 +168,41 @@ pub fn core_get_runtime_diagnostics(app: tauri::AppHandle) -> Result<RuntimeDiag
 }
 
 #[tauri::command]
+pub fn core_get_process_metrics() -> Result<ProcessMetrics, String> {
+  let pid = Pid::from_u32(std::process::id());
+  let mut system = System::new_all();
+  system.refresh_all();
+
+  let process = system
+    .process(pid)
+    .ok_or_else(|| format!("Process metrics unavailable for pid {}", std::process::id()))?;
+
+  Ok(ProcessMetrics {
+    pid: std::process::id(),
+    memory_bytes: process.memory(),
+    virtual_memory_bytes: process.virtual_memory(),
+  })
+}
+
+#[tauri::command]
+pub fn core_write_binary_file(path: String, bytes_base64: String) -> Result<(), String> {
+  let bytes = STANDARD
+    .decode(bytes_base64.as_bytes())
+    .map_err(|error| command_error("decode binary payload", error))?;
+
+  let target_path = Path::new(&path);
+  if let Some(parent) = target_path.parent() {
+    std::fs::create_dir_all(parent)
+      .map_err(|error| command_error("create export directory", error))?;
+  }
+
+  std::fs::write(target_path, bytes)
+    .map_err(|error| command_error("write export file", error))?;
+
+  Ok(())
+}
+
+#[tauri::command]
 pub fn files_list(app: tauri::AppHandle) -> Result<Vec<UploadedFileRecord>, String> {
   storage::list_uploaded_files(&app)
 }
@@ -223,7 +259,8 @@ pub fn files_remove(app: tauri::AppHandle, file_id: i64) -> Result<DeleteFileRes
 #[tauri::command]
 pub fn files_get_sheets(app: tauri::AppHandle, file_id: i64) -> Result<Vec<SheetSummary>, String> {
   let file_path = load_uploaded_file_path(&app, file_id)?;
-  excel::list_sheet_summaries(Path::new(&file_path))
+  let parse_options = resolve_parse_options_pub(&app);
+  excel::list_sheet_summaries(Path::new(&file_path), &parse_options)
 }
 
 #[tauri::command]

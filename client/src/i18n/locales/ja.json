@@ -16,7 +16,12 @@
     "docs": "ドキュメント",
     "docsHint": "取込や解析で迷ったときは、クイックスタートとトラブルシューティングを確認できます。",
     "openGuide": "ガイドを開く",
+    "openFile": "ファイルを開く",
+    "rightClickSheetHint": "右クリックでシートを直接切り替え",
     "deleteFile": "ファイルを削除",
+    "deleteSelected": "一括削除",
+    "sortRecent": "日時順",
+    "sortName": "名前順",
     "timestampUnavailable": "タイムスタンプなし",
     "deleteConfirm": "このファイルを削除しますか？"
   },
@@ -36,6 +41,7 @@
     "columns": "列",
     "logicalName": "論理名",
     "physicalName": "物理名",
+    "physicalType": "Physical Type",
     "type": "型",
     "size": "サイズ",
     "null": "NULL",
@@ -50,6 +56,7 @@
     "tablesParsedFromSelection": "選択範囲から {{count}} 個のテーブルを解析しました",
     "compactView": "Compact",
     "standardView": "Standard",
+    "filtersApplied": "フィルター適用中",
     "namingWarningBadge": "命名警告",
     "namingWarningTitle": "不正な物理名が検出されました。",
     "namingWarningColumns": "{{count}} 件のカラム物理名が規約に違反しています。",
@@ -66,6 +73,7 @@
     "generationFailed": "生成に失敗しました",
     "copy": "コピー",
     "copied": "コピー済み",
+    "selectAllCode": "コード全選択",
     "copiedToClipboard": "クリップボードにコピーしました",
     "generatedPanelTitle": "SQL 出力",
     "inspectorHint": "出力インスペクタ",
@@ -151,7 +159,7 @@
       "scopeMultiFileHint": "複数ファイル時は all_sheets で実行されます。",
       "applyModeLabel": "適用モード",
       "applyModeCopy": "copy",
-      "applyModeOverwrite": "overwrite (Electron)",
+      "applyModeOverwrite": "overwrite（デスクトップ版）",
       "applyModeReplaceDownload": "replace_download (Web)",
       "browserReplaceDownloadHint": "ブラウザでは replace_download で修復済みファイルをダウンロードできます。",
       "conflictStrategyLabel": "重複解決戦略",
@@ -221,7 +229,7 @@
       "toastPreviewRequiredTitle": "プレビュー必須",
       "toastPreviewRequiredDescription": "適用前にプレビューを実行してください。",
       "toastOverwriteUnavailableTitle": "overwrite は利用できません",
-      "toastOverwriteUnavailableDescription": "overwrite は Electron のみ利用可能です。ブラウザでは copy を使用してください。",
+      "toastOverwriteUnavailableDescription": "overwrite はデスクトップ版のみ利用可能です。ブラウザでは copy を使用してください。",
       "toastApplyFinishedTitle": "Name Fix 適用完了",
       "toastApplyFinishedDescription": "success={{successCount}}, failed={{failedCount}}",
       "toastApplyFailedTitle": "適用失敗",
@@ -395,8 +403,14 @@
     "workspace": "定義",
     "ddlImport": "DDL 取込",
     "noSheetSelected": "シート未選択",
+    "filesPane": "Files",
     "sheetsPane": "Sheets",
-    "inspectorPane": "Inspector"
+    "inspectorPane": "Inspector",
+    "resetLayout": "既定に戻す",
+    "statusReady": "Ready",
+    "statusIdle": "Idle",
+    "statusSelected": "{{count}} selected",
+    "statusMemory": "Memory"
   },
   "search": {
     "button": "検索",
@@ -478,7 +492,9 @@
       "maxConsecutiveEmptyRows": "連続空行の許容数",
       "maxConsecutiveEmptyRowsDesc": "テーブル解析時に連続空行を何行まで許容するかを設定します。範囲: 1-100、デフォルト: 10",
       "pkMarkers": "PK マーカー一覧",
-      "pkMarkersDesc": "主キー列を識別するマーカー。カンマまたは改行で複数指定できます。デフォルト: 〇"
+      "pkMarkersDesc": "主キー列を識別するマーカー。カンマまたは改行で複数指定できます。デフォルト: 〇",
+      "hideSheetsWithoutDefinitions": "表定義を解析できないシートを既定で非表示",
+      "hideSheetsWithoutDefinitionsDesc": "有効にすると、DDL/表構造を解析できなかった sheet はシート一覧で既定で非表示になります。"
     },
     "nameFix": {
       "title": "Name Fix 設定",
@@ -486,7 +502,7 @@
       "modePlaceholder": "モードを選択",
       "defaultApplyModeOptions": {
         "copy": "copy（修復済みファイルを生成）",
-        "overwrite": "overwrite（Electron のみ）",
+        "overwrite": "overwrite（デスクトップ版のみ）",
         "replaceDownload": "replace_download（Web ダウンロード）"
       },
       "duplicateConflictStrategy": "重複競合戦略",
@@ -509,13 +525,13 @@
       "maxIdentifierLength": "識別子最大長",
       "backupRetentionDays": "バックアップ保持（日）",
       "maxBatchConcurrency": "最大バッチ並列数",
-      "allowOverwriteInElectron": "Electron での上書きを許可",
-      "allowOverwriteInElectronDesc": "Electron 実行時に、元ファイルをその場で直接置換できるようにします。",
+      "allowOverwriteInElectron": "デスクトップ版での上書きを許可",
+      "allowOverwriteInElectronDesc": "デスクトップ版実行時に、元ファイルをその場で直接置換できるようにします。",
       "allowExternalPathWrite": "外部パスへの書き込みを許可",
       "allowExternalPathWriteDesc": "無効の場合、出力先はアプリのアップロードディレクトリ配下に制限されます。"
     },
     "notInElectron": "デスクトップ版のみ利用可能",
-    "notInElectronDesc": "この機能は Electron デスクトップアプリケーションでのみ使用できます",
+    "notInElectronDesc": "この機能はデスクトップ版アプリケーションでのみ使用できます",
     "developer": {
       "title": "開発者オプション",
       "modeLabel": "開発者モード",
