@@ -102,6 +102,11 @@ export interface ConnectionSidebarProps {
   onSelectTable?: (tableName: string) => void;
   /** 从对象树打开表 */
   onOpenTable?: (tableName: string) => void;
+  /** 从对象树快速插入/执行查询模板 */
+  onRunStarterQuery?: (
+    tableName: string,
+    mode: "select" | "count" | "columns",
+  ) => void;
 }
 
 function ColumnBadge({
@@ -178,6 +183,7 @@ export function ConnectionSidebar({
   selectedTableName,
   onSelectTable,
   onOpenTable,
+  onRunStarterQuery,
 }: ConnectionSidebarProps) {
   // 接続切替ドロップダウンの開閉状態
   const [switchOpen, setSwitchOpen] = useState(false);
@@ -639,6 +645,41 @@ export function ConnectionSidebar({
                     {selectedTable.comment}
                   </p>
                 ) : null}
+              </div>
+
+              <div className="rounded-sm border border-border bg-background px-2 py-1.5">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                  Starter Queries
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 justify-start text-[10px]"
+                    onClick={() => onRunStarterQuery?.(selectedTable.name, "select")}
+                  >
+                    Select top 100
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 justify-start text-[10px]"
+                    onClick={() => onRunStarterQuery?.(selectedTable.name, "count")}
+                  >
+                    Count rows
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 justify-start text-[10px]"
+                    onClick={() => onRunStarterQuery?.(selectedTable.name, "columns")}
+                  >
+                    Select explicit columns
+                  </Button>
+                </div>
               </div>
 
               {(selectedTable.indexes ?? []).filter((index) => !index.primary).length > 0 ? (

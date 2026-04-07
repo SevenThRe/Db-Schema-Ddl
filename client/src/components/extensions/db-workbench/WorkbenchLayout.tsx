@@ -50,6 +50,8 @@ import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+type StarterQueryMode = "select" | "count" | "columns";
+
 function formatWorkbenchError(error: unknown, fallback: string): string {
   const raw =
     typeof error === "string"
@@ -100,6 +102,13 @@ function downloadBinaryResult(result: BinaryCommandResult): void {
   anchor.download = result.fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function quoteIdentifier(driver: DbConnectionConfig["driver"], identifier: string): string {
+  if (driver === "mysql") {
+    return `\`${identifier.replace(/`/g, "``")}\``;
+  }
+  return `"${identifier.replace(/"/g, "\"\"")}"`;
 }
 
 interface HydratedConnectionSession {
@@ -444,6 +453,24 @@ export function WorkbenchLayout({
     },
     [activeTabId],
   );
+
+  const updateActiveTabSql = useCallback(
+    (sql: string) => {
+      setTabs((prev) =>
+        prev.map((tab) => (tab.id === activeTabId ? { ...tab, sql } : tab)),
+      );
+    },
+    [activeTabId],
+  );
+
+  const focusSqlEditor = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLTextAreaElement>(
+        ".monaco-editor textarea.inputarea",
+      );
+      input?.focus();
+    });
+  }, []);
 
   /** タブ切替 */
   const handleTabChange = useCallback((tabId: string) => {
@@ -829,20 +856,74 @@ export function WorkbenchLayout({
     setSelectedTableName(tableName);
   }, []);
 
-  const handleOpenTable = useCallback(
-    async (tableName: string) => {
+  const buildQualifiedTableName = useCallback(
+    (tableName: string) => {
+      const quotedTable = quoteIdentifier(connection.driver, tableName);
+      if (connection.driver !== "postgres") {
+        return quotedTable;
+      }
+
+      const schemaName =
+        runtimeSchema?.trim() ||
+        schemaSnapshot?.schema?.trim() ||
+        connection.defaultSchema?.trim() ||
+        "public";
+
+      return `${quoteIdentifier(connection.driver, schemaName)}.${quotedTable}`;
+    },
+    [
+      connection.defaultSchema,
+      connection.driver,
+      runtimeSchema,
+      schemaSnapshot?.schema,
+    ],
+  );
+
+  const handleRunStarterQuery = useCallback(
+    async (tableName: string, mode: StarterQueryMode) => {
       setSelectedTableName(tableName);
-      const quotedName = connection.driver === "mysql" ? `\`${tableName}\`` : `"${tableName}"`;
-      const nextSql = `SELECT *\nFROM ${quotedName}\nLIMIT 100;`;
-      setTabs((prev) => {
-        return prev.map((tab) =>
-          tab.id === activeTabId ? { ...tab, sql: nextSql } : tab,
-        );
-      });
+
+      const qualifiedTable = buildQualifiedTableName(tableName);
+      const table = schemaSnapshot?.tables.find((item) => item.name === tableName);
+      const explicitColumns = (table?.columns ?? [])
+        .map((column) => quoteIdentifier(connection.driver, column.name))
+        .join(",\n  ");
+
+      let nextSql = "";
+      if (mode === "count") {
+        nextSql = `SELECT COUNT(*) AS total_count\nFROM ${qualifiedTable};`;
+      } else if (mode === "columns") {
+        const columnProjection = explicitColumns || "*";
+        nextSql = `SELECT\n  ${columnProjection}\nFROM ${qualifiedTable}\nLIMIT 100;`;
+      } else {
+        nextSql = `SELECT *\nFROM ${qualifiedTable}\nLIMIT 100;`;
+      }
+
+      updateActiveTabSql(nextSql);
       setResultTab("results");
+
+      if (mode === "columns") {
+        focusSqlEditor();
+        return;
+      }
+
       await handleExecute(nextSql);
     },
-    [activeTabId, connection.driver, handleExecute],
+    [
+      buildQualifiedTableName,
+      connection.driver,
+      focusSqlEditor,
+      handleExecute,
+      schemaSnapshot?.tables,
+      updateActiveTabSql,
+    ],
+  );
+
+  const handleOpenTable = useCallback(
+    async (tableName: string) => {
+      await handleRunStarterQuery(tableName, "select");
+    },
+    [handleRunStarterQuery],
   );
 
   // ──────────────────────────────────────────────
@@ -1064,6 +1145,7 @@ export function WorkbenchLayout({
             selectedTableName={selectedTableName}
             onSelectTable={handleSelectTable}
             onOpenTable={handleOpenTable}
+            onRunStarterQuery={handleRunStarterQuery}
           />
 
           {/* コンテンツエリア — タブバー + エディター/結果 */}
