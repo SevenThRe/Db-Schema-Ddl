@@ -217,9 +217,9 @@ export function resolveTableAlias(
   TABLE_ALIAS_PATTERN.lastIndex = 0;
 
   for (
-    let match = TABLE_ALIAS_PATTERN.exec(sqlBeforeCursor);
+    let match = TABLE_ALIAS_PATTERN.exec(sqlText);
     match !== null;
-    match = TABLE_ALIAS_PATTERN.exec(sqlBeforeCursor)
+    match = TABLE_ALIAS_PATTERN.exec(sqlText)
   ) {
     const tableReference = match[1];
     const alias = match[2];
