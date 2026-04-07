@@ -213,6 +213,16 @@ export function ConnectionSidebar({
           ),
     [schemaError, schemaSnapshot],
   );
+  const views = useMemo(
+    () =>
+      schemaError
+        ? []
+        : [...(schemaSnapshot?.views ?? [])].sort((left, right) =>
+            left.name.localeCompare(right.name),
+          ),
+    [schemaError, schemaSnapshot],
+  );
+  const hasExplorerData = tables.length > 0 || views.length > 0;
   const selectedTable =
     tables.find((table) => table.name === selectedTableName) ?? tables[0] ?? null;
   const connectionStateLabel = schemaError
@@ -280,7 +290,9 @@ export function ConnectionSidebar({
             {connectionStateLabel}
           </span>
           <span className="text-[10px] text-muted-foreground">
-            {tables.length > 0 ? `${tables.length} tables` : "schema pending"}
+            {hasExplorerData
+              ? `${tables.length} tables · ${views.length} views`
+              : "schema pending"}
           </span>
         </div>
       </div>
@@ -370,10 +382,7 @@ export function ConnectionSidebar({
             Object Explorer
           </span>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Tables ·{" "}
-            {isPostgres
-              ? `Schema ${schemaSnapshot?.schema ?? effectiveSchema}`
-              : "单击预览，双击生成查询"}
+            Schemas · Tables · Views
           </p>
         </div>
         <Button
@@ -401,130 +410,162 @@ export function ConnectionSidebar({
                 </AlertDescription>
               </Alert>
             </div>
-          ) : tables.length === 0 ? (
+          ) : !hasExplorerData ? (
             <div className="px-3 py-3 text-xs text-muted-foreground">
-              {isSchemaLoading ? "Loading schema..." : "No tables loaded"}
+              {isSchemaLoading ? "Loading schema..." : "No objects loaded"}
             </div>
           ) : (
-            tables.map((table) => {
-              const isSelected = table.name === selectedTable?.name;
-              const isExpanded = expandedTables[table.name] ?? isSelected;
-              const primaryColumns = table.columns.filter((column) => column.primaryKey);
-              const secondaryIndexes = (table.indexes ?? []).filter((index) => !index.primary);
-
-              return (
-                <div key={table.name} className="px-1 py-0.5">
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                      isSelected && "bg-muted font-medium",
-                    )}
-                    onClick={() => {
-                      onSelectTable?.(table.name);
-                      setExpandedTables((prev) => ({ ...prev, [table.name]: true }));
-                    }}
-                    onDoubleClick={() => onOpenTable?.(table.name)}
-                    title={table.name}
-                  >
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
-                        !isExpanded && "-rotate-90",
-                      )}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleTable(table.name);
-                      }}
-                    />
-                    <Table2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate font-mono">{table.name}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {table.columns.length}
-                    </span>
-                  </button>
-
-                  {isExpanded ? (
-                    <div className="ml-5 mt-0.5 space-y-0.5 border-l border-border/70 pl-2">
-                      <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
-                        <span>列</span>
-                        <span>{table.columns.length}</span>
-                      </div>
-                      {table.columns.map((column) => (
-                        <div
-                          key={`${table.name}:column:${column.name}`}
-                          className="flex items-center gap-2 rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
-                        >
-                          <span className="min-w-0 flex-1 truncate font-mono text-foreground">
-                            {column.name}
-                          </span>
-                          {column.primaryKey ? (
-                            <span className="text-[9px] font-semibold uppercase text-amber-700">
-                              PK
-                            </span>
-                          ) : null}
-                          {!column.nullable ? (
-                            <span className="text-[9px] font-semibold uppercase text-muted-foreground">
-                              NN
-                            </span>
-                          ) : null}
-                        </div>
-                      ))}
-
-                      <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
-                        <span>键</span>
-                        <span>{primaryColumns.length + (table.foreignKeys?.length ?? 0)}</span>
-                      </div>
-                      {primaryColumns.map((column) => (
-                        <div
-                          key={`${table.name}:pk:${column.name}`}
-                          className="flex items-center gap-2 rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
-                        >
-                          <span className="min-w-0 flex-1 truncate font-mono text-foreground">
-                            {column.name}
-                          </span>
-                          <span className="text-[9px] font-semibold uppercase text-amber-700">
-                            PRIMARY
-                          </span>
-                        </div>
-                      ))}
-                      {(table.foreignKeys ?? []).map((foreignKey) => (
-                        <div
-                          key={`${table.name}:fk:${foreignKey.name}`}
-                          className="rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
-                        >
-                          <div className="truncate font-mono text-foreground">
-                            {foreignKey.name}
-                          </div>
-                          <div className="truncate text-[10px] text-muted-foreground">
-                            {foreignKey.columns.join(", ")} → {foreignKey.referencedTable}
-                          </div>
-                        </div>
-                      ))}
-
-                      <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
-                        <span>索引</span>
-                        <span>{secondaryIndexes.length}</span>
-                      </div>
-                      {secondaryIndexes.map((index) => (
-                        <div
-                          key={`${table.name}:index:${index.name}`}
-                          className="rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
-                        >
-                          <div className="truncate font-mono text-foreground">
-                            {index.name}
-                          </div>
-                          <div className="truncate text-[10px] text-muted-foreground">
-                            {index.columns.join(", ")}
-                            {index.unique ? " · UNIQUE" : ""}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+            <div className="py-1">
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Schemas
+              </div>
+              <div className="px-1">
+                <div className="flex items-center justify-between rounded-sm px-2 py-1.5 text-[11px] hover:bg-muted/50">
+                  <span className="truncate font-mono text-foreground">
+                    {schemaSnapshot?.schema ?? effectiveSchema}
+                  </span>
+                  {isPostgres ? (
+                    <span className="text-[9px] uppercase text-muted-foreground">active</span>
                   ) : null}
                 </div>
-              );
-            })
+              </div>
+
+              <div className="mt-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Tables
+              </div>
+              {tables.length === 0 ? (
+                <div className="px-3 py-1.5 text-[11px] text-muted-foreground">No tables</div>
+              ) : (
+                tables.map((table) => {
+                  const isSelected = table.name === selectedTable?.name;
+                  const isExpanded = expandedTables[table.name] ?? isSelected;
+                  const secondaryIndexes = (table.indexes ?? []).filter(
+                    (index) => !index.primary,
+                  );
+
+                  return (
+                    <div key={table.name} className="px-1 py-0.5">
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted",
+                          isSelected && "bg-muted font-medium",
+                        )}
+                        onClick={() => {
+                          onSelectTable?.(table.name);
+                          setExpandedTables((prev) => ({ ...prev, [table.name]: true }));
+                        }}
+                        onDoubleClick={() => onOpenTable?.(table.name)}
+                        title={table.name}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                            !isExpanded && "-rotate-90",
+                          )}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleTable(table.name);
+                          }}
+                        />
+                        <Table2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate font-mono">{table.name}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {table.columns.length}
+                        </span>
+                      </button>
+
+                      {isExpanded ? (
+                        <div className="ml-5 mt-0.5 space-y-0.5 border-l border-border/70 pl-2">
+                          <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
+                            <span>Columns</span>
+                            <span>{table.columns.length}</span>
+                          </div>
+                          {table.columns.map((column) => (
+                            <div
+                              key={`${table.name}:column:${column.name}`}
+                              className="flex items-center gap-2 rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
+                            >
+                              <span className="min-w-0 flex-1 truncate font-mono text-foreground">
+                                {column.name}
+                              </span>
+                              {column.primaryKey ? (
+                                <span className="text-[9px] font-semibold uppercase text-amber-700">
+                                  PK
+                                </span>
+                              ) : null}
+                              {!column.nullable ? (
+                                <span className="text-[9px] font-semibold uppercase text-muted-foreground">
+                                  NN
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+
+                          <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
+                            <span>Foreign Keys</span>
+                            <span>{table.foreignKeys?.length ?? 0}</span>
+                          </div>
+                          {(table.foreignKeys ?? []).map((foreignKey) => (
+                            <div
+                              key={`${table.name}:fk:${foreignKey.name}`}
+                              className="rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
+                            >
+                              <div className="truncate font-mono text-foreground">
+                                {foreignKey.name}
+                              </div>
+                              <div className="truncate text-[10px] text-muted-foreground">
+                                {foreignKey.columns.join(", ")} → {foreignKey.referencedTable}
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="flex items-center justify-between rounded-sm px-2 py-1 text-[11px] text-muted-foreground">
+                            <span>Indexes</span>
+                            <span>{secondaryIndexes.length}</span>
+                          </div>
+                          {secondaryIndexes.map((index) => (
+                            <div
+                              key={`${table.name}:index:${index.name}`}
+                              className="rounded-sm px-2 py-1 text-[11px] hover:bg-muted/50"
+                            >
+                              <div className="truncate font-mono text-foreground">
+                                {index.name}
+                              </div>
+                              <div className="truncate text-[10px] text-muted-foreground">
+                                {index.columns.join(", ")}
+                                {index.unique ? " · UNIQUE" : ""}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
+              )}
+
+              <div className="mt-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Views
+              </div>
+              {views.length === 0 ? (
+                <div className="px-3 py-1.5 text-[11px] text-muted-foreground">No views</div>
+              ) : (
+                <div className="px-1 pb-1">
+                  {views.map((view) => (
+                    <div
+                      key={view.name}
+                      className="rounded-sm px-2 py-1.5 text-[11px] hover:bg-muted/50"
+                    >
+                      <div className="truncate font-mono text-foreground">{view.name}</div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        {view.columns.length} columns
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </ScrollArea>

@@ -71,6 +71,8 @@ pub struct QueryExecutionRequest {
   pub connection_id: String,
   pub sql: String,
   pub request_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
   /// 1フェッチあたりの最大行数（デフォルト 1000）
   #[serde(default = "default_limit")]
   pub limit: u32,
@@ -95,9 +97,19 @@ pub struct FetchMoreRequest {
   pub batch_index: u32,
   pub sql: String,
   pub connection_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
   pub offset: u32,
   #[serde(default = "default_limit")]
   pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbQueryPagingMode {
+  Offset,
+  None,
+  Unsupported,
 }
 
 /// クエリ結果カラム情報
@@ -122,7 +134,17 @@ pub struct DbQueryBatchResult {
   pub sql: String,
   pub columns: Vec<DbQueryColumn>,
   pub rows: Vec<DbQueryRow>,
-  pub total_rows: u64,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub total_rows: Option<u64>,
+  pub returned_rows: u64,
+  pub has_more: bool,
+  pub paging_mode: DbQueryPagingMode,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub paging_reason: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub next_offset: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
   pub elapsed_ms: u64,
   pub affected_rows: Option<u64>,
   pub error: Option<String>,
@@ -166,6 +188,8 @@ pub struct DbExplainPlan {
 pub struct ExplainRequest {
   pub connection_id: String,
   pub sql: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
 }
 
 /// 危険な SQL の分類
@@ -203,11 +227,33 @@ pub struct DangerousSqlPreviewRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRowsRequest {
-  pub rows: Vec<DbQueryRow>,
-  pub columns: Vec<DbQueryColumn>,
+  pub connection_id: String,
+  pub request_id: String,
+  pub sql: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
   pub format: String,
-  pub table_name: Option<String>,
+  pub scope: ExportRowsScope,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub batch_index: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub loaded_rows: Option<Vec<DbQueryRow>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub columns: Option<Vec<DbQueryColumn>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub max_rows: Option<u32>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportRowsScope {
+  CurrentPage,
+  LoadedRows,
+  FullResult,
+}
+
+pub type ExportRowsResponse = crate::models::BinaryCommandResult;
+pub type DbSchemaListResponse = Vec<String>;
 
 /// コネクションプールのドライバーラッパー
 pub enum AnyPool {
@@ -239,10 +285,39 @@ pub struct DbColumnSchema {
   pub comment: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbIndexSchema {
+  pub name: String,
+  pub columns: Vec<String>,
+  pub unique: bool,
+  pub primary: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbForeignKeySchema {
+  pub name: String,
+  pub columns: Vec<String>,
+  pub referenced_table: String,
+  pub referenced_columns: Vec<String>,
+}
+
 /// テーブルスキーマ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbTableSchema {
+  pub name: String,
+  pub comment: Option<String>,
+  pub columns: Vec<DbColumnSchema>,
+  pub indexes: Vec<DbIndexSchema>,
+  pub foreign_keys: Vec<DbForeignKeySchema>,
+}
+
+/// ビュースキーマ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbViewSchema {
   pub name: String,
   pub comment: Option<String>,
   pub columns: Vec<DbColumnSchema>,
@@ -255,7 +330,9 @@ pub struct DbSchemaSnapshot {
   pub connection_id: String,
   pub connection_name: String,
   pub database: String,
+  pub schema: String,
   pub tables: Vec<DbTableSchema>,
+  pub views: Vec<DbViewSchema>,
 }
 
 /// カラムレベルの差分

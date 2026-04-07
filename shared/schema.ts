@@ -869,7 +869,29 @@ export interface DbColumnSchema {
   comment?: string;
 }
 
+export interface DbIndexSchema {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary?: boolean;
+}
+
+export interface DbForeignKeySchema {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedColumns: string[];
+}
+
 export interface DbTableSchema {
+  name: string;
+  comment?: string;
+  columns: DbColumnSchema[];
+  indexes?: DbIndexSchema[];
+  foreignKeys?: DbForeignKeySchema[];
+}
+
+export interface DbViewSchema {
   name: string;
   comment?: string;
   columns: DbColumnSchema[];
@@ -879,7 +901,9 @@ export interface DbSchemaSnapshot {
   connectionId: string;
   connectionName: string;
   database: string;
+  schema: string;
   tables: DbTableSchema[];
+  views: DbViewSchema[];
 }
 
 export interface DbColumnDiff {
@@ -930,6 +954,8 @@ export interface QueryExecutionRequest {
   connectionId: string;
   sql: string;
   requestId: string;
+  /** 実行時のスキーマコンテキスト（未指定時は接続既定） */
+  schema?: string;
   /** 1回のフェッチで取得する最大行数（デフォルト 1000） */
   limit?: number;
   offset?: number;
@@ -961,7 +987,17 @@ export interface DbQueryBatchResult {
   sql: string;
   columns: DbQueryColumn[];
   rows: DbQueryRow[];
-  totalRows: number;
+  /**
+   * 総件数が確定しない実行モードでは null。
+   * UI は hasMore / pagingMode / pagingReason と併せて表示判断する。
+   */
+  totalRows: number | null;
+  returnedRows: number;
+  hasMore: boolean;
+  pagingMode: "offset" | "none" | "unsupported";
+  pagingReason?: string;
+  nextOffset?: number;
+  schema?: string;
   elapsedMs: number;
   affectedRows?: number;
   error?: string;
@@ -982,6 +1018,7 @@ export interface FetchMoreRequest {
   batchIndex: number;
   sql: string;
   connectionId: string;
+  schema?: string;
   offset: number;
   limit: number;
 }
@@ -1017,14 +1054,27 @@ export interface DangerousSqlPreview {
 
 /** 結果行エクスポートリクエスト */
 export interface ExportRowsRequest {
-  rows: DbQueryRow[];
-  columns: DbQueryColumn[];
+  connectionId: string;
+  requestId: string;
+  sql: string;
+  schema?: string;
   format: "json" | "csv" | "markdown" | "sql-insert";
-  tableName?: string;
+  scope: "current_page" | "loaded_rows" | "full_result";
+  batchIndex?: number;
+  loadedRows?: DbQueryRow[];
+  columns?: DbQueryColumn[];
+  maxRows?: number;
 }
 
 /** EXPLAIN 実行リクエスト */
 export interface ExplainRequest {
   connectionId: string;
   sql: string;
+  schema?: string;
 }
+
+/** ランタイム export コマンドのレスポンス契約 */
+export type ExportRowsResponse = BinaryCommandResult;
+
+/** 接続で利用可能なスキーマ一覧レスポンス契約 */
+export type DbSchemaListResponse = string[];
