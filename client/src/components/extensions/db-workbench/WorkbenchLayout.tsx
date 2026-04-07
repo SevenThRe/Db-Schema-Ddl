@@ -48,6 +48,7 @@ import type { ExportFormat, ExportScope } from "./ResultExportMenu";
 import { ResultExportMenu } from "./ResultExportMenu";
 import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
+import { buildAutocompleteContext } from "./sql-autocomplete";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 type StarterQueryMode = "select" | "count" | "columns";
@@ -358,6 +359,11 @@ export function WorkbenchLayout({
     }
     return Array.from(merged).sort((left, right) => left.localeCompare(right));
   }, [activeSchema, connection.defaultSchema, connection.driver, schemaOptionsRaw]);
+
+  const autocompleteContext = useMemo(
+    () => buildAutocompleteContext(schemaSnapshot, runtimeSchema),
+    [runtimeSchema, schemaSnapshot],
+  );
 
   const schemaErrorMessage = useMemo(() => {
     if (!schemaQueryError) return null;
@@ -1231,6 +1237,7 @@ export function WorkbenchLayout({
                 <SqlEditorPane
                   sql={activeTab?.sql ?? ""}
                   dialect={connection.driver}
+                  autocompleteContext={autocompleteContext}
                   onSqlChange={handleSqlChange}
                   onExecuteSelection={handleExecuteSelection}
                   onExecuteScript={handleExecuteScript}

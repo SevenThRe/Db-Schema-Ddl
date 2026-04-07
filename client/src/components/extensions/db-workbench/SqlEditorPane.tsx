@@ -10,9 +10,9 @@
 // - EXPLAIN 自動検出はリーディングコメント・空白を除去してから EXPLAIN キーワードを判定
 // - sql-formatter で Format SQL (Alt+Shift+F) を実装
 
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import type { editor } from "monaco-editor";
+import type { editor, languages, IDisposable } from "monaco-editor";
 import { format } from "sql-formatter";
 import { Play, Lightbulb, AlignLeft, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,12 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { DbDriver } from "@shared/schema";
+import {
+  buildCompletionItems,
+  resolveTableAlias,
+  type SqlAutocompleteContext,
+  type SqlCompletionKind,
+} from "./sql-autocomplete";
 
 // ──────────────────────────────────────────────
 // 定数
@@ -63,6 +69,229 @@ function isExplainQuery(sql: string): boolean {
   return /^explain\b/i.test(stripped);
 }
 
+interface ValidationIssue {
+  message: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+function lineColumnToOffset(
+  text: string,
+  lineNumber: number,
+  columnNumber: number,
+): number {
+  const line = Math.max(1, lineNumber);
+  const column = Math.max(1, columnNumber);
+
+  let currentLine = 1;
+  let offset = 0;
+
+  while (offset < text.length && currentLine < line) {
+    if (text[offset] === "\n") currentLine += 1;
+    offset += 1;
+  }
+
+  return Math.min(text.length, offset + column - 1);
+}
+
+function offsetToMarkerRange(text: string, offset: number, endOffset?: number) {
+  const safeStart = Math.max(0, Math.min(offset, text.length));
+  const safeEnd = Math.max(safeStart + 1, Math.min(endOffset ?? safeStart + 1, text.length));
+
+  let line = 1;
+  let column = 1;
+  let endLine = 1;
+  let endColumn = 1;
+
+  for (let index = 0; index < text.length; index += 1) {
+    if (index === safeStart) {
+      line = endLine;
+      column = endColumn;
+    }
+    if (index === safeEnd) {
+      return {
+        startLineNumber: line,
+        startColumn: column,
+        endLineNumber: endLine,
+        endColumn,
+      };
+    }
+
+    if (text[index] === "\n") {
+      endLine += 1;
+      endColumn = 1;
+    } else {
+      endColumn += 1;
+    }
+  }
+
+  return {
+    startLineNumber: line,
+    startColumn: column,
+    endLineNumber: endLine,
+    endColumn,
+  };
+}
+
+function collectLexicalIssues(sql: string): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  let state: "normal" | "single" | "double" | "backtick" | "line-comment" | "block-comment" = "normal";
+  let openedAt = -1;
+
+  for (let index = 0; index < sql.length; index += 1) {
+    const current = sql[index];
+    const next = sql[index + 1];
+
+    if (state === "normal") {
+      if (current === "-" && next === "-") {
+        state = "line-comment";
+        index += 1;
+        continue;
+      }
+      if (current === "/" && next === "*") {
+        state = "block-comment";
+        openedAt = index;
+        index += 1;
+        continue;
+      }
+      if (current === "'") {
+        state = "single";
+        openedAt = index;
+        continue;
+      }
+      if (current === "\"") {
+        state = "double";
+        openedAt = index;
+        continue;
+      }
+      if (current === "`") {
+        state = "backtick";
+        openedAt = index;
+      }
+      continue;
+    }
+
+    if (state === "line-comment") {
+      if (current === "\n") state = "normal";
+      continue;
+    }
+
+    if (state === "block-comment") {
+      if (current === "*" && next === "/") {
+        state = "normal";
+        openedAt = -1;
+        index += 1;
+      }
+      continue;
+    }
+
+    const quoteChar =
+      state === "single" ? "'" : state === "double" ? "\"" : "`";
+
+    if (current !== quoteChar) continue;
+
+    if (next === quoteChar) {
+      index += 1;
+      continue;
+    }
+
+    state = "normal";
+    openedAt = -1;
+  }
+
+  if (state === "single") {
+    issues.push({
+      message: "Unterminated string literal.",
+      startOffset: openedAt,
+      endOffset: sql.length,
+    });
+  }
+
+  if (state === "double") {
+    issues.push({
+      message: "Unterminated quoted identifier.",
+      startOffset: openedAt,
+      endOffset: sql.length,
+    });
+  }
+
+  if (state === "backtick") {
+    issues.push({
+      message: "Unterminated backtick identifier.",
+      startOffset: openedAt,
+      endOffset: sql.length,
+    });
+  }
+
+  if (state === "block-comment") {
+    issues.push({
+      message: "Unterminated block comment.",
+      startOffset: openedAt,
+      endOffset: sql.length,
+    });
+  }
+
+  return issues;
+}
+
+function collectFormatterIssue(sql: string, dialect: DbDriver): ValidationIssue[] {
+  if (!sql.trim()) return [];
+
+  try {
+    format(sql, {
+      language: SQL_FORMATTER_DIALECT[dialect],
+      keywordCase: "upper",
+    });
+    return [];
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "SQL parser rejected the current text.";
+    const lineMatch = message.match(/line\s+(\d+)/i);
+    const columnMatch = message.match(/column\s+(\d+)/i);
+
+    if (!lineMatch || !columnMatch) {
+      return [
+        {
+          message,
+          startOffset: 0,
+          endOffset: Math.max(1, sql.length),
+        },
+      ];
+    }
+
+    const startOffset = lineColumnToOffset(
+      sql,
+      Number(lineMatch[1]),
+      Number(columnMatch[1]),
+    );
+
+    return [
+      {
+        message,
+        startOffset,
+        endOffset: Math.min(sql.length, startOffset + 1),
+      },
+    ];
+  }
+}
+
+function mapCompletionKind(
+  monacoInstance: typeof import("monaco-editor"),
+  kind: SqlCompletionKind,
+): languages.CompletionItemKind {
+  switch (kind) {
+    case "schema":
+      return monacoInstance.languages.CompletionItemKind.Module;
+    case "table":
+      return monacoInstance.languages.CompletionItemKind.Struct;
+    case "view":
+      return monacoInstance.languages.CompletionItemKind.Interface;
+    case "column":
+    default:
+      return monacoInstance.languages.CompletionItemKind.Field;
+  }
+}
+
 // ──────────────────────────────────────────────
 // プロップ型
 // ──────────────────────────────────────────────
@@ -72,6 +301,8 @@ export interface SqlEditorPaneProps {
   sql: string;
   /** 接続のダイアレクト（sql-formatter のダイアレクト選択に使用） */
   dialect: DbDriver;
+  /** 当前接続/Schema に紐づく補完メタデータ */
+  autocompleteContext: SqlAutocompleteContext;
   /** SQL 変更コールバック */
   onSqlChange: (sql: string) => void;
   /**
@@ -105,6 +336,7 @@ export interface SqlEditorPaneProps {
 export function SqlEditorPane({
   sql,
   dialect,
+  autocompleteContext,
   onSqlChange,
   onExecuteSelection,
   onExecuteScript,
@@ -115,6 +347,8 @@ export function SqlEditorPane({
 }: SqlEditorPaneProps) {
   // Monaco エディターインスタンスへの参照
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const completionProviderRef = useRef<IDisposable | null>(null);
 
   // ──────────────────────────────────────────────
   // ハンドラー
@@ -234,6 +468,78 @@ export function SqlEditorPane({
     onExplain(sqlToExplain);
   }, [onExplain]);
 
+  const applyValidationMarkers = useCallback(
+    (text: string) => {
+      const editorInstance = editorRef.current;
+      const monacoInstance = monacoRef.current;
+      const model = editorInstance?.getModel();
+      if (!editorInstance || !monacoInstance || !model) return;
+
+      const issues = [
+        ...collectLexicalIssues(text),
+        ...collectFormatterIssue(text, dialect),
+      ];
+
+      const markers: editor.IMarkerData[] = issues.map((issue) => ({
+        ...offsetToMarkerRange(text, issue.startOffset, issue.endOffset),
+        message: issue.message,
+        severity: monacoInstance.MarkerSeverity.Error,
+      }));
+
+      monacoInstance.editor.setModelMarkers(model, "db-workbench", markers);
+    },
+    [dialect],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      applyValidationMarkers(sql);
+    }, 160);
+
+    return () => window.clearTimeout(timer);
+  }, [applyValidationMarkers, sql]);
+
+  const registerAutocompleteProvider = useCallback(() => {
+    const monacoInstance = monacoRef.current;
+    if (!monacoInstance) return;
+
+    completionProviderRef.current?.dispose();
+    completionProviderRef.current =
+      monacoInstance.languages.registerCompletionItemProvider("sql", {
+        triggerCharacters: ["."],
+        provideCompletionItems: (model, position) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+          const cursorOffset = model.getOffsetAt(position);
+          const aliasHint = resolveTableAlias(model.getValue(), cursorOffset);
+          const items = buildCompletionItems(autocompleteContext, aliasHint);
+          const suggestions: languages.CompletionItem[] = items.map((item) => ({
+            label: item.label,
+            insertText: item.insertText,
+            kind: mapCompletionKind(monacoInstance, item.kind),
+            detail: item.detail,
+            sortText: item.sortText,
+            range,
+          }));
+
+          return { suggestions };
+        },
+      });
+  }, [autocompleteContext]);
+
+  useEffect(() => {
+    registerAutocompleteProvider();
+    return () => {
+      completionProviderRef.current?.dispose();
+      completionProviderRef.current = null;
+    };
+  }, [registerAutocompleteProvider]);
+
   // ──────────────────────────────────────────────
   // Monaco マウント処理
   // ──────────────────────────────────────────────
@@ -241,6 +547,8 @@ export function SqlEditorPane({
   const handleMount: OnMount = useCallback(
     (editorInstance, monacoInstance) => {
       editorRef.current = editorInstance;
+      monacoRef.current = monacoInstance;
+      registerAutocompleteProvider();
 
       // Monaco の KeyMod / KeyCode を使用してキーバインドを登録する
       // monacoInstance は @monaco-editor/react が提供する monaco 名前空間
@@ -279,8 +587,17 @@ export function SqlEditorPane({
         keybindings: [KeyMod.CtrlCmd | KeyCode.KeyW],
         run: () => onCloseTab?.(),
       });
+
+      applyValidationMarkers(editorInstance.getValue());
     },
-    [handleExecuteSelection, handleExecuteScript, handleFormatSql, onCloseTab],
+    [
+      applyValidationMarkers,
+      handleExecuteSelection,
+      handleExecuteScript,
+      handleFormatSql,
+      onCloseTab,
+      registerAutocompleteProvider,
+    ],
   );
 
   // ──────────────────────────────────────────────
