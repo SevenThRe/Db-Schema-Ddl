@@ -18,7 +18,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 ## Phases
 
 - [x] **Phase 15: Query Runtime Hardening** - User can trust query execution, paging, cancel, export, and schema context on real databases instead of demo-sized data
-- [ ] **Phase 16: Unified Workspace Flow** - User works through one primary DB Workbench path with per-connection sessions, recent work, object explorer, and schema-aware autocomplete
+- [x] **Phase 16: Unified Workspace Flow** - User works through one primary DB Workbench path with per-connection sessions, recent work, object explorer, and schema-aware autocomplete (completed 2026-04-07)
 - [ ] **Phase 17: Safe Data Editing** - User can safely edit single-table results with SQL preview, transaction commit, and rollback semantics
 - [ ] **Phase 18: Live Data Compare & Sync** - User can compare source vs target live DB data, preview sync actions, and apply them with snapshot guarding and audit history
 
@@ -81,7 +81,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 15. Query Runtime Hardening | 4/4 | Complete    | 2026-04-07 |
-| 16. Unified Workspace Flow | 3/4 | In Progress | - |
+| 16. Unified Workspace Flow | 4/4 | Complete   | 2026-04-07 |
 | 17. Safe Data Editing | 0/0 | Not started | - |
 | 18. Live Data Compare & Sync | 0/0 | Not started | - |
 

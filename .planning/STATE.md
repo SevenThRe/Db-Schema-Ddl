@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Object explorer now exposes schema/table/view depth and starter query actions scoped to active connection/schema context
-last_updated: "2026-04-07T13:08:17+09:00"
-last_activity: 2026-04-07 — Executed 16-03 and recorded summary; phase is ready to continue with 16-04
+status: Phase 16 now ships schema-aware alias-resolved autocomplete with regression coverage for connection-scoped continuity
+last_updated: "2026-04-07T13:26:37+09:00"
+last_activity: 2026-04-07 — Executed 16-04, recorded summary, and closed Unified Workspace Flow phase scope
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 
 ## Current Position
 
-Phase: 16 (unified-workspace-flow) — IN PROGRESS
-Plan: 03 completed (3/4)
-Status: Object explorer now exposes schema/table/view depth and starter query actions scoped to active connection/schema context
-Last activity: 2026-04-07 — Executed 16-03 and recorded summary; phase is ready to continue with 16-04
+Phase: 16 (unified-workspace-flow) — COMPLETE
+Plan: 04 completed (4/4)
+Status: Schema-aware autocomplete now resolves active-schema aliases and phase-16 session/autocomplete regressions are locked by node tests
+Last activity: 2026-04-07 — Executed 16-04, recorded summary, and marked phase ready for transition
 
 ## Important Assumptions
 
@@ -141,10 +141,16 @@ Last activity: 2026-04-07 — Executed 16-03 and recorded summary; phase is read
 - Starter query SQL generation in `WorkbenchLayout` now applies driver-safe identifier quoting and qualifies PostgreSQL table targets with active `runtimeSchema`.
 - Object explorer quick actions (`Select top 100`, `Count rows`, `Select explicit columns`) all flow through one handler, with explicit-column mode inserting SQL and returning editor focus without auto-execution.
 
+## Architecture Decisions (Plan 16-04 Additions)
+
+- Workbench autocomplete context is now derived once per snapshot/schema change via `buildAutocompleteContext(schemaSnapshot, runtimeSchema)` and injected into `SqlEditorPane`.
+- Monaco completion registration is now explicit (`registerCompletionItemProvider`) with dispose/re-register lifecycle control to avoid duplicate providers during remounts or connection switches.
+- Alias resolution now supports `FROM/JOIN` alias patterns (including schema-qualified references), and phase-16 regressions lock `SELECT u.` and `JOIN orders o` autocomplete behavior plus connection-scoped `recent sql` and `snippet` session continuity.
+
 ## Next Command
 
-- `$gsd-execute-phase 16`
+- `$gsd-plan-phase 17`
 - `$gsd-verify-work 16`
 
 ---
-*Last updated: 2026-04-07 after completing 16-03 explorer depth and starter-query actions*
+*Last updated: 2026-04-07 after completing 16-04 schema-aware autocomplete and phase continuity regression coverage*
