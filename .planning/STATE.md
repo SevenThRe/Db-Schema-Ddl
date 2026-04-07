@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Per-connection workbench sessions now restore tabs/drafts/recent/snippets without cross-connection leakage
-last_updated: "2026-04-07T13:03:00+09:00"
-last_activity: 2026-04-07 — Executed 16-02 with per-connection session persistence, recent SQL reuse, and snippet storage
+status: Object explorer now exposes schema/table/view depth and starter query actions scoped to active connection/schema context
+last_updated: "2026-04-07T13:08:17+09:00"
+last_activity: 2026-04-07 — Executed 16-03 and recorded summary; phase is ready to continue with 16-04
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -33,9 +33,9 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 ## Current Position
 
 Phase: 16 (unified-workspace-flow) — IN PROGRESS
-Plan: 02 completed (2/4)
-Status: Connection-scoped tab/draft sessions are enforced, and operators can reuse Recent SQL and snippets within each connection context
-Last activity: 2026-04-07 — Executed 16-02 and recorded summary; phase is ready to continue with 16-03
+Plan: 03 completed (3/4)
+Status: Object explorer now exposes schema/table/view depth and starter query actions scoped to active connection/schema context
+Last activity: 2026-04-07 — Executed 16-03 and recorded summary; phase is ready to continue with 16-04
 
 ## Important Assumptions
 
@@ -135,10 +135,16 @@ Last activity: 2026-04-07 — Executed 16-02 and recorded summary; phase is read
 - WorkbenchLayout now restores connection session state on `connection.id` changes and records successful SQL runs through `appendRecentQuery(connection.id, sql)` for deterministic recent-query reuse.
 - Snippet operations (`Save snippet`, `Insert snippet`) and `Recent SQL` insertion are session-backed actions tied to the active connection context.
 
+## Architecture Decisions (Plan 16-03 Additions)
+
+- Explorer snapshot contracts now model `views` as a first-class collection in both TypeScript and Rust, separate from base tables.
+- Starter query SQL generation in `WorkbenchLayout` now applies driver-safe identifier quoting and qualifies PostgreSQL table targets with active `runtimeSchema`.
+- Object explorer quick actions (`Select top 100`, `Count rows`, `Select explicit columns`) all flow through one handler, with explicit-column mode inserting SQL and returning editor focus without auto-execution.
+
 ## Next Command
 
 - `$gsd-execute-phase 16`
 - `$gsd-verify-work 16`
 
 ---
-*Last updated: 2026-04-07 after completing 16-02 connection-scoped workspace sessions*
+*Last updated: 2026-04-07 after completing 16-03 explorer depth and starter-query actions*

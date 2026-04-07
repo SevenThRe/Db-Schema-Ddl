@@ -29,7 +29,7 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 ### Category: Navigation & Autocomplete (NAV)
 
 - [x] **NAV-01**: User can browse schemas, tables, views, columns, indexes, and foreign keys from an object explorer for the active connection
-- [ ] **NAV-02**: User can open table data and starter queries directly from the object explorer
+- [x] **NAV-02**: User can open table data and starter queries directly from the object explorer
 - [ ] **NAV-03**: User receives schema-aware autocomplete using cached metadata, scoped to active schema and resolved table aliases
 
 ### Category: Safe Data Editing (DATA)
@@ -80,7 +80,7 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 | FLOW-02 | Phase 16 | Complete |
 | FLOW-03 | Phase 16 | Complete |
 | NAV-01 | Phase 16 | Complete |
-| NAV-02 | Phase 16 | Pending |
+| NAV-02 | Phase 16 | Complete |
 | NAV-03 | Phase 16 | Pending |
 | DATA-01 | Phase 17 | Pending |
 | DATA-02 | Phase 17 | Pending |
