@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Defining requirements
+status: Ready to execute
 last_updated: "2026-04-07T00:00:00+09:00"
 progress:
   total_phases: 18
@@ -18,7 +18,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-07)
 
 **Core value:** Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
-**Current focus:** Not started (defining requirements for v1.5)
+**Current focus:** Phase 15 — Query Runtime Hardening
 
 ## Current Status
 
@@ -31,10 +31,10 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 15 (query-runtime-hardening-v1_5) — READY
 Plan: -
-Status: Defining requirements
-Last activity: 2026-04-07 — Milestone v1.5 应用级 DB 工作台 started
+Status: Requirements and roadmap defined
+Last activity: 2026-04-07 — Roadmap created for milestone v1.5 应用级 DB 工作台
 
 ## Important Assumptions
 
@@ -99,7 +99,8 @@ Last activity: 2026-04-07 — Milestone v1.5 应用级 DB 工作台 started
 
 ## Next Command
 
-- Continue milestone initialization: define requirements and create roadmap
+- `$gsd-discuss-phase 15`
+- `$gsd-plan-phase 15`
 
 ---
-*Last updated: 2026-04-07 after starting v1.5 应用级 DB 工作台*
+*Last updated: 2026-04-07 after creating the v1.5 roadmap*
