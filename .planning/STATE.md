@@ -1,48 +1,48 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-03-25T05:30:07.892Z"
+milestone: v1.5
+milestone_name: 应用级 DB 工作台
+status: Defining requirements
+last_updated: "2026-04-07T00:00:00+09:00"
 progress:
-  total_phases: 14
-  completed_phases: 13
-  total_plans: 58
-  completed_plans: 57
+  total_phases: 18
+  completed_phases: 14
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-03-24)
+See: `.planning/PROJECT.md` (updated 2026-04-07)
 
-**Core value:** Users can write SQL, browse results, visualize execution plans, safely edit data, and explore ER diagrams — all within the db-connector workbench — forming a closed loop with Excel DDL definition and schema comparison.
-**Current focus:** Phase 04 — ddl-import-and-extension-management-v1_4
+**Core value:** Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
+**Current focus:** Not started (defining requirements for v1.5)
 
 ## Current Status
 
 - `v1.0` is complete and audited at `.planning/v1.0-v1.0-MILESTONE-AUDIT.md`
 - `v1.1` is complete and audited at `.planning/v1.1-v1.1-MILESTONE-AUDIT.md`
 - `v1.2` is complete and audited at `.planning/v1.2-v1.2-MILESTONE-AUDIT.md`
-- `v1.3` is complete — runtime hardening (startup/shutdown/logging/packaged smoke)
-- `v1.4` is now active — DB 工作台 workbench extension milestone
-- Phase numbering starts at 01 (with `_v1_4` suffix per project convention)
+- `v1.3` established packaged/runtime stability and delivery hardening
+- `v1.4` established the current DB Workbench surface and surrounding DB management seams
+- `v1.5` is now active — 应用级 DB 工作台 milestone
 
 ## Current Position
 
-Phase: 04 (ddl-import-and-extension-management-v1_4) — EXECUTING
-Plan: 4 of 4
+Phase: Not started (defining requirements)
+Plan: -
+Status: Defining requirements
+Last activity: 2026-04-07 — Milestone v1.5 应用级 DB 工作台 started
 
 ## Important Assumptions
 
 - Internal extension ID stays `db-connector`; display name upgrades to `DB 工作台`
-- Frontend already has Monaco, @xyflow/react, elkjs, react-window — no new major UI dependencies needed
-- Rust db_connector module already exists with introspect/diff commands — add query/explain/grid-edit/relations modules
-- Grid editing uses parameterized SQL (values) + identifier whitelist validation against schema snapshot (no string concat for identifiers)
-- Phase 1 (usable workbench) delivers the core SQL editor + results + explain + safety protection
-- ER drag-to-relate is Phase 4 and must not creep into earlier phases
-- All v1.0–v1.3 user flows (connection management, schema compare, apply history) must stay intact
+- Daily replacement-grade value comes from runtime trust, workflow continuity, and safety before feature breadth
+- Per-connection workspace isolation and multi-schema support are first-order requirements, not polish
+- Safe data sync must be built on top of proven key mapping, SQL preview, and transaction semantics
+- All v1.0-v1.4 user flows must remain intact while the primary DB path is consolidated
 
 ## Accumulated Context
 
@@ -54,6 +54,12 @@ Plan: 4 of 4
 - Monaco autocomplete reads from cached `DbSchemaSnapshot` React ref — zero IPC calls on keystroke
 - EXPLAIN normalization: Rust-side `PlanNode` unification before reaching frontend (MySQL EXPLAIN FORMAT=JSON vs PostgreSQL EXPLAIN FORMAT JSON differ structurally)
 - Grid edit identifier safety: whitelist validation against live `DbSchemaSnapshot`; `sqlx` parameterized `.bind()` for values only
+
+### v1.5 Milestone Direction
+
+- Workbench shell exists, but replacement blockers are runtime semantics, split legacy/new workflow, per-connection session leakage, hardcoded PostgreSQL `public`, and unfinished edit/sync loops
+- New milestone phases continue global sequencing at Phase 15
+- Treat `v1.4` as baseline capability inventory, not proof of app-grade DB tool readiness
 
 ### Key Files That Change in Phase 1
 
@@ -93,7 +99,7 @@ Plan: 4 of 4
 
 ## Next Command
 
-- Execute 04-03-PLAN.md
+- Continue milestone initialization: define requirements and create roadmap
 
 ---
-*Last updated: 2026-03-25 after completing 04-02-PLAN.md (Extension Management page)*
+*Last updated: 2026-04-07 after starting v1.5 应用级 DB 工作台*
