@@ -8,6 +8,10 @@ import { useState, useRef } from "react";
 import { X, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  loadSessionForConnection,
+  saveSessionForConnection,
+} from "./workbench-session";
 
 // ──────────────────────────────────────────────
 // localStorage 定数（バージョン管理）
@@ -19,8 +23,8 @@ export const QUERY_TABS_STORAGE_VERSION = "v1";
 /** バージョン付き localStorage キー */
 export const QUERY_TABS_STORAGE_KEY = `db-workbench:query-tabs:${QUERY_TABS_STORAGE_VERSION}`;
 
-/** 旧バージョン（バージョン無し）のキー — マイグレーション対象 */
-const LEGACY_STORAGE_KEY = "db-workbench:query-tabs";
+/** 旧バージョン（バージョン無し）のキー — 追加の後方互換用 */
+const PRE_VERSION_STORAGE_KEY = "db-workbench:query-tabs";
 
 // ──────────────────────────────────────────────
 // 型定義
@@ -40,52 +44,110 @@ export interface QueryTab {
 // ──────────────────────────────────────────────
 
 /** デフォルトタブを生成する（常に新 UUID を使用） */
-export function defaultTab(): QueryTab {
+export function defaultTab(connectionId: string | null = null): QueryTab {
   return {
     id: crypto.randomUUID(),
     label: "Query 1",
     sql: "",
-    connectionId: null,
+    connectionId,
   };
+}
+
+function withConnectionId(tab: QueryTab, connectionId: string): QueryTab {
+  return { ...tab, connectionId };
+}
+
+function migrateLegacyTabsForConnection(connectionId: string): QueryTab[] | null {
+  if (typeof window === "undefined") return null;
+
+  const versionedRaw = window.localStorage.getItem(QUERY_TABS_STORAGE_KEY);
+  if (versionedRaw) {
+    const migrated = parseTabsFromJson(versionedRaw, "legacy-v1").map((tab) =>
+      withConnectionId(tab, connectionId),
+    );
+    window.localStorage.removeItem(QUERY_TABS_STORAGE_KEY);
+    window.localStorage.removeItem(PRE_VERSION_STORAGE_KEY);
+    return migrated;
+  }
+
+  const preVersionRaw = window.localStorage.getItem(PRE_VERSION_STORAGE_KEY);
+  if (preVersionRaw) {
+    const migrated = parseTabsFromJson(preVersionRaw, "legacy-pre-v1").map((tab) =>
+      withConnectionId(tab, connectionId),
+    );
+    window.localStorage.removeItem(PRE_VERSION_STORAGE_KEY);
+    return migrated;
+  }
+
+  return null;
+}
+
+export function loadTabsForConnection(connectionId: string): QueryTab[] {
+  const normalizedConnectionId = connectionId.trim();
+  if (!normalizedConnectionId) {
+    return [defaultTab()];
+  }
+
+  const session = loadSessionForConnection(normalizedConnectionId);
+  if (session.tabs.length > 0) {
+    return session.tabs.map((tab) => withConnectionId(tab, normalizedConnectionId));
+  }
+
+  // 既存セッションがない場合のみ、旧 v1 キーを 1 回読み込んで移行する。
+  const migratedTabs = migrateLegacyTabsForConnection(normalizedConnectionId);
+  if (migratedTabs && migratedTabs.length > 0) {
+    saveSessionForConnection(normalizedConnectionId, {
+      ...session,
+      tabs: migratedTabs,
+      activeTabId: migratedTabs[0]?.id ?? null,
+    });
+    return migratedTabs;
+  }
+
+  return [defaultTab(normalizedConnectionId)];
+}
+
+export function saveTabsForConnection(connectionId: string, tabs: QueryTab[]): void {
+  const normalizedConnectionId = connectionId.trim();
+  if (!normalizedConnectionId) return;
+
+  const session = loadSessionForConnection(normalizedConnectionId);
+  const normalizedTabs = (tabs.length > 0
+    ? tabs
+    : [defaultTab(normalizedConnectionId)]
+  ).map((tab) => withConnectionId(tab, normalizedConnectionId));
+
+  const activeTabId =
+    typeof session.activeTabId === "string" &&
+    normalizedTabs.some((tab) => tab.id === session.activeTabId)
+      ? session.activeTabId
+      : normalizedTabs[0]?.id ?? null;
+
+  saveSessionForConnection(normalizedConnectionId, {
+    ...session,
+    tabs: normalizedTabs,
+    activeTabId,
+  });
 }
 
 /**
  * localStorage からタブ状態を読み込む。
  *
  * 読み込みロジック:
- * 1. バージョン付きキーを確認 → 存在すれば parse してスキーマ検証
- * 2. 旧バージョンキーが存在すれば マイグレーション → 旧キー削除 → バージョン付きキーに保存
- * 3. JSON parse エラー / スキーマ不一致 → 警告ログ出力 + デフォルトタブ 1 枚にリセット
+ * 現在は後方互換のために "global" 接続として v2 セッションへ読み込む。
  */
 export function loadTabs(): QueryTab[] {
-  if (typeof window === "undefined") {
-    return [defaultTab()];
-  }
-
-  // バージョン付きキーから読み込み試行
-  const raw = window.localStorage.getItem(QUERY_TABS_STORAGE_KEY);
-  if (raw) {
-    return parseTabsFromJson(raw, "versioned");
-  }
-
-  // 旧バージョンキーからのマイグレーション試行
-  const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-  if (legacyRaw) {
-    const migrated = parseTabsFromJson(legacyRaw, "legacy");
-    // マイグレーション成功時は新キーに保存し、旧キーを削除
-    window.localStorage.setItem(QUERY_TABS_STORAGE_KEY, JSON.stringify(migrated));
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return migrated;
-  }
-
-  return [defaultTab()];
+  return loadTabsForConnection("global");
 }
 
 /**
  * JSON 文字列を QueryTab[] としてパースし、スキーマ検証を行う。
  * parse エラーまたはスキーマ不一致の場合は警告ログ + デフォルトタブを返す。
  */
-function parseTabsFromJson(raw: string, source: "versioned" | "legacy"): QueryTab[] {
+function parseTabsFromJson(
+  raw: string,
+  source: "legacy-v1" | "legacy-pre-v1",
+): QueryTab[] {
   try {
     const parsed = JSON.parse(raw);
 
@@ -131,14 +193,7 @@ function parseTabsFromJson(raw: string, source: "versioned" | "legacy"): QueryTa
 
 /** タブ状態を localStorage にバージョン付きキーで保存する */
 export function saveTabs(tabs: QueryTab[]): void {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(QUERY_TABS_STORAGE_KEY, JSON.stringify(tabs));
-  } catch (err) {
-    // localStorage 容量超過などの例外をサイレントに無視
-    console.warn("[QueryTabs] Failed to save tabs to localStorage:", err);
-  }
+  saveTabsForConnection("global", tabs);
 }
 
 // ──────────────────────────────────────────────
@@ -188,6 +243,7 @@ export function QueryTabs({
   // リネーム中の一時入力値
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const tabButtonRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   /** ダブルクリックでリネームモード開始 */
   function handleDoubleClick(tab: QueryTab) {
@@ -212,8 +268,23 @@ export function QueryTabs({
     setRenameValue("");
   }
 
+  function focusTabByOffset(currentIndex: number, offset: number) {
+    if (tabs.length === 0) return;
+
+    const nextIndex = (currentIndex + offset + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    if (!nextTab) return;
+
+    onTabChange(nextTab.id);
+    tabButtonRefs.current[nextIndex]?.focus();
+  }
+
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border bg-panel-muted px-1">
+    <div
+      role="tablist"
+      aria-label="Query tabs"
+      className="flex h-[36px] shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border bg-panel-muted px-1"
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         const isRenaming = renamingTabId === tab.id;
@@ -221,8 +292,14 @@ export function QueryTabs({
         return (
           <div
             key={tab.id}
+            ref={(element) => {
+              const index = tabs.findIndex((item) => item.id === tab.id);
+              tabButtonRefs.current[index] = element;
+            }}
             role="tab"
+            id={`db-workbench-tab-${tab.id}`}
             aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
             className={cn(
               "group relative flex h-[28px] shrink-0 cursor-pointer items-center gap-1 rounded-t-sm px-2.5",
               "border border-b-0 border-transparent transition-colors",
@@ -231,6 +308,34 @@ export function QueryTabs({
                 : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
             )}
             onClick={() => !isRenaming && onTabChange(tab.id)}
+            onKeyDown={(event) => {
+              const currentIndex = tabs.findIndex((item) => item.id === tab.id);
+              if (currentIndex < 0 || isRenaming) return;
+
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                focusTabByOffset(currentIndex, 1);
+              }
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                focusTabByOffset(currentIndex, -1);
+              }
+              if (event.key === "Home") {
+                event.preventDefault();
+                const firstTab = tabs[0];
+                if (!firstTab) return;
+                onTabChange(firstTab.id);
+                tabButtonRefs.current[0]?.focus();
+              }
+              if (event.key === "End") {
+                event.preventDefault();
+                const lastIndex = tabs.length - 1;
+                const lastTab = tabs[lastIndex];
+                if (!lastTab) return;
+                onTabChange(lastTab.id);
+                tabButtonRefs.current[lastIndex]?.focus();
+              }
+            }}
           >
             {/* アクティブタブのボトムボーダー（下線インジケーター） */}
             {isActive && (
