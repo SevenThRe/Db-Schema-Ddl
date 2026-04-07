@@ -7,7 +7,7 @@
  * 既存機能（接続管理・スキーマ閲覧・Diff比較）は削除禁止
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useId } from "react";
 import {
   Database, Plus, Trash2, TestTube2, RefreshCw, ChevronRight,
   ArrowLeftRight, Loader2, CheckCircle2, XCircle, Table2, Columns2, List,
@@ -33,10 +33,71 @@ import type {
 import { WorkbenchLayout } from "./db-workbench/WorkbenchLayout";
 
 const DEFAULT_PORTS: Record<DbDriver, number> = { mysql: 3306, postgres: 5432 };
+type WorkspaceView = "connections" | "schema" | "diff" | "sql";
+
+const WORKSPACE_VIEW_STORAGE_KEY = "db-workbench:workspace-view:v1";
+const WORKSPACE_CONNECTION_STORAGE_KEY = "db-workbench:selected-connection:v1";
+const WORKSPACE_VIEW_QUERY_KEY = "db-workbench-view";
+const WORKSPACE_CONNECTION_QUERY_KEY = "db-workbench-connection";
+const PRIMARY_WORKSPACE_VIEW: WorkspaceView = "sql";
 
 // ──────────────────────────────────────────────
 // ヘルパー
 // ──────────────────────────────────────────────
+
+function isWorkspaceView(value: string | null): value is WorkspaceView {
+  return value === "connections" || value === "schema" || value === "diff" || value === "sql";
+}
+
+function readInitialWorkspaceView(selectedConnId: string | null): WorkspaceView {
+  if (typeof window === "undefined") return "connections";
+  if (selectedConnId) {
+    return PRIMARY_WORKSPACE_VIEW;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const routeValue = params.get(WORKSPACE_VIEW_QUERY_KEY);
+  if (isWorkspaceView(routeValue)) {
+    return routeValue;
+  }
+
+  const storedValue = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
+  return isWorkspaceView(storedValue) ? storedValue : "connections";
+}
+
+function readInitialSelectedConnectionId(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const routeValue = params.get(WORKSPACE_CONNECTION_QUERY_KEY);
+  if (routeValue) {
+    return routeValue;
+  }
+
+  const storedValue = window.localStorage.getItem(WORKSPACE_CONNECTION_STORAGE_KEY);
+  return storedValue && storedValue.trim() ? storedValue : null;
+}
+
+function persistWorkspaceRoute(view: WorkspaceView, connectionId: string | null): void {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, view);
+  if (connectionId) {
+    window.localStorage.setItem(WORKSPACE_CONNECTION_STORAGE_KEY, connectionId);
+  } else {
+    window.localStorage.removeItem(WORKSPACE_CONNECTION_STORAGE_KEY);
+  }
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set(WORKSPACE_VIEW_QUERY_KEY, view);
+  if (connectionId) {
+    nextUrl.searchParams.set(WORKSPACE_CONNECTION_QUERY_KEY, connectionId);
+  } else {
+    nextUrl.searchParams.delete(WORKSPACE_CONNECTION_QUERY_KEY);
+  }
+
+  window.history.replaceState(window.history.state, "", nextUrl);
+}
 
 function emptyConfig(): DbConnectionConfig {
   return { id: "", name: "", driver: "mysql", host: "localhost", port: 3306, database: "", username: "root", password: "" };
@@ -60,6 +121,7 @@ function isAutoName(cfg: DbConnectionConfig): boolean {
 //   jdbc:postgresql://host:port/db?user=u&password=p
 //   host=h port=p dbname=d user=u password=p  (psql キーバリュー形式)
 //   DB_HOST=h DB_PORT=p DB_NAME=d DB_USER=u DB_PASSWORD=p  (.env 形式)
+//   JetBrains DataSourceSettings XML / clipboard dump
 function parseConnectionString(input: string): Partial<DbConnectionConfig> | null {
   const s = input.trim();
   if (!s) return null;
@@ -121,6 +183,42 @@ function parseConnectionString(input: string): Partial<DbConnectionConfig> | nul
     };
   }
 
+  // ── JetBrains DataSourceSettings XML / clipboard dump ──
+  if (/<data-source\b/i.test(s) || /<jdbc-url>/i.test(s)) {
+    const readTag = (tagName: string) => s.match(new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"))?.[1]?.trim() ?? "";
+    const readAttr = (attrName: string) => s.match(new RegExp(`${attrName}="([^"]+)"`, "i"))?.[1]?.trim() ?? "";
+
+    const jdbcUrl = readTag("jdbc-url");
+    const userName = readTag("user-name");
+    const dsName = readAttr("name");
+    const product = readAttr("product");
+    const driverRef = readTag("driver-ref") || readAttr("dbms");
+
+    const parsedUrl = jdbcUrl ? parseConnectionString(jdbcUrl) : null;
+    if (parsedUrl) {
+      return {
+        ...parsedUrl,
+        username: userName || parsedUrl.username,
+        name: dsName || undefined,
+        driver: parsedUrl.driver,
+      };
+    }
+
+    const driverText = `${product} ${driverRef}`.toLowerCase();
+    const driver: DbDriver = driverText.includes("postgres") ? "postgres" : "mysql";
+    const host = s.match(/jdbc:[^:]+:\/\/([^:/\s]+)(?::(\d+))?\/([^\s<]+)/i);
+    if (host) {
+      return {
+        driver,
+        host: host[1] || "localhost",
+        port: host[2] ? Number(host[2]) : DEFAULT_PORTS[driver],
+        database: host[3] || "",
+        username: userName || "",
+        name: dsName || "",
+      };
+    }
+  }
+
   return null;
 }
 
@@ -154,6 +252,7 @@ function ConnectionForm({
   // Capability スコープ済み HostApi を使用する
   const host = useHostApiFor(extensionId);
   const toast = host.notifications.show;
+  const formId = useId();
 
   // 接続文字列を解析してフォームに反映する
   const handleParsePaste = () => {
@@ -221,9 +320,11 @@ function ConnectionForm({
         {showPaste && (
           <div className="border-t border-border px-3 pb-3 pt-2 space-y-2">
             <textarea
+              id={`${formId}-paste`}
+              name="connection-paste"
               value={pasteText}
               onChange={(e) => { setPasteText(e.target.value); setParseError(false); }}
-              placeholder={"mysql://user:pass@host:3306/db\npostgresql://user:pass@host:5432/db\njdbc:mysql://host:3306/db?user=u&password=p\nhost=localhost port=5432 dbname=mydb user=u password=p\nDB_HOST=localhost DB_PORT=3306 DB_NAME=mydb DB_USER=root DB_PASSWORD=secret"}
+              placeholder={"mysql://user:pass@host:3306/db\npostgresql://user:pass@host:5432/db\njdbc:mysql://host:3306/db?user=u&password=p\nhost=localhost port=5432 dbname=mydb user=u password=p\nDB_HOST=localhost DB_PORT=3306 DB_NAME=mydb DB_USER=root DB_PASSWORD=secret\n<DataSourceSettings>...<jdbc-url>jdbc:mysql://localhost:3306/db</jdbc-url>...</DataSourceSettings>"}
               rows={4}
               className={cn(
                 "w-full rounded-md border bg-background px-2 py-1.5 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-ring",
@@ -242,13 +343,23 @@ function ConnectionForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div className="col-span-2 space-y-1">
-          <label className="text-xs text-muted-foreground">名称</label>
-          <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="生产环境 MySQL" className="h-7 text-xs" />
+          <label htmlFor={`${formId}-name`} className="text-xs text-muted-foreground">名称</label>
+          <Input
+            id={`${formId}-name`}
+            name="connection-name"
+            autoComplete="organization"
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+            placeholder="生产环境 MySQL"
+            className="h-7 text-xs"
+          />
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">驱动</label>
+          <label htmlFor={`${formId}-driver`} className="text-xs text-muted-foreground">驱动</label>
           <select
+            id={`${formId}-driver`}
+            name="driver"
             value={form.driver}
             onChange={(e) => handleDriverChange(e.target.value as DbDriver)}
             className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs h-7"
@@ -259,8 +370,10 @@ function ConnectionForm({
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">端口</label>
+          <label htmlFor={`${formId}-port`} className="text-xs text-muted-foreground">端口</label>
           <Input
+            id={`${formId}-port`}
+            name="port"
             type="number"
             value={form.port}
             onChange={(e) => setWithAutoName({ port: Number(e.target.value) })}
@@ -269,23 +382,54 @@ function ConnectionForm({
         </div>
 
         <div className="col-span-2 space-y-1">
-          <label className="text-xs text-muted-foreground">主机</label>
-          <Input value={form.host} onChange={(e) => setWithAutoName({ host: e.target.value })} placeholder="localhost" className="h-7 text-xs" />
+          <label htmlFor={`${formId}-host`} className="text-xs text-muted-foreground">主机</label>
+          <Input
+            id={`${formId}-host`}
+            name="host"
+            autoComplete="url"
+            value={form.host}
+            onChange={(e) => setWithAutoName({ host: e.target.value })}
+            placeholder="localhost"
+            className="h-7 text-xs"
+          />
         </div>
 
         <div className="col-span-2 space-y-1">
-          <label className="text-xs text-muted-foreground">数据库名</label>
-          <Input value={form.database} onChange={(e) => setWithAutoName({ database: e.target.value })} placeholder="mydb" className="h-7 text-xs" />
+          <label htmlFor={`${formId}-database`} className="text-xs text-muted-foreground">数据库名</label>
+          <Input
+            id={`${formId}-database`}
+            name="database"
+            autoComplete="off"
+            value={form.database}
+            onChange={(e) => setWithAutoName({ database: e.target.value })}
+            placeholder="mydb"
+            className="h-7 text-xs"
+          />
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">用户名</label>
-          <Input value={form.username} onChange={(e) => set("username", e.target.value)} className="h-7 text-xs" />
+          <label htmlFor={`${formId}-username`} className="text-xs text-muted-foreground">用户名</label>
+          <Input
+            id={`${formId}-username`}
+            name="username"
+            autoComplete="username"
+            value={form.username}
+            onChange={(e) => set("username", e.target.value)}
+            className="h-7 text-xs"
+          />
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">密码</label>
-          <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} className="h-7 text-xs" />
+          <label htmlFor={`${formId}-password`} className="text-xs text-muted-foreground">密码</label>
+          <Input
+            id={`${formId}-password`}
+            name="password"
+            autoComplete="current-password"
+            type="password"
+            value={form.password}
+            onChange={(e) => set("password", e.target.value)}
+            className="h-7 text-xs"
+          />
         </div>
       </div>
 
@@ -418,6 +562,7 @@ function DbDiffPanel({ source, target, result, onReset }: DbDiffPanelProps) {
               variant={!monacoSideBySide ? "secondary" : "ghost"}
               className="h-5 w-5"
               onClick={() => setMonacoSideBySide(false)}
+              aria-label="Show inline diff"
               title="Inline"
             >
               <List className="h-3 w-3" />
@@ -427,6 +572,7 @@ function DbDiffPanel({ source, target, result, onReset }: DbDiffPanelProps) {
               variant={monacoSideBySide ? "secondary" : "ghost"}
               className="h-5 w-5"
               onClick={() => setMonacoSideBySide(true)}
+              aria-label="Show side by side diff"
               title="Side by side"
             >
               <Columns2 className="h-3 w-3" />
@@ -528,17 +674,17 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
   const host = useHostApiFor(extensionId);
   const toast = host.notifications.show;
   const qc = useQueryClient();
-
-  // 工作台モード: "workbench" = WorkbenchLayout, "legacy" = 既存UI
-  const [workbenchMode, setWorkbenchMode] = useState<"legacy" | "workbench">("workbench");
-
+  const [selectedConnId, setSelectedConnId] = useState<string | null>(() => readInitialSelectedConnectionId());
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => readInitialWorkspaceView(selectedConnId));
   const [editingConfig, setEditingConfig] = useState<DbConnectionConfig | null>(null);
-  const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [diffSourceId, setDiffSourceId] = useState<string>("");
   const [diffTargetId, setDiffTargetId] = useState<string>("");
   const [diffResult, setDiffResult] = useState<DbSchemaDiffResult | null>(null);
   const [diffSourceSnapshot, setDiffSourceSnapshot] = useState<DbSchemaSnapshot | null>(null);
   const [diffTargetSnapshot, setDiffTargetSnapshot] = useState<DbSchemaSnapshot | null>(null);
+  const schemaSelectId = useId();
+  const diffSourceSelectId = useId();
+  const diffTargetSelectId = useId();
 
   // 接続一覧
   const { data: connections = [], isLoading } = useQuery({
@@ -556,9 +702,11 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: (config: DbConnectionConfig) => host.connections.save(config),
-    onSuccess: () => {
+    onSuccess: (savedConfig) => {
       void qc.invalidateQueries({ queryKey: ["/db/connections"] });
       setEditingConfig(null);
+      setSelectedConnId(savedConfig.id);
+      setWorkspaceView(PRIMARY_WORKSPACE_VIEW);
       toast({ title: "已保存", variant: "success" });
     },
     onError: (e) => toast({ title: "保存失败", description: String(e), variant: "destructive" }),
@@ -566,8 +714,18 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => host.connections.remove(id),
-    onSuccess: () => {
+    onSuccess: (_result, deletedId) => {
       void qc.invalidateQueries({ queryKey: ["/db/connections"] });
+      if (selectedConnId === deletedId) {
+        setSelectedConnId(null);
+        setWorkspaceView("connections");
+      }
+      if (diffSourceId === deletedId) {
+        setDiffSourceId("");
+      }
+      if (diffTargetId === deletedId) {
+        setDiffTargetId("");
+      }
       toast({ title: "已删除", variant: "success" });
     },
     onError: (e) => toast({ title: "删除失败", description: String(e), variant: "destructive" }),
@@ -607,185 +765,370 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
     ? connections.find((c) => c.id === selectedConnId) ?? null
     : null;
 
-  // ── 工作台モード: 接続選択済 && workbench モード → WorkbenchLayout ──
-  if (workbenchMode === "workbench" && activeConnection) {
-    return (
-      <WorkbenchLayout
-        connection={activeConnection}
-        hostApi={host}
-        onSwitchToLegacy={() => setWorkbenchMode("legacy")}
-      />
-    );
-  }
+  const openConnectionView = useCallback(() => {
+    setEditingConfig(null);
+    setWorkspaceView("connections");
+  }, []);
 
-  // ── 接続フォーム表示中 ──────────────────────
-  if (editingConfig) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <ConnectionForm
-          initial={editingConfig}
-          onSave={(c) => saveMutation.mutate(c)}
-          onCancel={() => setEditingConfig(null)}
-          extensionId={extensionId}
-        />
-      </div>
-    );
-  }
+  const activateConnection = useCallback((connectionId: string, nextView: WorkspaceView = PRIMARY_WORKSPACE_VIEW) => {
+    setSelectedConnId(connectionId);
+    setWorkspaceView(nextView);
+  }, []);
+
+  const activeConnectionLabel = activeConnection
+    ? `${activeConnection.name || activeConnection.database} · ${activeConnection.driver}://${activeConnection.host}:${activeConnection.port}/${activeConnection.database}`
+    : "未选择活动连接";
+
+  const hasConnections = connections.length > 0;
+  const activeTabValue = editingConfig ? "connections" : workspaceView;
+
+  useEffect(() => {
+    persistWorkspaceRoute(activeTabValue, selectedConnId);
+  }, [activeTabValue, selectedConnId]);
+
+  useEffect(() => {
+    if (!selectedConnId) return;
+    if (connections.some((connection) => connection.id === selectedConnId)) return;
+
+    setSelectedConnId(null);
+    if (workspaceView === "sql") {
+      setWorkspaceView("connections");
+    }
+  }, [connections, selectedConnId, workspaceView]);
 
   return (
-    <Tabs defaultValue="connections" className="flex h-full flex-col overflow-hidden">
-      <TabsList className="mx-3 mt-2 mb-0 h-7 w-auto shrink-0 justify-start rounded-md border border-border bg-muted/20 p-0.5">
-        <TabsTrigger value="connections" className="h-6 rounded-md px-3 text-xs">连接</TabsTrigger>
-        <TabsTrigger value="schema" className="h-6 rounded-md px-3 text-xs">Schema</TabsTrigger>
-        <TabsTrigger value="diff" className="h-6 rounded-md px-3 text-xs">DIFF</TabsTrigger>
-      </TabsList>
-
-      {/* ── 接続一覧タブ ── */}
-      <TabsContent value="connections" className="flex-1 overflow-hidden mt-0 pt-2">
-        <div className="flex h-full flex-col">
-          <div className="flex shrink-0 items-center justify-between px-3 pb-1">
-            <span className="text-xs text-muted-foreground">{connections.length} 个连接</span>
-            <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setEditingConfig(emptyConfig())}>
-              <Plus className="h-3 w-3 mr-1" /> 添加
-            </Button>
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border bg-panel-muted/40 px-3 py-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-foreground">DB Workbench</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              在一个统一工作区里完成连接管理、Schema 浏览、Diff 和 SQL 操作。
+            </p>
           </div>
-          <ScrollArea className="flex-1">
-            <div className="space-y-1.5 px-3 pb-3">
-              {isLoading ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-              ) : connections.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
-                  <Database className="h-8 w-8 opacity-30" />
-                  <p className="text-xs">暂无连接，点击「添加」配置第一个 DB</p>
-                </div>
-              ) : connections.map((conn) => (
-                <div key={conn.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
-                  <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div
-                    className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => { setSelectedConnId(conn.id); setWorkbenchMode("workbench"); }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === "Enter" && (setSelectedConnId(conn.id), setWorkbenchMode("workbench"))}
-                  >
-                    <p className="text-xs font-medium truncate">{conn.name}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {conn.driver}://{conn.host}:{conn.port}/{conn.database}
-                    </p>
-                  </div>
-                  <Button
-                    size="icon" variant="ghost" className="h-6 w-6 shrink-0"
-                    title="编辑"
-                    onClick={() => setEditingConfig(conn)}
-                  >
-                    <ChevronRight className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-muted-foreground"
-                    title="复制连接"
-                    onClick={() => setEditingConfig({ ...conn, id: "", name: `${conn.name} - 副本` })}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
-                    title="删除"
-                    onClick={() => deleteMutation.mutate(conn.id)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-      </TabsContent>
-
-      {/* ── Schema タブ ── */}
-      <TabsContent value="schema" className="flex-1 overflow-hidden mt-0 pt-2">
-        <div className="flex h-full flex-col">
-          <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
-            <select
-              value={selectedConnId ?? ""}
-              onChange={(e) => setSelectedConnId(e.target.value || null)}
-              className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs h-7"
-            >
-              <option value="">选择连接…</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            <Button
-              size="icon" variant="outline" className="h-7 w-7 shrink-0"
-              onClick={() => void refetchSchema()}
-              disabled={!selectedConnId || isIntrospecting}
-            >
-              {isIntrospecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-            </Button>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            {!selectedConnId ? (
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">请先选择连接</div>
-            ) : isIntrospecting ? (
-              <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />正在获取 Schema…
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="hidden max-w-[420px] rounded-md border border-border bg-background px-3 py-1.5 md:block">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Active Context
               </div>
-            ) : snapshot ? (
-              <SchemaBrowser snapshot={snapshot} />
-            ) : null}
-          </div>
-        </div>
-      </TabsContent>
-
-      {/* ── DIFF タブ ── */}
-      <TabsContent value="diff" className="flex-1 overflow-hidden mt-0 pt-2">
-        {diffResult && diffSourceSnapshot && diffTargetSnapshot ? (
-          <DbDiffPanel
-            source={diffSourceSnapshot}
-            target={diffTargetSnapshot}
-            result={diffResult}
-            onReset={clearDiff}
-          />
-        ) : (
-          <div className="flex h-full flex-col gap-3 px-3 pt-1">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">源（Source）</label>
-              <select
-                value={diffSourceId}
-                onChange={(e) => setDiffSourceId(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs h-7"
-              >
-                <option value="">选择连接…</option>
-                {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-border" />
-              <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
-              <div className="flex-1 h-px bg-border" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">目标（Target）</label>
-              <select
-                value={diffTargetId}
-                onChange={(e) => setDiffTargetId(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs h-7"
-              >
-                <option value="">选择连接…</option>
-                {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-foreground">
+                {activeConnectionLabel}
+              </p>
             </div>
             <Button
-              className="w-full h-8 text-xs"
-              onClick={() => void handleDiff()}
-              disabled={!diffSourceId || !diffTargetId || isDiffing}
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                setEditingConfig(emptyConfig());
+                setWorkspaceView("connections");
+              }}
             >
-              {isDiffing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />}
-              {isDiffing ? "对比中…" : "开始对比"}
+              <Plus className="mr-1 h-3 w-3" />
+              新建连接
             </Button>
           </div>
-        )}
-      </TabsContent>
-    </Tabs>
+        </div>
+      </div>
+
+      <Tabs
+        value={activeTabValue}
+        onValueChange={(value) => {
+          if (!isWorkspaceView(value)) return;
+          if (editingConfig) {
+            setEditingConfig(null);
+          }
+          setWorkspaceView(value);
+        }}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <TabsList className="h-7 w-auto shrink-0 justify-start rounded-md border border-border bg-muted/20 p-0.5">
+              <TabsTrigger value="connections" className="h-6 rounded-md px-3 text-xs">连接</TabsTrigger>
+              <TabsTrigger value="schema" className="h-6 rounded-md px-3 text-xs">Schema</TabsTrigger>
+              <TabsTrigger value="diff" className="h-6 rounded-md px-3 text-xs">Diff</TabsTrigger>
+              <TabsTrigger value="sql" className="h-6 rounded-md px-3 text-xs">SQL 工作台</TabsTrigger>
+            </TabsList>
+            <span className="hidden text-[10px] text-muted-foreground lg:inline">
+              Legacy tools
+            </span>
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            {connections.length} 个连接
+            {activeConnection ? ` · 当前 ${activeConnection.name || activeConnection.database}` : ""}
+          </div>
+        </div>
+
+        <TabsContent value="connections" className="mt-0 min-h-0 flex-1 overflow-hidden">
+          {editingConfig ? (
+            <div className="h-full overflow-y-auto">
+              <ConnectionForm
+                initial={editingConfig}
+                onSave={(c) => saveMutation.mutate(c)}
+                onCancel={() => setEditingConfig(null)}
+                extensionId={extensionId}
+              />
+            </div>
+          ) : (
+            <div className="flex h-full flex-col">
+              <div className="flex shrink-0 items-center justify-between px-3 py-2">
+                <div>
+                  <p className="text-xs font-medium text-foreground">连接中心</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    先配置连接，再进入查询、Schema 和 Diff 工作流。
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setEditingConfig(emptyConfig())}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  添加
+                </Button>
+              </div>
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="space-y-1.5 px-3 pb-3">
+                  {isLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !hasConnections ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+                      <Database className="h-8 w-8 opacity-30" />
+                      <p className="text-xs">暂无连接，先添加一个数据库连接来启动工作台。</p>
+                    </div>
+                  ) : connections.map((conn) => {
+                    const isSelected = conn.id === selectedConnId;
+                    const displayName = conn.name || conn.database;
+                    return (
+                      <div
+                        key={conn.id}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border border-border px-3 py-2",
+                          isSelected && "border-primary/40 bg-primary/5",
+                        )}
+                      >
+                        <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 flex-col items-start text-left"
+                          onClick={() => activateConnection(conn.id, PRIMARY_WORKSPACE_VIEW)}
+                        >
+                          <p className="w-full truncate text-xs font-medium text-foreground">
+                            {displayName}
+                          </p>
+                          <p className="w-full truncate text-[10px] text-muted-foreground">
+                            {conn.driver}://{conn.host}:{conn.port}/{conn.database}
+                          </p>
+                        </button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0"
+                          aria-label={`编辑连接 ${displayName}`}
+                          onClick={() => setEditingConfig(conn)}
+                        >
+                          <ChevronRight className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0 text-muted-foreground"
+                          aria-label={`复制连接 ${displayName}`}
+                          onClick={() => setEditingConfig({ ...conn, id: "", name: `${displayName} - 副本` })}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
+                          aria-label={`删除连接 ${displayName}`}
+                          onClick={() => deleteMutation.mutate(conn.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="schema" className="mt-0 min-h-0 flex-1 overflow-hidden">
+          <div className="flex h-full flex-col">
+            <div className="flex shrink-0 items-end gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1 space-y-1">
+                <label htmlFor={schemaSelectId} className="text-xs text-muted-foreground">
+                  连接
+                </label>
+                <select
+                  id={schemaSelectId}
+                  value={selectedConnId ?? ""}
+                  onChange={(e) => setSelectedConnId(e.target.value || null)}
+                  className="flex h-7 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value="">选择连接…</option>
+                  {connections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-7 w-7 shrink-0"
+                aria-label="刷新当前 Schema"
+                onClick={() => void refetchSchema()}
+                disabled={!selectedConnId || isIntrospecting}
+              >
+                {isIntrospecting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+              </Button>
+              {activeConnection ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setWorkspaceView(PRIMARY_WORKSPACE_VIEW)}
+                >
+                  打开 SQL 工作台
+                </Button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden border-t border-border">
+              {!selectedConnId ? (
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                  请先选择连接
+                </div>
+              ) : isIntrospecting ? (
+                <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在获取 Schema…
+                </div>
+              ) : snapshot ? (
+                <SchemaBrowser snapshot={snapshot} />
+              ) : null}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="diff" className="mt-0 min-h-0 flex-1 overflow-hidden">
+          {diffResult && diffSourceSnapshot && diffTargetSnapshot ? (
+            <DbDiffPanel
+              source={diffSourceSnapshot}
+              target={diffTargetSnapshot}
+              result={diffResult}
+              onReset={clearDiff}
+            />
+          ) : (
+            <div className="flex h-full flex-col gap-3 px-3 py-3">
+              <div>
+                <p className="text-xs font-medium text-foreground">Schema Diff</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  选择两个连接，直接在同一工作区里比较结构差异。
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor={diffSourceSelectId} className="text-xs text-muted-foreground">源（Source）</label>
+                <select
+                  id={diffSourceSelectId}
+                  value={diffSourceId}
+                  onChange={(e) => setDiffSourceId(e.target.value)}
+                  className="h-7 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value="">选择连接…</option>
+                  {connections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-px flex-1 bg-border" />
+                <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor={diffTargetSelectId} className="text-xs text-muted-foreground">目标（Target）</label>
+                <select
+                  id={diffTargetSelectId}
+                  value={diffTargetId}
+                  onChange={(e) => setDiffTargetId(e.target.value)}
+                  className="h-7 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value="">选择连接…</option>
+                  {connections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                className="h-8 w-full text-xs"
+                onClick={() => void handleDiff()}
+                disabled={!diffSourceId || !diffTargetId || isDiffing}
+              >
+                {isDiffing ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {isDiffing ? "对比中…" : "开始对比"}
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="sql" className="mt-0 min-h-0 flex-1 overflow-hidden">
+          {activeConnection ? (
+            <WorkbenchLayout
+              connection={activeConnection}
+              hostApi={host}
+              onSwitchToLegacy={openConnectionView}
+              onSwitchConnection={(connectionId) => activateConnection(connectionId, PRIMARY_WORKSPACE_VIEW)}
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <Database className="h-10 w-10 text-muted-foreground/40" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">先选择一个连接，再进入 SQL 工作台</p>
+                <p className="text-xs text-muted-foreground">
+                  工作台会保留当前连接上下文，并把查询、Schema 和结果浏览放在同一个操作面里。
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" className="h-7 px-3 text-xs" onClick={openConnectionView}>
+                  去连接中心
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs"
+                  onClick={() => {
+                    setEditingConfig(emptyConfig());
+                    setWorkspaceView("connections");
+                  }}
+                >
+                  新建连接
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
