@@ -1,89 +1,69 @@
-# Requirements: DB 工作台 v1.4
+# Requirements: 应用级 DB 工作台 v1.5
 
-**Created:** 2026-03-24
-**Milestone:** v1.4 DB 工作台
+**Created:** 2026-04-07
+**Milestone:** v1.5 应用级 DB 工作台
 **Status:** Active
 
 ## Milestone Goal
 
-Upgrade the `db-connector` builtin extension into a high-frequency database workbench: SQL editing, incremental execution, result browsing, execution plan visualization, dangerous SQL protection, in-place grid editing, object explorer, and ER diagram — forming a complete closed loop with the existing Excel DDL definition workflow.
+Turn DB Workbench from a feature-demo surface into an app-grade daily database tool: one primary workflow, trustworthy query/runtime behavior on real databases, multi-schema awareness, safe row editing, and snapshot-guarded live DB-to-DB sync.
 
 ---
 
 ## Requirements
 
-### Category: Connection & Environment (CONN)
+### Category: Runtime & Performance (RUN)
 
-- [x] **CONN-01**: User can assign an environment label (dev / test / prod) and optional color tag to each saved connection
-- [x] **CONN-02**: User sees a prominent color band on the workbench header when the active connection is test (blue) or prod (red)
-- [x] **CONN-03**: User can mark a connection as readonly, which disables DML execution and grid editing at the Rust command layer
+- [ ] **RUN-01**: User can run a result-returning query without the backend preloading the full result set before the first page is shown in the UI
+- [ ] **RUN-02**: User can load additional result pages through a supported paging path that preserves query context and clearly surfaces when paging is unsafe or unavailable
+- [ ] **RUN-03**: User can cancel long-running query and export operations without leaving stuck UI state or orphaned backend task state
+- [ ] **RUN-04**: User can export current page, loaded rows, or full result through registered runtime commands with explicit limits and warnings
+- [ ] **RUN-05**: User can work against PostgreSQL schemas beyond `public` by selecting or persisting an active/default schema
 
-### Category: SQL Editor (EDIT)
+### Category: Workspace Flow (FLOW)
 
-- [x] **EDIT-01**: User can write SQL in a Monaco editor with syntax highlighting for the current connection's dialect (MySQL / PostgreSQL)
-- [x] **EDIT-02**: User can execute the selected SQL with Ctrl/Cmd+Enter; without selection, the current statement block is executed
-- [x] **EDIT-03**: User can execute the full script with Shift+Ctrl/Cmd+Enter
-- [x] **EDIT-04**: User can format SQL with Alt+Shift+F (selection or full file) using sql-formatter
-- [x] **EDIT-05**: User can open multiple query tab pages and switch between them
+- [ ] **FLOW-01**: User enters DB operations through one primary DB Workbench surface instead of split legacy vs workbench paths
+- [ ] **FLOW-02**: User's tabs, selected objects, and query drafts persist per connection and do not leak across different connections
+- [ ] **FLOW-03**: User can reopen recent queries and manage saved SQL snippets/scripts for the active connection
 
-### Category: Execution & Results (EXEC)
+### Category: Navigation & Autocomplete (NAV)
 
-- [x] **EXEC-01**: User can execute multi-statement scripts where each segment returns an independent result and elapsed time; user can configure stop-on-error vs continue
-- [x] **EXEC-02**: User can cancel a running query via a Cancel button (requestId-based CancellationToken on Rust side)
-- [x] **EXEC-03**: User can view result rows in a virtual-scroll grid limited to 1000 rows per fetch, with column header freeze and column-width drag
-- [x] **EXEC-04**: User can export the current result as JSON, CSV, Markdown Table, or SQL Insert; full-export mode shows row count warning before proceeding
+- [ ] **NAV-01**: User can browse schemas, tables, views, columns, indexes, and foreign keys from an object explorer for the active connection
+- [ ] **NAV-02**: User can open table data and starter queries directly from the object explorer
+- [ ] **NAV-03**: User receives schema-aware autocomplete using cached metadata, scoped to active schema and resolved table aliases
 
-### Category: Execution Plan (PLAN)
+### Category: Safe Data Editing (DATA)
 
-- [x] **PLAN-01**: User can request an execution plan for any SELECT query and see it rendered as a node graph (xyflow + elkjs)
-- [x] **PLAN-02**: User can see full-table-scan nodes (MySQL type=ALL / PostgreSQL Seq Scan) highlighted in red and large-rows-estimate nodes flagged with a risk badge
+- [ ] **DATA-01**: User can edit safe single-table result sets only when primary-key mapping is provable and the connection is not readonly
+- [ ] **DATA-02**: User can review generated SQL and affected-row summary before committing row edits
+- [ ] **DATA-03**: User can commit all pending row edits in a single transaction or discard them entirely on failure or cancel
 
-### Category: Dangerous SQL Protection (SAFE)
+### Category: Compare & Sync (SYNC)
 
-- [x] **SAFE-01**: User sees a confirmation dialog before executing DROP, TRUNCATE, ALTER TABLE, ALTER DATABASE, DELETE without WHERE, or UPDATE without WHERE (detected via sqlparser AST on Rust side)
-- [x] **SAFE-02**: The confirmation dialog shows connection name, environment label, database name, and exact SQL; for prod connections the user must type the database name to confirm
-
-### Category: Grid Editing (GRID)
-
-- [ ] **GRID-01**: User can double-click a cell in a single-table result set (with PK in result columns, connection not readonly) to enter edit mode
-- [ ] **GRID-02**: User can see pending changes as a generated SQL preview (parameterized, validated identifiers) before committing
-- [ ] **GRID-03**: User can commit all pending changes in a single transaction or discard them; transaction rolls back on any failure
-
-### Category: Object Explorer (OBJ)
-
-- [ ] **OBJ-01**: User can browse a tree of schemas, tables, views, and columns for the active connection
-- [ ] **OBJ-02**: User can right-click a table to open "view table data" as a grid query
-
-### Category: ER Diagram (ER)
-
-- [ ] **ER-01**: User can view an auto-layout ER diagram of the current schema including foreign key relationships (requires extended introspect for FK/indexes)
-- [ ] **ER-02**: User can search tables by name and focus the diagram on matching nodes
-- [ ] **ER-03**: User can click a table node to see column details in a side panel
-
-### Category: Autocomplete (AUTO)
-
-- [ ] **AUTO-01**: User receives schema-aware autocomplete in the SQL editor: table names from current schema, column names scoped to FROM clause tables, and SQL keyword completion
+- [ ] **SYNC-01**: User can compare source vs target live databases by key and see insert/update/delete classifications per table
+- [ ] **SYNC-02**: User can preview sync SQL and execution counts, and execution is blocked if the target snapshot changed after comparison
+- [ ] **SYNC-03**: User can execute selected sync actions with audit history and production-grade safety confirmations
 
 ---
 
 ## Future Requirements (Deferred)
 
-- Drag-to-relate in ER diagram generating ALTER preview (Phase 4 / v2.0)
-- Excel definition book to live DB linkage entry points (Phase 4 / v2.0)
-- Alias tracking in autocomplete (beyond basic table.column)
-- Cross-session query history persistence
-- Saved script library with tagging
-- Multiple simultaneous connection tabs
+- Visual ER authoring / drag-to-design relationship editing
+- Stored procedures, functions, and trigger management UI
+- Broader DB engine support beyond MySQL/PostgreSQL
+- Team/shared connection catalogs and collaboration workflows
+- SSH tunnel / bastion host connection flows
 
 ---
 
 ## Out of Scope
 
-- Creating a second separate `db-workbench` extension ID — internal ID stays `db-connector`
-- Arbitrary result set editing (only single-table + primary key in results)
-- Non-Windows packaging concerns for this milestone
-- Full CI/CD pipeline changes
-- monaco-sql-languages package — version incompatible with monaco-editor 0.55.1
+| Feature | Reason |
+|---------|--------|
+| Full parity with every Navicat screen in one milestone | Focus on high-frequency daily operator workflows first |
+| A second separate `db-workbench` extension ID | Keep `db-connector` as the single DB surface to avoid navigation and state duplication |
+| Arbitrary result-set editing | Only provably safe single-table + key-mapped edits are acceptable |
+| Cross-database vendor expansion in this milestone | MySQL/PostgreSQL daily use is the current replacement target |
 
 ---
 
@@ -91,34 +71,27 @@ Upgrade the `db-connector` builtin extension into a high-frequency database work
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONN-01 | Phase 1: Usable Workbench | Complete |
-| CONN-02 | Phase 1: Usable Workbench | Complete |
-| CONN-03 | Phase 1: Usable Workbench | Complete |
-| EDIT-01 | Phase 1: Usable Workbench | Complete |
-| EDIT-02 | Phase 1: Usable Workbench | Complete |
-| EDIT-03 | Phase 1: Usable Workbench | Complete |
-| EDIT-04 | Phase 1: Usable Workbench | Complete |
-| EDIT-05 | Phase 1: Usable Workbench | Complete |
-| EXEC-01 | Phase 1: Usable Workbench | Complete |
-| EXEC-02 | Phase 1: Usable Workbench | Complete |
-| EXEC-03 | Phase 1: Usable Workbench | Complete |
-| EXEC-04 | Phase 1: Usable Workbench | Complete |
-| PLAN-01 | Phase 1: Usable Workbench | Complete |
-| PLAN-02 | Phase 1: Usable Workbench | Complete |
-| SAFE-01 | Phase 1: Usable Workbench | Complete |
-| SAFE-02 | Phase 1: Usable Workbench | Complete |
-| GRID-01 | Phase 2: Editable Workbench | Pending |
-| GRID-02 | Phase 2: Editable Workbench | Pending |
-| GRID-03 | Phase 2: Editable Workbench | Pending |
-| OBJ-01 | Phase 2: Editable Workbench | Pending |
-| OBJ-02 | Phase 2: Editable Workbench | Pending |
-| AUTO-01 | Phase 2: Editable Workbench | Pending |
-| ER-01 | Phase 3: Structural Workbench | Pending |
-| ER-02 | Phase 3: Structural Workbench | Pending |
-| ER-03 | Phase 3: Structural Workbench | Pending |
+| RUN-01 | Phase 15 | Pending |
+| RUN-02 | Phase 15 | Pending |
+| RUN-03 | Phase 15 | Pending |
+| RUN-04 | Phase 15 | Pending |
+| RUN-05 | Phase 15 | Pending |
+| FLOW-01 | Phase 16 | Pending |
+| FLOW-02 | Phase 16 | Pending |
+| FLOW-03 | Phase 16 | Pending |
+| NAV-01 | Phase 16 | Pending |
+| NAV-02 | Phase 16 | Pending |
+| NAV-03 | Phase 16 | Pending |
+| DATA-01 | Phase 17 | Pending |
+| DATA-02 | Phase 17 | Pending |
+| DATA-03 | Phase 17 | Pending |
+| SYNC-01 | Phase 18 | Pending |
+| SYNC-02 | Phase 18 | Pending |
+| SYNC-03 | Phase 18 | Pending |
 
-**Coverage: 21/21 requirements mapped (100%)**
+**Coverage: 17/17 requirements mapped (100%)**
 
 ---
 
-*Last updated: 2026-03-24 — Traceability table populated after roadmap creation*
+*Requirements defined: 2026-04-07*
+*Last updated: 2026-04-07 after milestone v1.5 requirement definition*
