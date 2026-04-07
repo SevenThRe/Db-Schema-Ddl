@@ -17,7 +17,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 ## Phases
 
-- [ ] **Phase 15: Query Runtime Hardening** - User can trust query execution, paging, cancel, export, and schema context on real databases instead of demo-sized data
+- [x] **Phase 15: Query Runtime Hardening** - User can trust query execution, paging, cancel, export, and schema context on real databases instead of demo-sized data
 - [ ] **Phase 16: Unified Workspace Flow** - User works through one primary DB Workbench path with per-connection sessions, recent work, object explorer, and schema-aware autocomplete
 - [ ] **Phase 17: Safe Data Editing** - User can safely edit single-table results with SQL preview, transaction commit, and rollback semantics
 - [ ] **Phase 18: Live Data Compare & Sync** - User can compare source vs target live DB data, preview sync actions, and apply them with snapshot guarding and audit history
@@ -36,7 +36,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
   3. User can cancel long-running query and export jobs without the UI hanging or backend registry state leaking
   4. User can export current page, loaded rows, or full result through runtime-supported commands that actually exist in the Tauri command surface
   5. User can select or persist a PostgreSQL schema context beyond `public`, and introspection/query helper flows respect it
-**Plans**: TBD
+**Plans**: 4/4 complete (15-01, 15-02, 15-03, 15-04)
 **UI hint**: yes
 
 ### Phase 16: Unified Workspace Flow
@@ -49,7 +49,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
   3. User can reopen recent queries and save/reuse SQL snippets for the active connection
   4. User can browse schemas, tables, views, indexes, and foreign keys from an object explorer and launch starter queries directly from that surface
   5. User receives schema-aware autocomplete from cached metadata, including alias-resolved column suggestions for active query context
-**Plans**: TBD
+**Plans**: 1/4 complete (16-01)
 **UI hint**: yes
 
 ### Phase 17: Safe Data Editing
@@ -80,8 +80,8 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 15. Query Runtime Hardening | 0/0 | Not started | - |
-| 16. Unified Workspace Flow | 0/0 | Not started | - |
+| 15. Query Runtime Hardening | 4/4 | Complete    | 2026-04-07 |
+| 16. Unified Workspace Flow | 1/4 | In Progress | - |
 | 17. Safe Data Editing | 0/0 | Not started | - |
 | 18. Live Data Compare & Sync | 0/0 | Not started | - |
 
@@ -91,15 +91,15 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUN-01 | Phase 15 | Pending |
-| RUN-02 | Phase 15 | Pending |
-| RUN-03 | Phase 15 | Pending |
-| RUN-04 | Phase 15 | Pending |
-| RUN-05 | Phase 15 | Pending |
-| FLOW-01 | Phase 16 | Pending |
+| RUN-01 | Phase 15 | Complete |
+| RUN-02 | Phase 15 | Complete |
+| RUN-03 | Phase 15 | Complete |
+| RUN-04 | Phase 15 | Complete |
+| RUN-05 | Phase 15 | Complete |
+| FLOW-01 | Phase 16 | Complete |
 | FLOW-02 | Phase 16 | Pending |
 | FLOW-03 | Phase 16 | Pending |
-| NAV-01 | Phase 16 | Pending |
+| NAV-01 | Phase 16 | Complete |
 | NAV-02 | Phase 16 | Pending |
 | NAV-03 | Phase 16 | Pending |
 | DATA-01 | Phase 17 | Pending |
@@ -123,4 +123,4 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 ---
 
-*Last updated: 2026-04-07 — Roadmap created for v1.5 应用级 DB 工作台*
+*Last updated: 2026-04-07 — Updated after completing 16-01 unified workspace routing*
