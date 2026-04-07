@@ -11,21 +11,22 @@
 // 危険な SQL は事前に previewDangerousSql でチェックし、confirmed=true で再実行する。
 // これにより Rust 層でのサーバーサイド安全性が保証される（SAFE-01 / SAFE-02）。
 
-import { useState, useCallback, useEffect } from "react";
-import { Lock } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { AlertTriangle, Lock } from "lucide-react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type {
+  BinaryCommandResult,
   DbConnectionConfig,
   QueryExecutionResponse,
   DbExplainPlan,
   DangerousSqlPreview,
-  DbQueryBatchResult,
 } from "@shared/schema";
 import type { HostApi } from "@/extensions/host-api";
 import { ConnectionSidebar } from "./ConnectionSidebar";
@@ -33,11 +34,63 @@ import { QueryTabs, loadTabs, saveTabs, defaultTab } from "./QueryTabs";
 import type { QueryTab } from "./QueryTabs";
 import { SqlEditorPane } from "./SqlEditorPane";
 import { ResultGridPane } from "./ResultGridPane";
-import type { ExportFormat } from "./ResultExportMenu";
+import type { ExportFormat, ExportScope } from "./ResultExportMenu";
 import { ResultExportMenu } from "./ResultExportMenu";
 import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+function formatWorkbenchError(error: unknown, fallback: string): string {
+  const raw =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : fallback;
+
+  return raw
+    .replace(/^Error invoking [^:]+:\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+}
+
+function InlineIssue({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="border-b border-border bg-background px-3 py-2">
+      <Alert variant="destructive" className="rounded-md px-3 py-2">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle className="text-xs">{title}</AlertTitle>
+        <AlertDescription className="text-xs">{description}</AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function downloadBinaryResult(result: BinaryCommandResult): void {
+  const bytes = base64ToBytes(result.base64);
+  const blob = new Blob([bytes], { type: result.mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = result.fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 // ──────────────────────────────────────────────
 // 型定義
@@ -50,6 +103,8 @@ export interface WorkbenchLayoutProps {
   hostApi: HostApi;
   /** レガシービューへ切り替えるコールバック */
   onSwitchToLegacy: () => void;
+  /** 工作台内で接続を切り替えるコールバック */
+  onSwitchConnection: (connectionId: string) => void;
 }
 
 // ──────────────────────────────────────────────
@@ -125,6 +180,7 @@ export function WorkbenchLayout({
   connection,
   hostApi,
   onSwitchToLegacy,
+  onSwitchConnection,
 }: WorkbenchLayoutProps) {
   // ──────────────────────────────────────────────
   // タブ状態管理（localStorage から初期化）
@@ -143,10 +199,12 @@ export function WorkbenchLayout({
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const [results, setResults] = useState<QueryExecutionResponse | null>(null);
+  const [queryError, setQueryError] = useState<string | null>(null);
 
   // EXPLAIN 状態
   const [explainPlan, setExplainPlan] = useState<DbExplainPlan | null>(null);
   const [isExplaining, setIsExplaining] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
 
   // 危険 SQL ダイアログ状態
   const [dangerPreview, setDangerPreview] =
@@ -159,12 +217,122 @@ export function WorkbenchLayout({
 
   // 結果エリアのアクティブタブ（Results / Explain）
   const [resultTab, setResultTab] = useState<"results" | "explain">("results");
+  const [activeBatchIndex, setActiveBatchIndex] = useState(0);
+  const [selectedTableName, setSelectedTableName] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [currentExportRequestId, setCurrentExportRequestId] = useState<string | null>(null);
+  const [activeSchema, setActiveSchema] = useState<string>(() =>
+    connection.driver === "postgres"
+      ? connection.defaultSchema?.trim() || "public"
+      : "public",
+  );
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (connection.driver !== "postgres") {
+      setActiveSchema("public");
+      return;
+    }
+    setActiveSchema(connection.defaultSchema?.trim() || "public");
+  }, [connection.driver, connection.defaultSchema, connection.id]);
+
+  const runtimeSchema = connection.driver === "postgres" ? activeSchema : undefined;
 
   // 接続リスト（切替ドロップダウン用）
   const { data: connections = [] } = useQuery({
     queryKey: ["connections"],
     queryFn: () => hostApi.connections.list(),
   });
+
+  const {
+    data: schemaSnapshot,
+    isFetching: isSchemaLoading,
+    error: schemaQueryError,
+    refetch: refetchSchema,
+  } = useQuery({
+    queryKey: ["db-workbench-schema", connection.id],
+    queryFn: () => hostApi.connections.introspect(connection.id),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const {
+    data: schemaOptionsRaw = [],
+    isFetching: isSchemaOptionsLoading,
+    error: schemaOptionsError,
+    refetch: refetchSchemaOptions,
+  } = useQuery({
+    queryKey: ["db-workbench-schema-options", connection.id],
+    queryFn: async () => {
+      if (!hostApi.connections.listSchemas) return [];
+      return await hostApi.connections.listSchemas(connection.id);
+    },
+    enabled: connection.driver === "postgres",
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const schemaOptions = useMemo(() => {
+    if (connection.driver !== "postgres") return [];
+    const merged = new Set<string>(["public"]);
+    if (connection.defaultSchema?.trim()) {
+      merged.add(connection.defaultSchema.trim());
+    }
+    if (activeSchema.trim()) {
+      merged.add(activeSchema.trim());
+    }
+    for (const schema of schemaOptionsRaw) {
+      const normalized = schema.trim();
+      if (normalized) {
+        merged.add(normalized);
+      }
+    }
+    return Array.from(merged).sort((left, right) => left.localeCompare(right));
+  }, [activeSchema, connection.defaultSchema, connection.driver, schemaOptionsRaw]);
+
+  const schemaErrorMessage = useMemo(() => {
+    if (!schemaQueryError) return null;
+    return formatWorkbenchError(
+      schemaQueryError,
+      "Unable to load schema from the current connection.",
+    );
+  }, [schemaQueryError]);
+
+  useEffect(() => {
+    if (!schemaErrorMessage) return;
+    hostApi.notifications.show({
+      title: "数据库当前不可连接",
+      description: schemaErrorMessage,
+      variant: "destructive",
+    });
+  }, [hostApi.notifications, schemaErrorMessage]);
+
+  useEffect(() => {
+    if (!schemaOptionsError || connection.driver !== "postgres") return;
+    hostApi.notifications.show({
+      title: "Schema list unavailable",
+      description: formatWorkbenchError(
+        schemaOptionsError,
+        "Unable to list PostgreSQL schemas for this connection.",
+      ),
+      variant: "destructive",
+    });
+  }, [connection.driver, hostApi.notifications, schemaOptionsError]);
+
+  useEffect(() => {
+    const sortedTableNames = [...(schemaSnapshot?.tables ?? [])]
+      .map((table) => table.name)
+      .sort((left, right) => left.localeCompare(right));
+
+    if (sortedTableNames.length === 0) {
+      setSelectedTableName(null);
+      return;
+    }
+
+    setSelectedTableName((current) =>
+      current && sortedTableNames.includes(current) ? current : sortedTableNames[0],
+    );
+  }, [schemaSnapshot]);
 
   // ──────────────────────────────────────────────
   // アクティブタブ
@@ -262,26 +430,45 @@ export function WorkbenchLayout({
       setCurrentRequestId(requestId);
       setIsExecuting(true);
       setResults(null);
+      setQueryError(null);
 
       try {
         const response = await hostApi.connections.executeQuery({
           connectionId: connection.id,
           sql,
           requestId,
+          schema: runtimeSchema,
           continueOnError: !stopOnError,
           // confirmed=true は Rust 層への危険 SQL バイパスシグナル（SAFE-01）
           confirmed: confirmed ? true : undefined,
         });
         setResults(response);
+        setActiveBatchIndex(0);
         setResultTab("results");
-      } catch {
-        // エラーはバッチの error フィールドに含まれる
+      } catch (error) {
+        const message = formatWorkbenchError(
+          error,
+          "Unable to execute query on the current connection.",
+        );
+        setQueryError(message);
+        setResultTab("results");
+        hostApi.notifications.show({
+          title: "查询执行失败",
+          description: message,
+          variant: "destructive",
+        });
       } finally {
         setIsExecuting(false);
         setCurrentRequestId(null);
       }
     },
-    [connection.id, hostApi.connections, stopOnError],
+    [
+      connection.id,
+      hostApi.connections,
+      hostApi.notifications,
+      runtimeSchema,
+      stopOnError,
+    ],
   );
 
   /**
@@ -291,9 +478,10 @@ export function WorkbenchLayout({
    */
   const handleExecute = useCallback(
     async (sql: string) => {
-      if (!sql.trim() || isExecuting) return;
+      if (!sql.trim() || isExecuting || isExporting) return;
 
       setPendingSql(sql);
+      setQueryError(null);
 
       try {
         const preview = await hostApi.connections.previewDangerousSql(
@@ -314,7 +502,7 @@ export function WorkbenchLayout({
         await executeImmediate(sql, false);
       }
     },
-    [connection.id, hostApi.connections, isExecuting, executeImmediate],
+    [connection.id, hostApi.connections, isExecuting, isExporting, executeImmediate],
   );
 
   /**
@@ -375,40 +563,139 @@ export function WorkbenchLayout({
       if (!sql.trim() || isExplaining) return;
 
       setIsExplaining(true);
+      setExplainError(null);
 
       try {
         const plan = await hostApi.connections.explainQuery({
           connectionId: connection.id,
           sql,
+          schema: runtimeSchema,
         });
         setExplainPlan(plan);
         setResultTab("explain");
-      } catch {
-        // EXPLAIN エラーは結果エリアで表示
+      } catch (error) {
+        const message = formatWorkbenchError(
+          error,
+          "Unable to get execution plan from the current connection.",
+        );
+        setExplainPlan(null);
+        setExplainError(message);
+        setResultTab("explain");
+        hostApi.notifications.show({
+          title: "Explain 执行失败",
+          description: message,
+          variant: "destructive",
+        });
       } finally {
         setIsExplaining(false);
       }
     },
-    [connection.id, hostApi.connections, isExplaining],
+    [
+      connection.id,
+      hostApi.connections,
+      hostApi.notifications,
+      isExplaining,
+      runtimeSchema,
+    ],
   );
 
-  /** クエリキャンセル */
+  /** クエリ/エクスポートキャンセル */
   const handleCancel = useCallback(async () => {
-    if (!currentRequestId) return;
+    const requestId = currentRequestId ?? currentExportRequestId;
+    if (!requestId) return;
+
     try {
-      await hostApi.connections.cancelQuery(currentRequestId);
+      await hostApi.connections.cancelQuery(requestId);
     } finally {
-      setIsExecuting(false);
-      setCurrentRequestId(null);
+      if (requestId === currentRequestId) {
+        setIsExecuting(false);
+        setCurrentRequestId(null);
+      }
+      if (requestId === currentExportRequestId) {
+        setIsExporting(false);
+        setCurrentExportRequestId(null);
+      }
     }
-  }, [currentRequestId, hostApi.connections]);
+  }, [currentExportRequestId, currentRequestId, hostApi.connections]);
 
   /** 接続切替（サイドバーから） */
   const handleSwitchConnection = useCallback(
-    (_id: string) => {
-      onSwitchToLegacy();
+    (connectionId: string) => {
+      if (connectionId === connection.id) return;
+      onSwitchConnection(connectionId);
     },
-    [onSwitchToLegacy],
+    [connection.id, onSwitchConnection],
+  );
+
+  const handleSchemaChange = useCallback(
+    async (nextSchema: string) => {
+      if (connection.driver !== "postgres") return;
+      const normalizedSchema = nextSchema.trim() || "public";
+      if (normalizedSchema === activeSchema) return;
+
+      const previousSchema = activeSchema;
+      setActiveSchema(normalizedSchema);
+
+      try {
+        await hostApi.connections.save({
+          ...connection,
+          defaultSchema: normalizedSchema,
+        });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["connections"] }),
+          queryClient.invalidateQueries({ queryKey: ["/db/connections"] }),
+        ]);
+        await Promise.all([refetchSchema(), refetchSchemaOptions()]);
+
+        setResults(null);
+        setExplainPlan(null);
+        setQueryError(null);
+        setExplainError(null);
+        setActiveBatchIndex(0);
+        setResultTab("results");
+      } catch (error) {
+        setActiveSchema(previousSchema);
+        hostApi.notifications.show({
+          title: "Schema switch failed",
+          description: formatWorkbenchError(
+            error,
+            "Unable to persist schema selection for this connection.",
+          ),
+          variant: "destructive",
+        });
+      }
+    },
+    [
+      activeSchema,
+      connection,
+      hostApi.connections,
+      hostApi.notifications,
+      queryClient,
+      refetchSchema,
+      refetchSchemaOptions,
+    ],
+  );
+
+  const handleSelectTable = useCallback((tableName: string) => {
+    setSelectedTableName(tableName);
+  }, []);
+
+  const handleOpenTable = useCallback(
+    async (tableName: string) => {
+      setSelectedTableName(tableName);
+      const quotedName = connection.driver === "mysql" ? `\`${tableName}\`` : `"${tableName}"`;
+      const nextSql = `SELECT *\nFROM ${quotedName}\nLIMIT 100;`;
+      setTabs((prev) => {
+        const updated = prev.map((tab) =>
+          tab.id === activeTabId ? { ...tab, sql: nextSql } : tab,
+        );
+        saveTabs(updated);
+        return updated;
+      });
+      setResultTab("results");
+      await handleExecute(nextSql);
+    },
+    [activeTabId, connection.driver, handleExecute],
   );
 
   // ──────────────────────────────────────────────
@@ -421,120 +708,191 @@ export function WorkbenchLayout({
    */
   const handleLoadMore = useCallback(
     async (batchIndex: number) => {
-      if (!results || !currentRequestId) return;
+      if (!results) return;
 
       const batch = results.batches[batchIndex];
       if (!batch) return;
+      if (batch.pagingMode !== "offset" || !batch.hasMore) {
+        if (batch.pagingMode === "unsupported") {
+          hostApi.notifications.show({
+            title: "Load more unavailable",
+            description:
+              batch.pagingReason ?? "Only single result-returning statements support load more.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
+      if (typeof batch.nextOffset !== "number") {
+        hostApi.notifications.show({
+          title: "Load more unavailable",
+          description: "Next page offset was not provided by the runtime.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       try {
         const moreBatch = await hostApi.connections.fetchMore({
-          requestId: currentRequestId,
+          requestId: results.requestId,
           batchIndex,
           sql: batch.sql,
           connectionId: connection.id,
-          offset: batch.rows.length,
+          schema: runtimeSchema,
+          offset: batch.nextOffset,
           limit: 1000,
         });
 
-        // 取得した行を既存バッチに追記
         setResults((prev) => {
           if (!prev) return prev;
           const updatedBatches = prev.batches.map((b, i) => {
             if (i !== batchIndex) return b;
+            const mergedRows = [...b.rows, ...moreBatch.rows];
             return {
               ...b,
-              rows: [...b.rows, ...moreBatch.rows],
+              rows: mergedRows,
+              totalRows: moreBatch.totalRows ?? b.totalRows,
+              returnedRows: mergedRows.length,
+              hasMore: moreBatch.hasMore,
+              pagingMode: moreBatch.pagingMode,
+              pagingReason: moreBatch.pagingReason,
+              nextOffset: moreBatch.nextOffset,
+              schema: moreBatch.schema ?? b.schema,
+              elapsedMs: b.elapsedMs + moreBatch.elapsedMs,
             };
           });
           return { ...prev, batches: updatedBatches };
         });
-      } catch {
-        // ロードモアエラーは無視（既存の行は保持）
+      } catch (error) {
+        hostApi.notifications.show({
+          title: "Load more failed",
+          description: formatWorkbenchError(
+            error,
+            "Unable to load additional rows for this result.",
+          ),
+          variant: "destructive",
+        });
       }
     },
-    [results, currentRequestId, hostApi.connections, connection.id],
+    [
+      results,
+      hostApi.connections,
+      connection.id,
+      hostApi.notifications,
+      runtimeSchema,
+    ],
   );
 
   // ──────────────────────────────────────────────
-  // エクスポートハンドラー（3 モード）
+  // エクスポートハンドラー（runtime-backed scope）
   // ──────────────────────────────────────────────
 
-  /**
-   * 現在ページエクスポート（クライアントサイド変換）。
-   * ResultExportMenu がブラウザダウンロードを直接トリガーするためここでは何も処理しない。
-   */
-  const handleExportCurrentPage = useCallback(
-    (_format: ExportFormat) => {
-      // クライアントサイド変換と download は ResultExportMenu 内で完結している
-    },
-    [],
-  );
+  const handleExport = useCallback(
+    async (scope: ExportScope, format: ExportFormat) => {
+      if (!results || isExecuting || isExporting) return;
 
-  /**
-   * 全行エクスポート（バックエンド再実行）。
-   * db_export_rows コマンドで全行を取得してダウンロードする。
-   */
-  const handleExportFull = useCallback(
-    async (format: ExportFormat) => {
-      if (!results) return;
-
-      // アクティブバッチのカラムを使用（行は空 — バックエンドが再実行する）
-      const activeBatch = results.batches[0] as DbQueryBatchResult | undefined;
+      const activeBatch = results.batches[activeBatchIndex];
       if (!activeBatch) return;
 
+      const exportRequestId = crypto.randomUUID();
+      setCurrentExportRequestId(exportRequestId);
+      setIsExporting(true);
+
       try {
-        const content = await hostApi.connections.exportRows({
-          rows: [],
-          columns: activeBatch.columns,
+        const exportResult = await hostApi.connections.exportRows({
+          connectionId: connection.id,
+          requestId: exportRequestId,
+          sql: activeBatch.sql,
+          schema: runtimeSchema,
           format,
-          tableName: undefined,
+          scope,
+          batchIndex: activeBatchIndex,
+          loadedRows: scope === "full_result" ? undefined : activeBatch.rows,
+          columns: scope === "full_result" ? undefined : activeBatch.columns,
+          maxRows: scope === "full_result" ? 100_000 : undefined,
         });
 
-        // ブラウザダウンロードをトリガー
-        const mimeTypes: Record<ExportFormat, string> = {
-          csv: "text/csv;charset=utf-8",
-          json: "application/json;charset=utf-8",
-          markdown: "text/markdown;charset=utf-8",
-          "sql-insert": "text/plain;charset=utf-8",
-        };
-        const extensions: Record<ExportFormat, string> = {
-          csv: "csv",
-          json: "json",
-          markdown: "md",
-          "sql-insert": "sql",
-        };
+        downloadBinaryResult(exportResult);
 
-        const blob = new Blob([content], { type: mimeTypes[format] });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `export.${extensions[format]}`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-      } catch {
-        // エクスポートエラーは無視
+        const isTruncatedFile = exportResult.fileName
+          .toLowerCase()
+          .includes("truncated");
+        const fullResultMayBeCapped =
+          scope === "full_result" &&
+          (isTruncatedFile || exportResult.successCount >= 100_000);
+
+        if (fullResultMayBeCapped) {
+          hostApi.notifications.show({
+            title: "Export warning",
+            description: "Full result export may be truncated at 100000 rows.",
+            variant: "default",
+          });
+        } else {
+          hostApi.notifications.show({
+            title: "Export complete",
+            description: `${exportResult.fileName} is ready to download.`,
+            variant: "success",
+          });
+        }
+      } catch (error) {
+        const message = formatWorkbenchError(
+          error,
+          "Unable to export rows from the current result.",
+        );
+        const cancelled = /cancel|キャンセル/i.test(message);
+
+        hostApi.notifications.show({
+          title: cancelled ? "Export cancelled" : "Export failed",
+          description: message,
+          variant: cancelled ? "default" : "destructive",
+        });
+      } finally {
+        setIsExporting(false);
+        setCurrentExportRequestId(null);
       }
     },
-    [results, hostApi.connections],
+    [
+      activeBatchIndex,
+      connection.id,
+      hostApi.connections,
+      hostApi.notifications,
+      isExecuting,
+      isExporting,
+      results,
+      runtimeSchema,
+    ],
   );
 
   // activeIndex の同期（batches 更新時に範囲外を防ぐ）
   useEffect(() => {
-    if (!results) return;
-  }, [results]);
+    if (!results) {
+      setActiveBatchIndex(0);
+      return;
+    }
+
+    if (activeBatchIndex >= results.batches.length) {
+      setActiveBatchIndex(Math.max(0, results.batches.length - 1));
+    }
+  }, [results, activeBatchIndex]);
 
   // ──────────────────────────────────────────────
   // レンダリング
   // ──────────────────────────────────────────────
 
   // アクティブバッチ（結果エクスポートメニュー用）
-  const activeBatch = results?.batches[0];
+  const activeBatch = results?.batches[Math.min(activeBatchIndex, Math.max(0, (results?.batches.length ?? 1) - 1))];
 
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden">
         {/* 環境帯 — prod/test/dev 接続時のみ表示 */}
         <EnvironmentBand connection={connection} />
+
+        <div className="shrink-0 border-b border-border bg-panel-muted/40 px-3 py-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            Primary DB workspace
+          </p>
+        </div>
 
         {/* メインボディ: サイドバー + コンテンツエリア */}
         <div className="flex flex-1 overflow-hidden">
@@ -543,6 +901,22 @@ export function WorkbenchLayout({
             connection={connection}
             connections={connections}
             onSwitchConnection={handleSwitchConnection}
+            activeSchema={runtimeSchema}
+            schemaOptions={schemaOptions}
+            isSchemaListLoading={isSchemaOptionsLoading}
+            onSchemaChange={handleSchemaChange}
+            schemaSnapshot={schemaSnapshot}
+            schemaError={schemaErrorMessage}
+            isSchemaLoading={isSchemaLoading}
+            onRefreshSchema={() => {
+              void refetchSchema();
+              if (connection.driver === "postgres") {
+                void refetchSchemaOptions();
+              }
+            }}
+            selectedTableName={selectedTableName}
+            onSelectTable={handleSelectTable}
+            onOpenTable={handleOpenTable}
           />
 
           {/* コンテンツエリア — タブバー + エディター/結果 */}
@@ -571,7 +945,7 @@ export function WorkbenchLayout({
                   onExplain={handleExplain}
                   onCancel={handleCancel}
                   onCloseTab={handleCloseActiveTab}
-                  isExecuting={isExecuting}
+                  isExecuting={isExecuting || isExporting}
                 />
               </ResizablePanel>
 
@@ -602,8 +976,8 @@ export function WorkbenchLayout({
                     {resultTab === "results" && activeBatch && (
                       <ResultExportMenu
                         batch={activeBatch}
-                        onExportCurrentPage={handleExportCurrentPage}
-                        onExportFull={handleExportFull}
+                        onExport={handleExport}
+                        isExporting={isExporting}
                       />
                     )}
                   </div>
@@ -611,17 +985,39 @@ export function WorkbenchLayout({
                   {/* 結果/EXPLAIN コンテンツエリア */}
                   <div className="flex-1 overflow-hidden">
                     {resultTab === "results" ? (
-                      <ResultGridPane
-                        batches={results?.batches ?? []}
-                        onLoadMore={handleLoadMore}
-                        isLoading={isExecuting}
-                        onStopOnErrorChange={setStopOnError}
-                      />
+                      <div className="flex h-full flex-col overflow-hidden">
+                        {queryError ? (
+                          <InlineIssue
+                            title="Current query could not be started"
+                            description={queryError}
+                          />
+                        ) : null}
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                          <ResultGridPane
+                            batches={results?.batches ?? []}
+                            activeIndex={activeBatchIndex}
+                            onActiveIndexChange={setActiveBatchIndex}
+                            onLoadMore={handleLoadMore}
+                            isLoading={isExecuting}
+                            onStopOnErrorChange={setStopOnError}
+                          />
+                        </div>
+                      </div>
                     ) : (
-                      <ExplainPlanPane
-                        plan={explainPlan}
-                        isLoading={isExplaining}
-                      />
+                      <div className="flex h-full flex-col overflow-hidden">
+                        {explainError ? (
+                          <InlineIssue
+                            title="Execution plan is unavailable"
+                            description={explainError}
+                          />
+                        ) : null}
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                          <ExplainPlanPane
+                            plan={explainPlan}
+                            isLoading={isExplaining}
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
