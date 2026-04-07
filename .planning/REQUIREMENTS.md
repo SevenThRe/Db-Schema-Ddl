@@ -22,13 +22,13 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 
 ### Category: Workspace Flow (FLOW)
 
-- [ ] **FLOW-01**: User enters DB operations through one primary DB Workbench surface instead of split legacy vs workbench paths
-- [ ] **FLOW-02**: User's tabs, selected objects, and query drafts persist per connection and do not leak across different connections
-- [ ] **FLOW-03**: User can reopen recent queries and manage saved SQL snippets/scripts for the active connection
+- [x] **FLOW-01**: User enters DB operations through one primary DB Workbench surface instead of split legacy vs workbench paths
+- [x] **FLOW-02**: User's tabs, selected objects, and query drafts persist per connection and do not leak across different connections
+- [x] **FLOW-03**: User can reopen recent queries and manage saved SQL snippets/scripts for the active connection
 
 ### Category: Navigation & Autocomplete (NAV)
 
-- [ ] **NAV-01**: User can browse schemas, tables, views, columns, indexes, and foreign keys from an object explorer for the active connection
+- [x] **NAV-01**: User can browse schemas, tables, views, columns, indexes, and foreign keys from an object explorer for the active connection
 - [ ] **NAV-02**: User can open table data and starter queries directly from the object explorer
 - [ ] **NAV-03**: User receives schema-aware autocomplete using cached metadata, scoped to active schema and resolved table aliases
 
@@ -71,15 +71,15 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUN-01 | Phase 15 | Pending |
-| RUN-02 | Phase 15 | Pending |
-| RUN-03 | Phase 15 | Pending |
-| RUN-04 | Phase 15 | Pending |
-| RUN-05 | Phase 15 | Pending |
-| FLOW-01 | Phase 16 | Pending |
-| FLOW-02 | Phase 16 | Pending |
-| FLOW-03 | Phase 16 | Pending |
-| NAV-01 | Phase 16 | Pending |
+| RUN-01 | Phase 15 | Complete |
+| RUN-02 | Phase 15 | Complete |
+| RUN-03 | Phase 15 | Complete |
+| RUN-04 | Phase 15 | Complete |
+| RUN-05 | Phase 15 | Complete |
+| FLOW-01 | Phase 16 | Complete |
+| FLOW-02 | Phase 16 | Complete |
+| FLOW-03 | Phase 16 | Complete |
+| NAV-01 | Phase 16 | Complete |
 | NAV-02 | Phase 16 | Pending |
 | NAV-03 | Phase 16 | Pending |
 | DATA-01 | Phase 17 | Pending |
@@ -94,4 +94,4 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 ---
 
 *Requirements defined: 2026-04-07*
-*Last updated: 2026-04-07 after milestone v1.5 requirement definition*
+*Last updated: 2026-04-07 after Phase 16 Plan 02 completion (FLOW-02, FLOW-03 complete)*

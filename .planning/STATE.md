@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Phase 16 in progress; 16-01 completed
-last_updated: "2026-04-07T12:41:00+09:00"
-last_activity: 2026-04-07 — Executed 16-01 and recorded summary; phase is ready to continue with 16-02
+status: Per-connection workbench sessions now restore tabs/drafts/recent/snippets without cross-connection leakage
+last_updated: "2026-04-07T13:03:00+09:00"
+last_activity: 2026-04-07 — Executed 16-02 with per-connection session persistence, recent SQL reuse, and snippet storage
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -33,9 +33,9 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 ## Current Position
 
 Phase: 16 (unified-workspace-flow) — IN PROGRESS
-Plan: 01 completed (1/4)
-Status: Primary SQL workbench entry is now enforced by default, with legacy schema/diff paths preserved as explicit fallback tools
-Last activity: 2026-04-07 — Executed 16-01 and recorded summary; phase is ready to continue with 16-02
+Plan: 02 completed (2/4)
+Status: Connection-scoped tab/draft sessions are enforced, and operators can reuse Recent SQL and snippets within each connection context
+Last activity: 2026-04-07 — Executed 16-02 and recorded summary; phase is ready to continue with 16-03
 
 ## Important Assumptions
 
@@ -128,10 +128,17 @@ Last activity: 2026-04-07 — Executed 16-01 and recorded summary; phase is read
 - Legacy `connections/schema/diff` tabs remain available for continuity but are explicitly labeled as `Legacy tools` so they do not compete with primary entry intent.
 - The operator shell now surfaces `Primary DB workspace` in `WorkbenchLayout`, and the fixed-width (`w-[240px]`) sidebar object tree is explicitly titled `Object Explorer` while preserving table/key/index navigation and `onOpenTable` actions.
 
+## Architecture Decisions (Plan 16-02 Additions)
+
+- Workbench session persistence is now centralized in `workbench-session.ts` using `db-workbench:session:v2:{connectionId}` so tabs/drafts/history/snippets are isolated per connection.
+- Legacy tab storage (`db-workbench:query-tabs:v1`) is migrated only when a connection has no v2 session, then removed to prevent dual-write drift.
+- WorkbenchLayout now restores connection session state on `connection.id` changes and records successful SQL runs through `appendRecentQuery(connection.id, sql)` for deterministic recent-query reuse.
+- Snippet operations (`Save snippet`, `Insert snippet`) and `Recent SQL` insertion are session-backed actions tied to the active connection context.
+
 ## Next Command
 
 - `$gsd-execute-phase 16`
 - `$gsd-verify-work 16`
 
 ---
-*Last updated: 2026-04-07 after completing 16-01 unified workspace routing*
+*Last updated: 2026-04-07 after completing 16-02 connection-scoped workspace sessions*
