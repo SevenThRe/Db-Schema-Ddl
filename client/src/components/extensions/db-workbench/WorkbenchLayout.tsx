@@ -7,7 +7,8 @@
 //     - タブバー（QueryTabs コンポーネント、36px）
 //     - エディター + 結果エリア（SqlEditorPane + ResultGridPane / ExplainPlanPane）
 //
-// タブ状態は loadTabs() で localStorage から復元し、変更のたびに saveTabs() で永続化する。
+// セッション状態は loadSessionForConnection()/saveSessionForConnection() で
+// 接続単位に復元・永続化する（タブ/ドラフト/Recent SQL/Snippet）。
 // 危険な SQL は事前に previewDangerousSql でチェックし、confirmed=true で再実行する。
 // これにより Rust 層でのサーバーサイド安全性が保証される（SAFE-01 / SAFE-02）。
 
@@ -18,6 +19,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -30,8 +32,16 @@ import type {
 } from "@shared/schema";
 import type { HostApi } from "@/extensions/host-api";
 import { ConnectionSidebar } from "./ConnectionSidebar";
-import { QueryTabs, loadTabs, saveTabs, defaultTab } from "./QueryTabs";
+import { QueryTabs, loadTabsForConnection, defaultTab } from "./QueryTabs";
 import type { QueryTab } from "./QueryTabs";
+import {
+  appendRecentQuery,
+  loadSessionForConnection,
+  saveSessionForConnection,
+  saveSnippet,
+  type SavedSqlSnippet,
+  type WorkbenchSessionState,
+} from "./workbench-session";
 import { SqlEditorPane } from "./SqlEditorPane";
 import { ResultGridPane } from "./ResultGridPane";
 import type { ExportFormat, ExportScope } from "./ResultExportMenu";
@@ -90,6 +100,44 @@ function downloadBinaryResult(result: BinaryCommandResult): void {
   anchor.download = result.fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+interface HydratedConnectionSession {
+  tabs: QueryTab[];
+  activeTabId: string;
+  recentQueries: string[];
+  snippets: SavedSqlSnippet[];
+}
+
+function hydrateConnectionSession(
+  connectionId: string,
+  session?: WorkbenchSessionState,
+): HydratedConnectionSession {
+  const normalizedConnectionId = connectionId.trim();
+  const loadedSession = session ?? loadSessionForConnection(normalizedConnectionId);
+  const loadedTabs =
+    loadedSession.tabs.length > 0
+      ? loadedSession.tabs.map((tab) => ({
+          ...tab,
+          connectionId: normalizedConnectionId,
+        }))
+      : loadTabsForConnection(normalizedConnectionId);
+
+  const tabs =
+    loadedTabs.length > 0 ? loadedTabs : [defaultTab(normalizedConnectionId)];
+  const fallbackTabId = tabs[0]?.id ?? defaultTab(normalizedConnectionId).id;
+  const activeTabId =
+    loadedSession.activeTabId &&
+    tabs.some((tab) => tab.id === loadedSession.activeTabId)
+      ? loadedSession.activeTabId
+      : fallbackTabId;
+
+  return {
+    tabs,
+    activeTabId,
+    recentQueries: loadedSession.recentQueries,
+    snippets: loadedSession.snippets,
+  };
 }
 
 // ──────────────────────────────────────────────
@@ -186,11 +234,23 @@ export function WorkbenchLayout({
   // タブ状態管理（localStorage から初期化）
   // ──────────────────────────────────────────────
 
-  const [tabs, setTabs] = useState<QueryTab[]>(() => loadTabs());
-  const [activeTabId, setActiveTabId] = useState<string>(() => {
-    const loaded = loadTabs();
-    return loaded[0]?.id ?? defaultTab().id;
-  });
+  const initialSession = useMemo(
+    () => hydrateConnectionSession(connection.id),
+    [connection.id],
+  );
+
+  const [tabs, setTabs] = useState<QueryTab[]>(initialSession.tabs);
+  const [activeTabId, setActiveTabId] = useState<string>(
+    initialSession.activeTabId,
+  );
+  const [recentQueries, setRecentQueries] = useState<string[]>(
+    initialSession.recentQueries,
+  );
+  const [savedSnippets, setSavedSnippets] = useState<SavedSqlSnippet[]>(
+    initialSession.snippets,
+  );
+  const [selectedRecentSql, setSelectedRecentSql] = useState("");
+  const [selectedSnippetId, setSelectedSnippetId] = useState("");
 
   // ──────────────────────────────────────────────
   // クエリ実行・結果状態
@@ -340,6 +400,37 @@ export function WorkbenchLayout({
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
+  useEffect(() => {
+    const loadedSession = loadSessionForConnection(connection.id);
+    const restored = hydrateConnectionSession(connection.id, loadedSession);
+    setTabs(restored.tabs);
+    setActiveTabId(restored.activeTabId);
+    setRecentQueries(restored.recentQueries);
+    setSavedSnippets(restored.snippets);
+    setSelectedRecentSql("");
+    setSelectedSnippetId("");
+  }, [connection.id]);
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      setTabs([defaultTab(connection.id)]);
+      return;
+    }
+    if (!tabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [activeTabId, connection.id, tabs]);
+
+  useEffect(() => {
+    if (!connection.id) return;
+    saveSessionForConnection(connection.id, {
+      tabs: tabs.map((tab) => ({ ...tab, connectionId: connection.id })),
+      activeTabId,
+      recentQueries,
+      snippets: savedSnippets,
+    });
+  }, [activeTabId, connection.id, recentQueries, savedSnippets, tabs]);
+
   // ──────────────────────────────────────────────
   // タブ操作ハンドラー
   // ──────────────────────────────────────────────
@@ -348,11 +439,7 @@ export function WorkbenchLayout({
   const handleSqlChange = useCallback(
     (sql: string) => {
       setTabs((prev) => {
-        const updated = prev.map((t) =>
-          t.id === activeTabId ? { ...t, sql } : t,
-        );
-        saveTabs(updated);
-        return updated;
+        return prev.map((t) => (t.id === activeTabId ? { ...t, sql } : t));
       });
     },
     [activeTabId],
@@ -372,10 +459,8 @@ export function WorkbenchLayout({
         sql: "",
         connectionId: connection.id,
       };
-      const updated = [...prev, newTab];
-      saveTabs(updated);
       setActiveTabId(newTab.id);
-      return updated;
+      return [...prev, newTab];
     });
   }, [connection.id]);
 
@@ -386,7 +471,6 @@ export function WorkbenchLayout({
         if (prev.length <= 1) return prev;
 
         const updated = prev.filter((t) => t.id !== tabId);
-        saveTabs(updated);
 
         if (activeTabId === tabId) {
           const closedIndex = prev.findIndex((t) => t.id === tabId);
@@ -403,11 +487,7 @@ export function WorkbenchLayout({
   /** タブリネーム */
   const handleTabRename = useCallback((tabId: string, newLabel: string) => {
     setTabs((prev) => {
-      const updated = prev.map((t) =>
-        t.id === tabId ? { ...t, label: newLabel } : t,
-      );
-      saveTabs(updated);
-      return updated;
+      return prev.map((t) => (t.id === tabId ? { ...t, label: newLabel } : t));
     });
   }, []);
 
@@ -415,6 +495,73 @@ export function WorkbenchLayout({
   const handleCloseActiveTab = useCallback(() => {
     handleTabClose(activeTabId);
   }, [activeTabId, handleTabClose]);
+
+  const insertSqlIntoActiveTab = useCallback(
+    (nextSql: string) => {
+      if (!nextSql.trim()) return;
+      setTabs((prev) =>
+        prev.map((tab) => (tab.id === activeTabId ? { ...tab, sql: nextSql } : tab)),
+      );
+    },
+    [activeTabId],
+  );
+
+  const handleSaveSnippet = useCallback(() => {
+    const sqlToSave = activeTab?.sql ?? "";
+    if (!sqlToSave.trim()) {
+      hostApi.notifications.show({
+        title: "Nothing to save",
+        description: "Write SQL in the active tab before saving a snippet.",
+        variant: "default",
+      });
+      return;
+    }
+
+    const defaultName = activeTab?.label?.trim() || "Snippet";
+    const promptValue = window.prompt("Save snippet", defaultName);
+    if (promptValue === null) return;
+
+    const snippetName = promptValue.trim();
+    if (!snippetName) {
+      hostApi.notifications.show({
+        title: "Snippet name required",
+        description: "Provide a non-empty snippet name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const updatedSession = saveSnippet(connection.id, snippetName, sqlToSave);
+    setSavedSnippets(updatedSession.snippets);
+    setSelectedSnippetId("");
+    hostApi.notifications.show({
+      title: "Snippet saved",
+      description: `${snippetName} is available for this connection.`,
+      variant: "success",
+    });
+  }, [activeTab?.label, activeTab?.sql, connection.id, hostApi.notifications]);
+
+  const handleInsertSnippet = useCallback(
+    (snippetId: string) => {
+      const snippet = savedSnippets.find((item) => item.id === snippetId);
+      if (!snippet) return;
+      insertSqlIntoActiveTab(snippet.sql);
+      setSelectedSnippetId("");
+    },
+    [insertSqlIntoActiveTab, savedSnippets],
+  );
+
+  const handleInsertRecentSql = useCallback(
+    (indexValue: string) => {
+      const index = Number(indexValue);
+      if (!Number.isInteger(index) || index < 0 || index >= recentQueries.length) return;
+      const sql = recentQueries[index];
+      if (!sql) return;
+      insertSqlIntoActiveTab(sql);
+      setSelectedRecentSql("");
+    },
+    [insertSqlIntoActiveTab, recentQueries],
+  );
 
   // ──────────────────────────────────────────────
   // クエリ実行コア関数
@@ -445,6 +592,8 @@ export function WorkbenchLayout({
         setResults(response);
         setActiveBatchIndex(0);
         setResultTab("results");
+        const updatedSession = appendRecentQuery(connection.id, sql);
+        setRecentQueries(updatedSession.recentQueries);
       } catch (error) {
         const message = formatWorkbenchError(
           error,
@@ -686,11 +835,9 @@ export function WorkbenchLayout({
       const quotedName = connection.driver === "mysql" ? `\`${tableName}\`` : `"${tableName}"`;
       const nextSql = `SELECT *\nFROM ${quotedName}\nLIMIT 100;`;
       setTabs((prev) => {
-        const updated = prev.map((tab) =>
+        return prev.map((tab) =>
           tab.id === activeTabId ? { ...tab, sql: nextSql } : tab,
         );
-        saveTabs(updated);
-        return updated;
       });
       setResultTab("results");
       await handleExecute(nextSql);
@@ -931,6 +1078,69 @@ export function WorkbenchLayout({
               onTabClose={handleTabClose}
               onTabRename={handleTabRename}
             />
+
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-panel-muted/70 px-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleSaveSnippet}
+              >
+                Save snippet
+              </Button>
+
+              <label htmlFor="workbench-snippet-select" className="text-xs text-muted-foreground">
+                Insert snippet
+              </label>
+              <select
+                id="workbench-snippet-select"
+                className="h-7 min-w-[180px] rounded-sm border border-border bg-background px-2 text-xs"
+                value={selectedSnippetId}
+                onChange={(event) => {
+                  const nextSnippetId = event.target.value;
+                  setSelectedSnippetId(nextSnippetId);
+                  if (nextSnippetId) {
+                    handleInsertSnippet(nextSnippetId);
+                  }
+                }}
+              >
+                <option value="">Insert snippet</option>
+                {savedSnippets.map((snippet) => (
+                  <option key={snippet.id} value={snippet.id}>
+                    {snippet.name}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="workbench-recent-sql-select" className="text-xs text-muted-foreground">
+                Recent SQL
+              </label>
+              <select
+                id="workbench-recent-sql-select"
+                className="h-7 min-w-[220px] rounded-sm border border-border bg-background px-2 text-xs"
+                value={selectedRecentSql}
+                onChange={(event) => {
+                  const nextIndex = event.target.value;
+                  setSelectedRecentSql(nextIndex);
+                  if (nextIndex) {
+                    handleInsertRecentSql(nextIndex);
+                  }
+                }}
+              >
+                <option value="">Recent SQL</option>
+                {recentQueries.map((sql, index) => {
+                  const oneLine = sql.replace(/\s+/g, " ").trim();
+                  const preview =
+                    oneLine.length > 72 ? `${oneLine.slice(0, 69)}...` : oneLine;
+                  return (
+                    <option key={`${index}-${preview}`} value={String(index)}>
+                      {preview || "(empty SQL)"}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
 
             {/* エディター/結果エリア — react-resizable-panels で縦分割 */}
             <ResizablePanelGroup direction="vertical" className="flex-1">
