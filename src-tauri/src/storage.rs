@@ -188,6 +188,26 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS db_data_compares (
+        compare_id TEXT PRIMARY KEY,
+        source_connection_id TEXT NOT NULL,
+        target_connection_id TEXT NOT NULL,
+        target_snapshot_hash TEXT NOT NULL,
+        compare_scope_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS db_data_compare_tables (
+        compare_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        key_columns_json TEXT NOT NULL,
+        status_counts_json TEXT NOT NULL,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        blocker_code TEXT,
+        PRIMARY KEY(compare_id, table_name)
+      );
       ",
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
@@ -1092,4 +1112,180 @@ pub fn delete_db_connection(app: &AppHandle, id: &str) -> Result<(), String> {
     .execute("DELETE FROM db_connections WHERE id = ?1", params![id])
     .map_err(|e| storage_error("delete db_connection", e))?;
   Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDataCompareRecord {
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub target_snapshot_hash: String,
+  pub compare_scope_json: String,
+  pub created_at: String,
+  pub expires_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDataCompareTableRecord {
+  pub compare_id: String,
+  pub table_name: String,
+  pub key_columns_json: String,
+  pub status_counts_json: String,
+  pub blocked: bool,
+  pub blocker_code: Option<String>,
+}
+
+pub fn save_db_data_compare(
+  app: &AppHandle,
+  record: &DbDataCompareRecord,
+  table_records: &[DbDataCompareTableRecord],
+) -> Result<(), String> {
+  let (mut conn, _) = open_connection(app)?;
+  let tx = conn
+    .transaction()
+    .map_err(|error| storage_error("start compare transaction", error))?;
+
+  tx
+    .execute(
+      "
+      INSERT INTO db_data_compares (
+        compare_id,
+        source_connection_id,
+        target_connection_id,
+        target_snapshot_hash,
+        compare_scope_json,
+        created_at,
+        expires_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ON CONFLICT(compare_id) DO UPDATE SET
+        source_connection_id = excluded.source_connection_id,
+        target_connection_id = excluded.target_connection_id,
+        target_snapshot_hash = excluded.target_snapshot_hash,
+        compare_scope_json = excluded.compare_scope_json,
+        created_at = excluded.created_at,
+        expires_at = excluded.expires_at
+      ",
+      params![
+        record.compare_id,
+        record.source_connection_id,
+        record.target_connection_id,
+        record.target_snapshot_hash,
+        record.compare_scope_json,
+        record.created_at,
+        record.expires_at,
+      ],
+    )
+    .map_err(|error| storage_error("upsert db_data_compares", error))?;
+
+  tx
+    .execute(
+      "DELETE FROM db_data_compare_tables WHERE compare_id = ?1",
+      params![record.compare_id],
+    )
+    .map_err(|error| storage_error("clear compare table summaries", error))?;
+
+  let mut stmt = tx
+    .prepare(
+      "
+      INSERT INTO db_data_compare_tables (
+        compare_id,
+        table_name,
+        key_columns_json,
+        status_counts_json,
+        blocked,
+        blocker_code
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      ",
+    )
+    .map_err(|error| storage_error("prepare compare table summary insert", error))?;
+
+  for table_record in table_records {
+    stmt
+      .execute(params![
+        table_record.compare_id,
+        table_record.table_name,
+        table_record.key_columns_json,
+        table_record.status_counts_json,
+        if table_record.blocked { 1 } else { 0 },
+        table_record.blocker_code,
+      ])
+      .map_err(|error| storage_error("insert compare table summary", error))?;
+  }
+  drop(stmt);
+
+  tx
+    .commit()
+    .map_err(|error| storage_error("commit compare transaction", error))?;
+  Ok(())
+}
+
+pub fn get_db_data_compare(
+  app: &AppHandle,
+  compare_id: &str,
+) -> Result<Option<DbDataCompareRecord>, String> {
+  let (conn, _) = open_connection(app)?;
+  conn
+    .query_row(
+      "
+      SELECT
+        compare_id,
+        source_connection_id,
+        target_connection_id,
+        target_snapshot_hash,
+        compare_scope_json,
+        created_at,
+        expires_at
+      FROM db_data_compares
+      WHERE compare_id = ?1
+      ",
+      params![compare_id],
+      |row| {
+        Ok(DbDataCompareRecord {
+          compare_id: row.get("compare_id")?,
+          source_connection_id: row.get("source_connection_id")?,
+          target_connection_id: row.get("target_connection_id")?,
+          target_snapshot_hash: row.get("target_snapshot_hash")?,
+          compare_scope_json: row.get("compare_scope_json")?,
+          created_at: row.get("created_at")?,
+          expires_at: row.get("expires_at")?,
+        })
+      },
+    )
+    .optional()
+    .map_err(|error| storage_error("load db_data_compare by id", error))
+}
+
+pub fn get_db_data_compare_table(
+  app: &AppHandle,
+  compare_id: &str,
+  table_name: &str,
+) -> Result<Option<DbDataCompareTableRecord>, String> {
+  let (conn, _) = open_connection(app)?;
+  conn
+    .query_row(
+      "
+      SELECT
+        compare_id,
+        table_name,
+        key_columns_json,
+        status_counts_json,
+        blocked,
+        blocker_code
+      FROM db_data_compare_tables
+      WHERE compare_id = ?1 AND table_name = ?2
+      ",
+      params![compare_id, table_name],
+      |row| {
+        Ok(DbDataCompareTableRecord {
+          compare_id: row.get("compare_id")?,
+          table_name: row.get("table_name")?,
+          key_columns_json: row.get("key_columns_json")?,
+          status_counts_json: row.get("status_counts_json")?,
+          blocked: row.get::<_, i64>("blocked")? != 0,
+          blocker_code: row.get("blocker_code")?,
+        })
+      },
+    )
+    .optional()
+    .map_err(|error| storage_error("load db_data_compare table", error))
 }

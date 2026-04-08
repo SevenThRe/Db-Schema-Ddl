@@ -6,6 +6,7 @@ mod introspect;
 pub mod query;
 pub mod explain;
 pub mod grid_edit;
+pub mod data_diff;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
