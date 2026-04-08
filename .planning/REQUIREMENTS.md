@@ -34,8 +34,8 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 
 ### Category: Safe Data Editing (DATA)
 
-- [ ] **DATA-01**: User can edit safe single-table result sets only when primary-key mapping is provable and the connection is not readonly
-- [ ] **DATA-02**: User can review generated SQL and affected-row summary before committing row edits
+- [x] **DATA-01**: User can edit safe single-table result sets only when primary-key mapping is provable and the connection is not readonly
+- [x] **DATA-02**: User can review generated SQL and affected-row summary before committing row edits
 - [ ] **DATA-03**: User can commit all pending row edits in a single transaction or discard them entirely on failure or cancel
 
 ### Category: Compare & Sync (SYNC)
@@ -82,8 +82,8 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 | NAV-01 | Phase 16 | Complete |
 | NAV-02 | Phase 16 | Complete |
 | NAV-03 | Phase 16 | Complete |
-| DATA-01 | Phase 17 | Pending |
-| DATA-02 | Phase 17 | Pending |
+| DATA-01 | Phase 17 | Complete |
+| DATA-02 | Phase 17 | Complete |
 | DATA-03 | Phase 17 | Pending |
 | SYNC-01 | Phase 18 | Pending |
 | SYNC-02 | Phase 18 | Pending |
