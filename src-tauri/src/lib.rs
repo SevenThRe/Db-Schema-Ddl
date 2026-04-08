@@ -51,8 +51,10 @@ pub fn run() {
       let cancel_registry = Arc::new(db_connector::CancellationRegistry {
         tokens: Mutex::new(HashMap::new()),
       });
+      let grid_edit_plan_registry = Arc::new(db_connector::grid_edit::GridEditPlanRegistry::new());
       app.manage(pool_registry);
       app.manage(cancel_registry);
+      app.manage(grid_edit_plan_registry);
 
       Ok(())
     })
