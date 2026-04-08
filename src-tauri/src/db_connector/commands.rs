@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use serde_json::{Map, Value};
 use sqlx::Row;
 use tauri::{AppHandle, State};
@@ -21,7 +21,7 @@ use super::{
   DbDataApplyJobDetailRequest, DbDataApplyJobDetailResponse, DbDataApplyJobStatus,
   DbDataApplyPreviewRequest, DbDataApplyPreviewResponse, DbDataApplyTableResult,
   DbDataDiffActionCounts, DbDataDiffDetailRequest, DbDataDiffDetailResponse,
-  DbDataDiffPreviewRequest, DbDataDiffPreviewResponse, DbDataDiffTableSummary,
+  DbDataDiffPreviewRequest, DbDataDiffPreviewResponse,
   DbDataSyncAction, DbDataSyncBlocker, DbDataSyncBlockerCode, DbDriver,
   DbPoolRegistry, DbQueryColumn, DbQueryPagingMode, DbQueryRow, DbSchemaDiffResult,
   DbSchemaListResponse, DbSchemaSnapshot, ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
@@ -491,69 +491,18 @@ fn zero_action_counts() -> DbDataDiffActionCounts {
 
 #[tauri::command]
 pub async fn db_data_diff_preview(
+  app: AppHandle,
   request: DbDataDiffPreviewRequest,
 ) -> Result<DbDataDiffPreviewResponse, String> {
-  let created_at = Utc::now();
-  let expires_at = created_at + Duration::minutes(15);
-
-  let table_summaries = request
-    .tables
-    .iter()
-    .map(|table| {
-      let key_columns = table.key_columns.clone().unwrap_or_default();
-      let blocked = key_columns.is_empty();
-      let blocker_codes = if blocked {
-        vec![DbDataSyncBlockerCode::MissingStableKey]
-      } else {
-        vec![]
-      };
-
-      DbDataDiffTableSummary {
-        table_name: table.table_name.clone(),
-        key_columns,
-        compare_columns: table.compare_columns.clone().unwrap_or_default(),
-        status_counts: zero_action_counts(),
-        blocked,
-        blocker_codes,
-        sample_rows: vec![],
-      }
-    })
-    .collect::<Vec<_>>();
-
-  Ok(DbDataDiffPreviewResponse {
-    compare_id: format!("cmp-{}", now_epoch_millis()),
-    source_connection_id: request.source_connection_id,
-    target_connection_id: request.target_connection_id,
-    target_snapshot_hash: String::new(),
-    created_at: created_at.to_rfc3339(),
-    expires_at: expires_at.to_rfc3339(),
-    status_counts: zero_action_counts(),
-    table_summaries,
-    blockers: vec![],
-  })
+  super::data_diff::db_data_diff_preview(&app, request).await
 }
 
 #[tauri::command]
 pub async fn db_data_diff_detail(
+  app: AppHandle,
   request: DbDataDiffDetailRequest,
 ) -> Result<DbDataDiffDetailResponse, String> {
-  Ok(DbDataDiffDetailResponse {
-    compare_id: request.compare_id,
-    table_name: request.table_name,
-    target_snapshot_hash: String::new(),
-    current_target_snapshot_hash: None,
-    key_columns: vec![],
-    compare_columns: vec![],
-    rows: vec![],
-    has_more: false,
-    next_offset: None,
-    blockers: vec![DbDataSyncBlocker {
-      code: DbDataSyncBlockerCode::ArtifactExpired,
-      message: "Compare artifact runtime is not wired yet.".to_string(),
-      table_name: None,
-      level: Some("blocking".to_string()),
-    }],
-  })
+  super::data_diff::db_data_diff_detail(&app, request).await
 }
 
 #[tauri::command]
