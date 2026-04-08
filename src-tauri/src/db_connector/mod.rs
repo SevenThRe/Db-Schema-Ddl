@@ -364,6 +364,291 @@ pub enum ExportRowsScope {
 pub type ExportRowsResponse = crate::models::BinaryCommandResult;
 pub type DbSchemaListResponse = Vec<String>;
 
+// ──────────────────────────────────────────────
+// Phase 18 ライブデータ比較/同期 型定義
+// ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbDataSyncBlockerCode {
+  MissingStableKey,
+  TargetSnapshotChanged,
+  UnsafeDeleteThreshold,
+  ReadonlyTarget,
+  ArtifactExpired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataSyncBlocker {
+  pub code: DbDataSyncBlockerCode,
+  pub message: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub table_name: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbDataRowStatus {
+  SourceOnly,
+  TargetOnly,
+  ValueChanged,
+  Unchanged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbDataSyncAction {
+  Insert,
+  Update,
+  Delete,
+  Ignore,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffFieldDelta {
+  pub column_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub source_value: Option<serde_json::Value>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target_value: Option<serde_json::Value>,
+  pub changed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffRowDelta {
+  pub table_name: String,
+  pub row_key: HashMap<String, serde_json::Value>,
+  pub status: DbDataRowStatus,
+  pub suggested_action: DbDataSyncAction,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub source_row: Option<HashMap<String, serde_json::Value>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target_row: Option<HashMap<String, serde_json::Value>>,
+  #[serde(default)]
+  pub field_diffs: Vec<DbDataDiffFieldDelta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffActionCounts {
+  pub insert: u64,
+  pub update: u64,
+  pub delete: u64,
+  pub unchanged: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffTableRequest {
+  pub table_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub key_columns: Option<Vec<String>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub compare_columns: Option<Vec<String>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub where_clause: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffPreviewRequest {
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub tables: Vec<DbDataDiffTableRequest>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub business_key_columns: Option<HashMap<String, Vec<String>>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub sample_limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffTableSummary {
+  pub table_name: String,
+  #[serde(default)]
+  pub key_columns: Vec<String>,
+  #[serde(default)]
+  pub compare_columns: Vec<String>,
+  pub status_counts: DbDataDiffActionCounts,
+  pub blocked: bool,
+  #[serde(default)]
+  pub blocker_codes: Vec<DbDataSyncBlockerCode>,
+  #[serde(default)]
+  pub sample_rows: Vec<DbDataDiffRowDelta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffPreviewResponse {
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub target_snapshot_hash: String,
+  pub created_at: String,
+  pub expires_at: String,
+  pub status_counts: DbDataDiffActionCounts,
+  #[serde(default)]
+  pub table_summaries: Vec<DbDataDiffTableSummary>,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffDetailRequest {
+  pub compare_id: String,
+  pub table_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub limit: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub offset: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub include_unchanged: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataDiffDetailResponse {
+  pub compare_id: String,
+  pub table_name: String,
+  pub target_snapshot_hash: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub current_target_snapshot_hash: Option<String>,
+  #[serde(default)]
+  pub key_columns: Vec<String>,
+  #[serde(default)]
+  pub compare_columns: Vec<String>,
+  #[serde(default)]
+  pub rows: Vec<DbDataDiffRowDelta>,
+  pub has_more: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub next_offset: Option<u32>,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplySelection {
+  pub table_name: String,
+  pub row_key: HashMap<String, serde_json::Value>,
+  pub action: DbDataSyncAction,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub compare_columns: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyPreviewRequest {
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub target_snapshot_hash: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub current_target_snapshot_hash: Option<String>,
+  pub selections: Vec<DbDataApplySelection>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub delete_warning_threshold: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyPreviewResponse {
+  pub compare_id: String,
+  pub target_snapshot_hash: String,
+  pub current_target_snapshot_hash: String,
+  pub status_counts: DbDataDiffActionCounts,
+  #[serde(default)]
+  pub sql_preview_lines: Vec<String>,
+  pub preview_truncated: bool,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+  pub executable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyExecuteRequest {
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub target_snapshot_hash: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub current_target_snapshot_hash: Option<String>,
+  pub selections: Vec<DbDataApplySelection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyTableResult {
+  pub table_name: String,
+  pub action: DbDataSyncAction,
+  pub attempted_rows: u64,
+  pub succeeded_rows: u64,
+  pub failed_rows: u64,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbDataApplyJobStatus {
+  Pending,
+  Running,
+  Completed,
+  Failed,
+  Partial,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyExecuteResponse {
+  pub job_id: String,
+  pub compare_id: String,
+  pub target_snapshot_hash: String,
+  pub current_target_snapshot_hash: String,
+  pub status: DbDataApplyJobStatus,
+  pub status_counts: DbDataDiffActionCounts,
+  #[serde(default)]
+  pub table_results: Vec<DbDataApplyTableResult>,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyJobDetailRequest {
+  pub job_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDataApplyJobDetailResponse {
+  pub job_id: String,
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub target_snapshot_hash: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub current_target_snapshot_hash: Option<String>,
+  pub status: DbDataApplyJobStatus,
+  pub status_counts: DbDataDiffActionCounts,
+  #[serde(default)]
+  pub table_results: Vec<DbDataApplyTableResult>,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+  pub created_at: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub started_at: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub finished_at: Option<String>,
+}
+
 /// コネクションプールのドライバーラッパー
 pub enum AnyPool {
   Mysql(MySqlPool),

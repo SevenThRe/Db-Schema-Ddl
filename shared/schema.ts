@@ -930,6 +930,198 @@ export interface DbSchemaDiffResult {
 }
 
 // ──────────────────────────────────────────────
+// Phase 18 ライブデータ比較/同期 型定義
+// ──────────────────────────────────────────────
+
+export type DbDataSyncBlockerCode =
+  | "missing_stable_key"
+  | "target_snapshot_changed"
+  | "unsafe_delete_threshold"
+  | "readonly_target"
+  | "artifact_expired";
+
+export interface DbDataSyncBlocker {
+  code: DbDataSyncBlockerCode;
+  message: string;
+  tableName?: string;
+  level?: "warning" | "blocking";
+}
+
+export type DbDataRowStatus =
+  | "source_only"
+  | "target_only"
+  | "value_changed"
+  | "unchanged";
+
+export type DbDataSyncAction = "insert" | "update" | "delete" | "ignore";
+
+export interface DbDataDiffFieldDelta {
+  columnName: string;
+  sourceValue?: unknown;
+  targetValue?: unknown;
+  changed: boolean;
+}
+
+export interface DbDataDiffRowDelta {
+  tableName: string;
+  rowKey: Record<string, string | number | boolean | null>;
+  status: DbDataRowStatus;
+  suggestedAction: DbDataSyncAction;
+  sourceRow?: Record<string, unknown>;
+  targetRow?: Record<string, unknown>;
+  fieldDiffs: DbDataDiffFieldDelta[];
+}
+
+export interface DbDataDiffActionCounts {
+  insert: number;
+  update: number;
+  delete: number;
+  unchanged: number;
+}
+
+export interface DbDataDiffTableRequest {
+  tableName: string;
+  keyColumns?: string[];
+  compareColumns?: string[];
+  whereClause?: string;
+}
+
+export interface DbDataDiffPreviewRequest {
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  tables: DbDataDiffTableRequest[];
+  businessKeyColumns?: Record<string, string[]>;
+  sampleLimit?: number;
+}
+
+export interface DbDataDiffTableSummary {
+  tableName: string;
+  keyColumns: string[];
+  compareColumns: string[];
+  statusCounts: DbDataDiffActionCounts;
+  blocked: boolean;
+  blockerCodes: DbDataSyncBlockerCode[];
+  sampleRows: DbDataDiffRowDelta[];
+}
+
+export interface DbDataDiffPreviewResponse {
+  compareId: string;
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  targetSnapshotHash: string;
+  createdAt: string;
+  expiresAt: string;
+  statusCounts: DbDataDiffActionCounts;
+  tableSummaries: DbDataDiffTableSummary[];
+  blockers: DbDataSyncBlocker[];
+}
+
+export interface DbDataDiffDetailRequest {
+  compareId: string;
+  tableName: string;
+  limit?: number;
+  offset?: number;
+  includeUnchanged?: boolean;
+}
+
+export interface DbDataDiffDetailResponse {
+  compareId: string;
+  tableName: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash?: string;
+  keyColumns: string[];
+  compareColumns: string[];
+  rows: DbDataDiffRowDelta[];
+  hasMore: boolean;
+  nextOffset?: number;
+  blockers: DbDataSyncBlocker[];
+}
+
+export interface DbDataApplySelection {
+  tableName: string;
+  rowKey: Record<string, string | number | boolean | null>;
+  action: Exclude<DbDataSyncAction, "ignore">;
+  compareColumns?: string[];
+}
+
+export interface DbDataApplyPreviewRequest {
+  compareId: string;
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash?: string;
+  selections: DbDataApplySelection[];
+  deleteWarningThreshold?: number;
+}
+
+export interface DbDataApplyPreviewResponse {
+  compareId: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash: string;
+  statusCounts: DbDataDiffActionCounts;
+  sqlPreviewLines: string[];
+  previewTruncated: boolean;
+  blockers: DbDataSyncBlocker[];
+  executable: boolean;
+}
+
+export interface DbDataApplyExecuteRequest {
+  compareId: string;
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash?: string;
+  selections: DbDataApplySelection[];
+}
+
+export interface DbDataApplyTableResult {
+  tableName: string;
+  action: Exclude<DbDataSyncAction, "ignore">;
+  attemptedRows: number;
+  succeededRows: number;
+  failedRows: number;
+  error?: string;
+}
+
+export type DbDataApplyJobStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "partial";
+
+export interface DbDataApplyExecuteResponse {
+  jobId: string;
+  compareId: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash: string;
+  status: DbDataApplyJobStatus;
+  statusCounts: DbDataDiffActionCounts;
+  tableResults: DbDataApplyTableResult[];
+  blockers: DbDataSyncBlocker[];
+}
+
+export interface DbDataApplyJobDetailRequest {
+  jobId: string;
+}
+
+export interface DbDataApplyJobDetailResponse {
+  jobId: string;
+  compareId: string;
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  targetSnapshotHash: string;
+  currentTargetSnapshotHash?: string;
+  status: DbDataApplyJobStatus;
+  statusCounts: DbDataDiffActionCounts;
+  tableResults: DbDataApplyTableResult[];
+  blockers: DbDataSyncBlocker[];
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+// ──────────────────────────────────────────────
 // Phase 1 クエリ実行 / EXPLAIN 型定義
 // ──────────────────────────────────────────────
 
