@@ -88,6 +88,7 @@ test("does not leak tabs across connection ids", () => {
     activeTabId: "tab-a",
     recentQueries: [],
     snippets: [],
+    selectedTableName: "users",
   });
 
   saveSessionForConnection("conn-b", {
@@ -102,6 +103,7 @@ test("does not leak tabs across connection ids", () => {
     activeTabId: "tab-b",
     recentQueries: [],
     snippets: [],
+    selectedTableName: "orders",
   });
 
   const sessionA = loadSessionForConnection("conn-a");
@@ -110,6 +112,9 @@ test("does not leak tabs across connection ids", () => {
   assert.equal(sessionA.tabs[0]?.id, "tab-a");
   assert.equal(sessionB.tabs[0]?.id, "tab-b");
   assert.notEqual(sessionA.tabs[0]?.sql, sessionB.tabs[0]?.sql);
+  assert.equal(sessionA.selectedTableName, "users");
+  assert.equal(sessionB.selectedTableName, "orders");
+  assert.notEqual(sessionA.selectedTableName, sessionB.selectedTableName);
 });
 
 test("recent query list dedupes by normalized SQL and caps at 30 items", () => {

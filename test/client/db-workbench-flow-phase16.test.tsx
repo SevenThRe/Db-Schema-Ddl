@@ -111,3 +111,40 @@ test("snippet list is isolated per connection", () => {
     assert.notEqual(sessionA.snippets[0]?.name, sessionB.snippets[0]?.name);
   });
 });
+
+test("switching connection restores selected table focus per connection", () => {
+  withWindowStorage(() => {
+    saveSessionForConnection("conn-a", {
+      tabs: [
+        {
+          id: "a-tab-1",
+          label: "A1",
+          sql: "SELECT * FROM users;",
+          connectionId: "conn-a",
+        },
+      ],
+      activeTabId: "a-tab-1",
+      selectedTableName: "users",
+    });
+
+    saveSessionForConnection("conn-b", {
+      tabs: [
+        {
+          id: "b-tab-1",
+          label: "B1",
+          sql: "SELECT * FROM orders;",
+          connectionId: "conn-b",
+        },
+      ],
+      activeTabId: "b-tab-1",
+      selectedTableName: "orders",
+    });
+
+    const sessionA = loadSessionForConnection("conn-a");
+    const sessionB = loadSessionForConnection("conn-b");
+
+    assert.equal(sessionA.selectedTableName, "users");
+    assert.equal(sessionB.selectedTableName, "orders");
+    assert.notEqual(sessionA.selectedTableName, sessionB.selectedTableName);
+  });
+});
