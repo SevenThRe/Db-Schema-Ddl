@@ -101,7 +101,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 | FLOW-03 | Phase 16 | Complete |
 | NAV-01 | Phase 16 | Complete |
 | NAV-02 | Phase 16 | Complete |
-| NAV-03 | Phase 16 | Pending |
+| NAV-03 | Phase 16 | Complete |
 | DATA-01 | Phase 17 | Pending |
 | DATA-02 | Phase 17 | Pending |
 | DATA-03 | Phase 17 | Pending |
@@ -123,4 +123,4 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 ---
 
-*Last updated: 2026-04-08 — Updated after completing 16-05 selected object persistence and per-connection restore regression locking*
+*Last updated: 2026-04-08 — Updated after completing 16-06 gap-closure sync (NAV-03 traceability + verification command docs alignment)*
