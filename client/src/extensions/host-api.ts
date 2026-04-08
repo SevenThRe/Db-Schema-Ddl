@@ -20,6 +20,16 @@ import type {
   DbGridPrepareCommitResponse,
   DbGridCommitRequest,
   DbGridCommitResponse,
+  DbDataDiffPreviewRequest,
+  DbDataDiffPreviewResponse,
+  DbDataDiffDetailRequest,
+  DbDataDiffDetailResponse,
+  DbDataApplyPreviewRequest,
+  DbDataApplyPreviewResponse,
+  DbDataApplyExecuteRequest,
+  DbDataApplyExecuteResponse,
+  DbDataApplyJobDetailRequest,
+  DbDataApplyJobDetailResponse,
 } from "@shared/schema";
 import type { StatusBarEntryInput } from "@/status-bar/types";
 
@@ -55,6 +65,11 @@ export interface ConnectionsApi {
   fetchMore(request: FetchMoreRequest): Promise<DbQueryBatchResult>;
   prepareGridCommit(request: DbGridPrepareCommitRequest): Promise<DbGridPrepareCommitResponse>;
   commitGridEdits(request: DbGridCommitRequest): Promise<DbGridCommitResponse>;
+  previewDataDiff(request: DbDataDiffPreviewRequest): Promise<DbDataDiffPreviewResponse>;
+  fetchDataDiffDetail(request: DbDataDiffDetailRequest): Promise<DbDataDiffDetailResponse>;
+  previewDataApply(request: DbDataApplyPreviewRequest): Promise<DbDataApplyPreviewResponse>;
+  executeDataApply(request: DbDataApplyExecuteRequest): Promise<DbDataApplyExecuteResponse>;
+  fetchDataApplyJobDetail(request: DbDataApplyJobDetailRequest): Promise<DbDataApplyJobDetailResponse>;
 }
 
 /** 通知 API */

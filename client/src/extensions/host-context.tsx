@@ -56,6 +56,11 @@ const noopHostApi: HostApi = {
     fetchMore: () => Promise.reject(new Error("HostApi not available")),
     prepareGridCommit: () => Promise.reject(new Error("HostApi not available")),
     commitGridEdits: () => Promise.reject(new Error("HostApi not available")),
+    previewDataDiff: () => Promise.reject(new Error("HostApi not available")),
+    fetchDataDiffDetail: () => Promise.reject(new Error("HostApi not available")),
+    previewDataApply: () => Promise.reject(new Error("HostApi not available")),
+    executeDataApply: () => Promise.reject(new Error("HostApi not available")),
+    fetchDataApplyJobDetail: () => Promise.reject(new Error("HostApi not available")),
   },
   statusBar: {
     set: () => () => {},

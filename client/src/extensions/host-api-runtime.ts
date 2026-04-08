@@ -17,6 +17,7 @@ const ALL_CAPABILITIES: string[] = [
   "db.plan.read",
   "db.result.export",
   "db.data.edit",
+  "db.data.sync",
 ];
 
 /**
@@ -100,6 +101,26 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
     commitGridEdits: (request) => {
       try { requireCap(granted, "db.data.edit"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.commitGridEdits(request);
+    },
+    previewDataDiff: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.previewDataDiff(request);
+    },
+    fetchDataDiffDetail: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.fetchDataDiffDetail(request);
+    },
+    previewDataApply: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.previewDataApply(request);
+    },
+    executeDataApply: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.executeDataApply(request);
+    },
+    fetchDataApplyJobDetail: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.fetchDataApplyJobDetail(request);
     },
   };
 }

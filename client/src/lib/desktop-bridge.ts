@@ -41,6 +41,16 @@ import type {
   DbGridPrepareCommitResponse,
   DbGridCommitRequest,
   DbGridCommitResponse,
+  DbDataDiffPreviewRequest,
+  DbDataDiffPreviewResponse,
+  DbDataDiffDetailRequest,
+  DbDataDiffDetailResponse,
+  DbDataApplyPreviewRequest,
+  DbDataApplyPreviewResponse,
+  DbDataApplyExecuteRequest,
+  DbDataApplyExecuteResponse,
+  DbDataApplyJobDetailRequest,
+  DbDataApplyJobDetailResponse,
 } from "@shared/schema";
 import { getDesktopCapabilities } from "@/lib/desktop-capabilities";
 
@@ -434,6 +444,31 @@ export const desktopBridge = {
       request: DbGridCommitRequest,
     ): Promise<DbGridCommitResponse> {
       return await invoke<DbGridCommitResponse>("db_grid_commit", { request });
+    },
+    async previewDataDiff(
+      request: DbDataDiffPreviewRequest,
+    ): Promise<DbDataDiffPreviewResponse> {
+      return await invoke<DbDataDiffPreviewResponse>("db_data_diff_preview", { request });
+    },
+    async fetchDataDiffDetail(
+      request: DbDataDiffDetailRequest,
+    ): Promise<DbDataDiffDetailResponse> {
+      return await invoke<DbDataDiffDetailResponse>("db_data_diff_detail", { request });
+    },
+    async previewDataApply(
+      request: DbDataApplyPreviewRequest,
+    ): Promise<DbDataApplyPreviewResponse> {
+      return await invoke<DbDataApplyPreviewResponse>("db_data_apply_preview", { request });
+    },
+    async executeDataApply(
+      request: DbDataApplyExecuteRequest,
+    ): Promise<DbDataApplyExecuteResponse> {
+      return await invoke<DbDataApplyExecuteResponse>("db_data_apply_execute", { request });
+    },
+    async fetchDataApplyJobDetail(
+      request: DbDataApplyJobDetailRequest,
+    ): Promise<DbDataApplyJobDetailResponse> {
+      return await invoke<DbDataApplyJobDetailResponse>("db_data_apply_job_detail", { request });
     },
   },
 
