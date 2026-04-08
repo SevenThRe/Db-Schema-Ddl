@@ -230,6 +230,24 @@ fn is_artifact_expired(expires_at: &str, now: DateTime<Utc>) -> bool {
     .unwrap_or(true)
 }
 
+fn parse_row_status(raw: &str) -> DbDataRowStatus {
+  match raw {
+    "source_only" => DbDataRowStatus::SourceOnly,
+    "target_only" => DbDataRowStatus::TargetOnly,
+    "value_changed" => DbDataRowStatus::ValueChanged,
+    _ => DbDataRowStatus::Unchanged,
+  }
+}
+
+fn suggested_action_for_status(status: DbDataRowStatus) -> DbDataSyncAction {
+  match status {
+    DbDataRowStatus::SourceOnly => DbDataSyncAction::Insert,
+    DbDataRowStatus::TargetOnly => DbDataSyncAction::Delete,
+    DbDataRowStatus::ValueChanged => DbDataSyncAction::Update,
+    DbDataRowStatus::Unchanged => DbDataSyncAction::Ignore,
+  }
+}
+
 pub async fn db_data_diff_preview(
   app: &AppHandle,
   request: DbDataDiffPreviewRequest,
@@ -344,6 +362,15 @@ pub async fn db_data_diff_preview(
     &table_records,
   )?;
 
+  for summary in &table_summaries {
+    storage::replace_db_data_compare_rows(
+      app,
+      &compare_id,
+      &summary.table_name,
+      &[],
+    )?;
+  }
+
   Ok(DbDataDiffPreviewResponse {
     compare_id,
     source_connection_id: request.source_connection_id,
@@ -410,6 +437,43 @@ pub async fn db_data_diff_detail(
     });
   }
 
+  let limit = request.limit.unwrap_or(100).max(1);
+  let offset = request.offset.unwrap_or(0);
+  let include_unchanged = request.include_unchanged.unwrap_or(false);
+
+  let row_records = storage::list_db_data_compare_rows(
+    app,
+    &request.compare_id,
+    &request.table_name,
+    limit,
+    offset,
+    include_unchanged,
+  )?;
+
+  let rows = row_records
+    .iter()
+    .map(|record| {
+      let status = parse_row_status(&record.status);
+      DbDataDiffRowDelta {
+        table_name: record.table_name.clone(),
+        row_key: serde_json::from_str::<HashMap<String, Value>>(&record.row_key_json)
+          .unwrap_or_default(),
+        status: status.clone(),
+        suggested_action: suggested_action_for_status(status),
+        source_row: record
+          .source_row_json
+          .as_ref()
+          .and_then(|json| serde_json::from_str::<HashMap<String, Value>>(json).ok()),
+        target_row: record
+          .target_row_json
+          .as_ref()
+          .and_then(|json| serde_json::from_str::<HashMap<String, Value>>(json).ok()),
+        field_diffs: serde_json::from_str::<Vec<DbDataDiffFieldDelta>>(&record.field_diffs_json)
+          .unwrap_or_default(),
+      }
+    })
+    .collect::<Vec<_>>();
+
   let target_snapshot_hash = compare.target_snapshot_hash.clone();
   Ok(DbDataDiffDetailResponse {
     compare_id: request.compare_id,
@@ -418,9 +482,13 @@ pub async fn db_data_diff_detail(
     current_target_snapshot_hash: Some(compare.target_snapshot_hash),
     key_columns,
     compare_columns: vec![],
-    rows: vec![],
-    has_more: false,
-    next_offset: None,
+    rows,
+    has_more: row_records.len() as u32 >= limit,
+    next_offset: if row_records.len() as u32 >= limit {
+      Some(offset.saturating_add(limit))
+    } else {
+      None
+    },
     blockers,
   })
 }

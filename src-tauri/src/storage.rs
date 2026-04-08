@@ -208,6 +208,17 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         blocker_code TEXT,
         PRIMARY KEY(compare_id, table_name)
       );
+
+      CREATE TABLE IF NOT EXISTS db_data_compare_rows (
+        compare_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        row_key_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        source_row_json TEXT,
+        target_row_json TEXT,
+        field_diffs_json TEXT NOT NULL,
+        PRIMARY KEY(compare_id, table_name, row_key_json)
+      );
       ",
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
@@ -1288,4 +1299,133 @@ pub fn get_db_data_compare_table(
     )
     .optional()
     .map_err(|error| storage_error("load db_data_compare table", error))
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDataCompareRowRecord {
+  pub compare_id: String,
+  pub table_name: String,
+  pub row_key_json: String,
+  pub status: String,
+  pub source_row_json: Option<String>,
+  pub target_row_json: Option<String>,
+  pub field_diffs_json: String,
+}
+
+pub fn replace_db_data_compare_rows(
+  app: &AppHandle,
+  compare_id: &str,
+  table_name: &str,
+  rows: &[DbDataCompareRowRecord],
+) -> Result<(), String> {
+  let (mut conn, _) = open_connection(app)?;
+  let tx = conn
+    .transaction()
+    .map_err(|error| storage_error("start compare row transaction", error))?;
+
+  tx
+    .execute(
+      "
+      DELETE FROM db_data_compare_rows
+      WHERE compare_id = ?1 AND table_name = ?2
+      ",
+      params![compare_id, table_name],
+    )
+    .map_err(|error| storage_error("clear compare rows", error))?;
+
+  let mut stmt = tx
+    .prepare(
+      "
+      INSERT INTO db_data_compare_rows (
+        compare_id,
+        table_name,
+        row_key_json,
+        status,
+        source_row_json,
+        target_row_json,
+        field_diffs_json
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ",
+    )
+    .map_err(|error| storage_error("prepare compare row insert", error))?;
+
+  for row in rows {
+    stmt
+      .execute(params![
+        row.compare_id,
+        row.table_name,
+        row.row_key_json,
+        row.status,
+        row.source_row_json,
+        row.target_row_json,
+        row.field_diffs_json,
+      ])
+      .map_err(|error| storage_error("insert compare row", error))?;
+  }
+  drop(stmt);
+
+  tx
+    .commit()
+    .map_err(|error| storage_error("commit compare row transaction", error))?;
+  Ok(())
+}
+
+pub fn list_db_data_compare_rows(
+  app: &AppHandle,
+  compare_id: &str,
+  table_name: &str,
+  limit: u32,
+  offset: u32,
+  include_unchanged: bool,
+) -> Result<Vec<DbDataCompareRowRecord>, String> {
+  let (conn, _) = open_connection(app)?;
+  let where_unchanged = if include_unchanged {
+    String::new()
+  } else {
+    "AND status <> 'unchanged'".to_string()
+  };
+
+  let sql = format!(
+    "
+    SELECT
+      compare_id,
+      table_name,
+      row_key_json,
+      status,
+      source_row_json,
+      target_row_json,
+      field_diffs_json
+    FROM db_data_compare_rows
+    WHERE compare_id = ?1 AND table_name = ?2
+      {where_unchanged}
+    ORDER BY row_key_json
+    LIMIT ?3 OFFSET ?4
+    "
+  );
+
+  let mut stmt = conn
+    .prepare(&sql)
+    .map_err(|error| storage_error("prepare compare row list", error))?;
+  let rows = stmt
+    .query_map(
+      params![compare_id, table_name, i64::from(limit), i64::from(offset)],
+      |row| {
+        Ok(DbDataCompareRowRecord {
+          compare_id: row.get("compare_id")?,
+          table_name: row.get("table_name")?,
+          row_key_json: row.get("row_key_json")?,
+          status: row.get("status")?,
+          source_row_json: row.get("source_row_json")?,
+          target_row_json: row.get("target_row_json")?,
+          field_diffs_json: row.get("field_diffs_json")?,
+        })
+      },
+    )
+    .map_err(|error| storage_error("query compare rows", error))?;
+
+  let mut out = Vec::new();
+  for row in rows {
+    out.push(decode_row(row, "decode compare row")?);
+  }
+  Ok(out)
 }
