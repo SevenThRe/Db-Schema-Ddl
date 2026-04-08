@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Phase 16 now ships schema-aware alias-resolved autocomplete with regression coverage for connection-scoped continuity
-last_updated: "2026-04-07T13:26:37+09:00"
-last_activity: 2026-04-07 — Executed 16-04, recorded summary, and closed Unified Workspace Flow phase scope
+status: Phase 16 now persists selected object focus per connection with regression-locked session continuity
+last_updated: "2026-04-08T16:16:05+09:00"
+last_activity: 2026-04-08 — Executed 16-05, recorded summary, and advanced Unified Workspace Flow to plan 5/6
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 1
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 
 ## Current Position
 
-Phase: 16 (unified-workspace-flow) — COMPLETE
-Plan: 04 completed (4/4)
-Status: Schema-aware autocomplete now resolves active-schema aliases and phase-16 session/autocomplete regressions are locked by node tests
-Last activity: 2026-04-07 — Executed 16-04, recorded summary, and marked phase ready for transition
+Phase: 16 (unified-workspace-flow) — IN PROGRESS
+Plan: 05 completed (5/6)
+Status: Selected object focus (`selectedTableName`) now restores per connection alongside tabs/drafts/recent/snippets
+Last activity: 2026-04-08 — Executed 16-05, recorded summary, and advanced Unified Workspace Flow to 5/6 plans
 
 ## Important Assumptions
 
@@ -147,10 +147,16 @@ Last activity: 2026-04-07 — Executed 16-04, recorded summary, and marked phase
 - Monaco completion registration is now explicit (`registerCompletionItemProvider`) with dispose/re-register lifecycle control to avoid duplicate providers during remounts or connection switches.
 - Alias resolution now supports `FROM/JOIN` alias patterns (including schema-qualified references), and phase-16 regressions lock `SELECT u.` and `JOIN orders o` autocomplete behavior plus connection-scoped `recent sql` and `snippet` session continuity.
 
+## Architecture Decisions (Plan 16-05 Additions)
+
+- Workbench session v2 payload now includes `selectedTableName: string | null` so selected object focus is persisted in the same connection-scoped contract as tabs/drafts/recent/snippets.
+- Connection-switch hydration in `WorkbenchLayout` explicitly restores selected object focus via `setSelectedTableName(restored.selectedTableName)` before continuing normal explorer reconciliation.
+- Phase-16 session regressions now assert selected object isolation across at least two connection IDs in both session-contract and flow-level tests.
+
 ## Next Command
 
-- `$gsd-plan-phase 17`
+- `$gsd-execute-phase 16`
 - `$gsd-verify-work 16`
 
 ---
-*Last updated: 2026-04-07 after completing 16-04 schema-aware autocomplete and phase continuity regression coverage*
+*Last updated: 2026-04-08 after completing 16-05 selected object persistence and continuity regression locking*

@@ -18,7 +18,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 ## Phases
 
 - [x] **Phase 15: Query Runtime Hardening** - User can trust query execution, paging, cancel, export, and schema context on real databases instead of demo-sized data
-- [x] **Phase 16: Unified Workspace Flow** - User works through one primary DB Workbench path with per-connection sessions, recent work, object explorer, and schema-aware autocomplete (completed 2026-04-07)
+- [ ] **Phase 16: Unified Workspace Flow** - User works through one primary DB Workbench path with per-connection sessions, recent work, object explorer, and schema-aware autocomplete (in progress: 5/6 plans complete)
 - [ ] **Phase 17: Safe Data Editing** - User can safely edit single-table results with SQL preview, transaction commit, and rollback semantics
 - [ ] **Phase 18: Live Data Compare & Sync** - User can compare source vs target live DB data, preview sync actions, and apply them with snapshot guarding and audit history
 
@@ -49,7 +49,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
   3. User can reopen recent queries and save/reuse SQL snippets for the active connection
   4. User can browse schemas, tables, views, indexes, and foreign keys from an object explorer and launch starter queries directly from that surface
   5. User receives schema-aware autocomplete from cached metadata, including alias-resolved column suggestions for active query context
-**Plans**: 3/4 complete (16-01, 16-02, 16-03)
+**Plans**: 5/6 complete (16-01, 16-02, 16-03, 16-04, 16-05)
 **UI hint**: yes
 
 ### Phase 17: Safe Data Editing
@@ -81,7 +81,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 15. Query Runtime Hardening | 4/4 | Complete    | 2026-04-07 |
-| 16. Unified Workspace Flow | 4/4 | Complete   | 2026-04-07 |
+| 16. Unified Workspace Flow | 5/6 | In Progress|  |
 | 17. Safe Data Editing | 0/0 | Not started | - |
 | 18. Live Data Compare & Sync | 0/0 | Not started | - |
 
@@ -123,4 +123,4 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 ---
 
-*Last updated: 2026-04-07 — Updated after completing 16-03 explorer depth and starter-query actions*
+*Last updated: 2026-04-08 — Updated after completing 16-05 selected object persistence and per-connection restore regression locking*
