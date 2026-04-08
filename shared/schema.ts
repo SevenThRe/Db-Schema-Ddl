@@ -972,11 +972,89 @@ export interface QueryExecutionRequest {
 export interface DbQueryColumn {
   name: string;
   dataType: string;
+  sourceTable?: string;
+  sourceSchema?: string;
+  sourceColumn?: string;
+  isPrimaryKey?: boolean;
 }
 
 /** クエリ結果の1行 */
 export interface DbQueryRow {
   values: (string | number | boolean | null)[];
+}
+
+export type DbGridEditSourceKind =
+  | "table-open"
+  | "starter-select"
+  | "starter-columns"
+  | "starter-count"
+  | "custom-sql";
+
+export interface DbGridEditSource {
+  kind: DbGridEditSourceKind;
+  tableName?: string;
+  schema?: string;
+  queryMode?: "select" | "count" | "columns";
+}
+
+export interface DbGridEditEligibilityReason {
+  code:
+    | "readonly_connection"
+    | "unsupported_source"
+    | "count_result"
+    | "missing_primary_key"
+    | "missing_primary_key_column"
+    | "duplicate_primary_key_tuple"
+    | "empty_result"
+    | "result_error"
+    | "table_not_found";
+  message: string;
+}
+
+export interface DbGridEditEligibility {
+  eligible: boolean;
+  reasons: DbGridEditEligibilityReason[];
+}
+
+export interface DbGridEditPatchCell {
+  rowPrimaryKey: Record<string, string | number | boolean | null>;
+  rowPkTuple: string;
+  columnName: string;
+  beforeValue: string | number | boolean | null;
+  nextValue: string | number | boolean | null;
+}
+
+export interface DbGridPrepareCommitRequest {
+  connectionId: string;
+  schema?: string;
+  tableName: string;
+  source: DbGridEditSource;
+  primaryKeyColumns: string[];
+  patchCells: DbGridEditPatchCell[];
+}
+
+export interface DbGridPrepareCommitResponse {
+  planId: string;
+  planHash: string;
+  affectedRows: number;
+  changedColumnsSummary: string[];
+  sqlPreviewLines: string[];
+  previewTruncated: boolean;
+}
+
+export interface DbGridCommitRequest {
+  connectionId: string;
+  planId: string;
+  planHash: string;
+}
+
+export interface DbGridCommitResponse {
+  planId: string;
+  planHash: string;
+  committedRows: number;
+  failedSqlIndex?: number;
+  failedRowPkTuple?: string;
+  message?: string;
 }
 
 /**
@@ -998,6 +1076,9 @@ export interface DbQueryBatchResult {
   pagingReason?: string;
   nextOffset?: number;
   schema?: string;
+  editEligibility?: DbGridEditEligibility;
+  editSource?: DbGridEditSource;
+  primaryKeyColumns?: string[];
   elapsedMs: number;
   affectedRows?: number;
   error?: string;

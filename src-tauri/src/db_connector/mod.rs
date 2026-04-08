@@ -127,6 +127,114 @@ pub struct DbQueryRow {
   pub values: Vec<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DbGridEditSourceKind {
+  TableOpen,
+  StarterSelect,
+  StarterColumns,
+  StarterCount,
+  CustomSql,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridEditSource {
+  pub kind: DbGridEditSourceKind,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub table_name: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub query_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbGridEditEligibilityCode {
+  ReadonlyConnection,
+  UnsupportedSource,
+  CountResult,
+  MissingPrimaryKey,
+  MissingPrimaryKeyColumn,
+  DuplicatePrimaryKeyTuple,
+  EmptyResult,
+  ResultError,
+  TableNotFound,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridEditEligibilityReason {
+  pub code: DbGridEditEligibilityCode,
+  pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridEditEligibility {
+  pub eligible: bool,
+  #[serde(default)]
+  pub reasons: Vec<DbGridEditEligibilityReason>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridEditPatchCell {
+  pub row_primary_key: HashMap<String, serde_json::Value>,
+  pub row_pk_tuple: String,
+  pub column_name: String,
+  pub before_value: serde_json::Value,
+  pub next_value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridPrepareCommitRequest {
+  pub connection_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
+  pub table_name: String,
+  pub source: DbGridEditSource,
+  pub primary_key_columns: Vec<String>,
+  pub patch_cells: Vec<DbGridEditPatchCell>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridPrepareCommitResponse {
+  pub plan_id: String,
+  pub plan_hash: String,
+  pub affected_rows: u64,
+  #[serde(default)]
+  pub changed_columns_summary: Vec<String>,
+  #[serde(default)]
+  pub sql_preview_lines: Vec<String>,
+  pub preview_truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridCommitRequest {
+  pub connection_id: String,
+  pub plan_id: String,
+  pub plan_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGridCommitResponse {
+  pub plan_id: String,
+  pub plan_hash: String,
+  pub committed_rows: u64,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub failed_sql_index: Option<u64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub failed_row_pk_tuple: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub message: Option<String>,
+}
+
 /// 1ステートメント分の実行結果バッチ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
