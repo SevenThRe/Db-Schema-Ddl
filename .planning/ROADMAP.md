@@ -82,7 +82,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 |-------|----------------|--------|-----------|
 | 15. Query Runtime Hardening | 4/4 | Complete    | 2026-04-07 |
 | 16. Unified Workspace Flow | 6/6 | Complete    | 2026-04-08 |
-| 17. Safe Data Editing | 2/4 | In Progress|  |
+| 17. Safe Data Editing | 3/4 | In Progress|  |
 | 18. Live Data Compare & Sync | 0/0 | Not started | - |
 
 ---
