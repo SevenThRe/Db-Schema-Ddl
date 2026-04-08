@@ -1,11 +1,8 @@
 // DB 接続管理 Tauri コマンド
 
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use chrono::Utc;
 use serde_json::{Map, Value};
 use sqlx::Row;
 use tauri::{AppHandle, State};
@@ -18,11 +15,9 @@ use super::query::{
 use super::{
   compute_schema_diff, introspect_schema, test_connection, AnyPool, CancellationRegistry,
   DbConnectionConfig, DbDataApplyExecuteRequest, DbDataApplyExecuteResponse,
-  DbDataApplyJobDetailRequest, DbDataApplyJobDetailResponse, DbDataApplyJobStatus,
-  DbDataApplyPreviewRequest, DbDataApplyPreviewResponse, DbDataApplyTableResult,
-  DbDataDiffActionCounts, DbDataDiffDetailRequest, DbDataDiffDetailResponse,
-  DbDataDiffPreviewRequest, DbDataDiffPreviewResponse,
-  DbDataSyncAction, DbDataSyncBlocker, DbDataSyncBlockerCode, DbDriver,
+  DbDataApplyJobDetailRequest, DbDataApplyJobDetailResponse,
+  DbDataApplyPreviewRequest, DbDataApplyPreviewResponse, DbDataDiffDetailRequest,
+  DbDataDiffDetailResponse, DbDataDiffPreviewRequest, DbDataDiffPreviewResponse, DbDriver,
   DbPoolRegistry, DbQueryColumn, DbQueryPagingMode, DbQueryRow, DbSchemaDiffResult,
   DbSchemaListResponse, DbSchemaSnapshot, ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
 };
@@ -473,22 +468,6 @@ pub async fn db_diff(
   Ok(compute_schema_diff(&source, &target))
 }
 
-fn now_epoch_millis() -> i64 {
-  SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .map(|duration| duration.as_millis() as i64)
-    .unwrap_or(0)
-}
-
-fn zero_action_counts() -> DbDataDiffActionCounts {
-  DbDataDiffActionCounts {
-    insert: 0,
-    update: 0,
-    delete: 0,
-    unchanged: 0,
-  }
-}
-
 #[tauri::command]
 pub async fn db_data_diff_preview(
   app: AppHandle,
@@ -507,83 +486,24 @@ pub async fn db_data_diff_detail(
 
 #[tauri::command]
 pub async fn db_data_apply_preview(
+  app: AppHandle,
   request: DbDataApplyPreviewRequest,
 ) -> Result<DbDataApplyPreviewResponse, String> {
-  let current_target_snapshot_hash = request
-    .current_target_snapshot_hash
-    .clone()
-    .unwrap_or_default();
-
-  let delete_count = request
-    .selections
-    .iter()
-    .filter(|selection| selection.action == DbDataSyncAction::Delete)
-    .count() as u64;
-  let threshold = request.delete_warning_threshold.unwrap_or(0);
-
-  let mut blockers = Vec::new();
-  if delete_count > threshold && threshold > 0 {
-    blockers.push(DbDataSyncBlocker {
-      code: DbDataSyncBlockerCode::UnsafeDeleteThreshold,
-      message: "Delete selections exceed configured threshold.".to_string(),
-      table_name: None,
-      level: Some("warning".to_string()),
-    });
-  }
-
-  Ok(DbDataApplyPreviewResponse {
-    compare_id: request.compare_id,
-    target_snapshot_hash: request.target_snapshot_hash,
-    current_target_snapshot_hash,
-    status_counts: zero_action_counts(),
-    sql_preview_lines: vec![],
-    preview_truncated: false,
-    blockers,
-    executable: true,
-  })
+  super::data_apply::db_data_apply_preview(&app, request).await
 }
 
 #[tauri::command]
 pub async fn db_data_apply_execute(
+  app: AppHandle,
   request: DbDataApplyExecuteRequest,
 ) -> Result<DbDataApplyExecuteResponse, String> {
-  Ok(DbDataApplyExecuteResponse {
-    job_id: format!("job-{}", now_epoch_millis()),
-    compare_id: request.compare_id,
-    target_snapshot_hash: request.target_snapshot_hash,
-    current_target_snapshot_hash: request.current_target_snapshot_hash.unwrap_or_default(),
-    status: DbDataApplyJobStatus::Pending,
-    status_counts: zero_action_counts(),
-    table_results: vec![],
-    blockers: vec![],
-  })
+  super::data_apply::db_data_apply_execute(&app, request).await
 }
 
 #[tauri::command]
 pub async fn db_data_apply_job_detail(
+  app: AppHandle,
   request: DbDataApplyJobDetailRequest,
 ) -> Result<DbDataApplyJobDetailResponse, String> {
-  let now = Utc::now().to_rfc3339();
-  Ok(DbDataApplyJobDetailResponse {
-    job_id: request.job_id,
-    compare_id: String::new(),
-    source_connection_id: String::new(),
-    target_connection_id: String::new(),
-    target_snapshot_hash: String::new(),
-    current_target_snapshot_hash: None,
-    status: DbDataApplyJobStatus::Pending,
-    status_counts: zero_action_counts(),
-    table_results: vec![DbDataApplyTableResult {
-      table_name: String::new(),
-      action: DbDataSyncAction::Ignore,
-      attempted_rows: 0,
-      succeeded_rows: 0,
-      failed_rows: 0,
-      error: None,
-    }],
-    blockers: vec![],
-    created_at: now.clone(),
-    started_at: Some(now.clone()),
-    finished_at: Some(now),
-  })
+  super::data_apply::db_data_apply_job_detail(&app, request).await
 }
