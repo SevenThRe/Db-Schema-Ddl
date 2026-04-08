@@ -791,4 +791,19 @@ mod tests {
     assert!(!outcome.rolled_back);
     assert_eq!(outcome.committed_steps, 3);
   }
+
+  #[test]
+  fn test_commit_rejects_non_update_statement() {
+    let result = ensure_update_only_statements(&[PreparedUpdateStatement {
+      sql: "INSERT INTO users(id) VALUES ($1)".to_string(),
+      row_pk_tuple: "id=1".to_string(),
+      set_values: vec![Value::from(1)],
+      where_values: vec![],
+    }]);
+    assert!(result.is_err());
+    assert!(result
+      .err()
+      .unwrap_or_default()
+      .contains("Only UPDATE mutation plans are supported"));
+  }
 }
