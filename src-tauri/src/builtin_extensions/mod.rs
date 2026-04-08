@@ -184,6 +184,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
                 "db.schema.read".to_string(),
                 "db.plan.read".to_string(),
                 "db.result.export".to_string(),
+                "db.data.edit".to_string(),
             ],
             input_formats: vec!["mysql".to_string(), "postgres".to_string()],
             output_formats: vec!["diff".to_string(), "xlsx".to_string()],

@@ -16,6 +16,7 @@ const ALL_CAPABILITIES: string[] = [
   "db.schema.apply",
   "db.plan.read",
   "db.result.export",
+  "db.data.edit",
 ];
 
 /**
@@ -56,6 +57,10 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
       try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.introspect(connectionId);
     },
+    listSchemas: (connectionId) => {
+      try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.listSchemas(connectionId);
+    },
     diff: (sourceId, targetId) => {
       try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.diff(sourceId, targetId);
@@ -87,6 +92,14 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
     fetchMore: (request) => {
       try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.fetchMore(request);
+    },
+    prepareGridCommit: (request) => {
+      try { requireCap(granted, "db.data.edit"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.prepareGridCommit(request);
+    },
+    commitGridEdits: (request) => {
+      try { requireCap(granted, "db.data.edit"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.commitGridEdits(request);
     },
   };
 }

@@ -12,9 +12,14 @@ import type {
   ExplainRequest,
   DbExplainPlan,
   DangerousSqlPreview,
+  BinaryCommandResult,
   ExportRowsRequest,
   FetchMoreRequest,
   DbQueryBatchResult,
+  DbGridPrepareCommitRequest,
+  DbGridPrepareCommitResponse,
+  DbGridCommitRequest,
+  DbGridCommitResponse,
 } from "@shared/schema";
 import type { StatusBarEntryInput } from "@/status-bar/types";
 
@@ -39,14 +44,17 @@ export interface ConnectionsApi {
   remove(id: string): Promise<void>;
   test(config: DbConnectionConfig): Promise<string>;
   introspect(connectionId: string): Promise<DbSchemaSnapshot>;
+  listSchemas?(connectionId: string): Promise<string[]>;
   diff(sourceId: string, targetId: string): Promise<DbSchemaDiffResult>;
   // Phase 1 DB 工作台 — クエリ実行・エクスポート・EXPLAIN
   executeQuery(request: QueryExecutionRequest): Promise<QueryExecutionResponse>;
   explainQuery(request: ExplainRequest): Promise<DbExplainPlan>;
   cancelQuery(requestId: string): Promise<void>;
   previewDangerousSql(connectionId: string, sql: string): Promise<DangerousSqlPreview>;
-  exportRows(request: ExportRowsRequest): Promise<string>;
+  exportRows(request: ExportRowsRequest): Promise<BinaryCommandResult>;
   fetchMore(request: FetchMoreRequest): Promise<DbQueryBatchResult>;
+  prepareGridCommit(request: DbGridPrepareCommitRequest): Promise<DbGridPrepareCommitResponse>;
+  commitGridEdits(request: DbGridCommitRequest): Promise<DbGridCommitResponse>;
 }
 
 /** 通知 API */

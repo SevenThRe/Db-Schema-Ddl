@@ -37,6 +37,10 @@ import type {
   ExportRowsRequest,
   FetchMoreRequest,
   DbQueryBatchResult,
+  DbGridPrepareCommitRequest,
+  DbGridPrepareCommitResponse,
+  DbGridCommitRequest,
+  DbGridCommitResponse,
 } from "@shared/schema";
 import { getDesktopCapabilities } from "@/lib/desktop-capabilities";
 
@@ -393,6 +397,9 @@ export const desktopBridge = {
     async introspect(connectionId: string): Promise<DbSchemaSnapshot> {
       return await invoke<DbSchemaSnapshot>("db_introspect", { connectionId });
     },
+    async listSchemas(connectionId: string): Promise<string[]> {
+      return await invoke<string[]>("db_list_schemas", { connectionId });
+    },
     async diff(sourceConnectionId: string, targetConnectionId: string): Promise<DbSchemaDiffResult> {
       return await invoke<DbSchemaDiffResult>("db_diff", { sourceConnectionId, targetConnectionId });
     },
@@ -408,13 +415,25 @@ export const desktopBridge = {
       await invoke<void>("db_query_cancel", { requestId });
     },
     async previewDangerousSql(connectionId: string, sql: string): Promise<DangerousSqlPreview> {
-      return await invoke<DangerousSqlPreview>("db_preview_dangerous_sql", { connectionId, sql });
+      return await invoke<DangerousSqlPreview>("db_preview_dangerous_sql", {
+        request: { connectionId, sql },
+      });
     },
-    async exportRows(request: ExportRowsRequest): Promise<string> {
-      return await invoke<string>("db_export_rows", { request });
+    async exportRows(request: ExportRowsRequest): Promise<BinaryCommandResult> {
+      return await invoke<BinaryCommandResult>("db_export_rows", { request });
     },
     async fetchMore(request: FetchMoreRequest): Promise<DbQueryBatchResult> {
       return await invoke<DbQueryBatchResult>("db_query_fetch_more", { request });
+    },
+    async prepareGridCommit(
+      request: DbGridPrepareCommitRequest,
+    ): Promise<DbGridPrepareCommitResponse> {
+      return await invoke<DbGridPrepareCommitResponse>("db_grid_prepare_commit", { request });
+    },
+    async commitGridEdits(
+      request: DbGridCommitRequest,
+    ): Promise<DbGridCommitResponse> {
+      return await invoke<DbGridCommitResponse>("db_grid_commit", { request });
     },
   },
 

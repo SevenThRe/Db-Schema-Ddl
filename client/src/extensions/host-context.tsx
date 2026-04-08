@@ -54,6 +54,8 @@ const noopHostApi: HostApi = {
     previewDangerousSql: () => Promise.reject(new Error("HostApi not available")),
     exportRows: () => Promise.reject(new Error("HostApi not available")),
     fetchMore: () => Promise.reject(new Error("HostApi not available")),
+    prepareGridCommit: () => Promise.reject(new Error("HostApi not available")),
+    commitGridEdits: () => Promise.reject(new Error("HostApi not available")),
   },
   statusBar: {
     set: () => () => {},

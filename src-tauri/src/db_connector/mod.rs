@@ -5,6 +5,7 @@ pub mod commands;
 mod introspect;
 pub mod query;
 pub mod explain;
+pub mod grid_edit;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
