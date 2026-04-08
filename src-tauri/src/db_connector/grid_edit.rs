@@ -192,6 +192,7 @@ pub async fn db_grid_commit(
   if prepared.statements.is_empty() {
     return Err("Prepared plan is empty".to_string());
   }
+  ensure_update_only_statements(&prepared.statements)?;
 
   let pool = get_or_create_pool(&pool_registry, &config).await?;
 
@@ -501,6 +502,20 @@ fn build_update_sql(
   Ok(format!(
     "UPDATE {qualified_table} SET {set_clause} WHERE {where_clause}"
   ))
+}
+
+fn ensure_update_only_statements(statements: &[PreparedUpdateStatement]) -> Result<(), String> {
+  for statement in statements {
+    if !statement
+      .sql
+      .trim_start()
+      .to_ascii_uppercase()
+      .starts_with("UPDATE ")
+    {
+      return Err("Only UPDATE mutation plans are supported in phase 17".to_string());
+    }
+  }
+  Ok(())
 }
 
 fn compute_plan_hash(
