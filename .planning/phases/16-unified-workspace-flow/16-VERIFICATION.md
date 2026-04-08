@@ -1,11 +1,11 @@
 ---
-status: gaps_found
+status: passed
 phase: 16-unified-workspace-flow
-verified_at: 2026-04-07
-must_have_score: "32/32 plan must-have checks; 5/6 requirement goals fully satisfied"
+verified_at: 2026-04-08
+must_have_score: "53/53 plan must-have checks; 6/6 requirement goals satisfied"
 ---
 
-# Phase 16 Verification
+# Phase 16 Verification (Post 16-05 / 16-06)
 
 ## Scope
 
@@ -17,168 +17,151 @@ Phase goal under verification:
 
 Inputs reviewed:
 
-- `AGENTS.md` (treated as primary project guidance)
-- `CLAUDE.md` (secondary; older project shape)
-- Phase plans: `16-01-PLAN.md` to `16-04-PLAN.md`
-- Phase summaries: `16-01-SUMMARY.md` to `16-04-SUMMARY.md`
-- Runtime/frontend/shared/Rust code paths referenced by Phase 16
+- `AGENTS.md`
+- `CLAUDE.md`
+- `.planning/ROADMAP.md`
+- `.planning/REQUIREMENTS.md`
+- `.planning/STATE.md`
+- `.planning/phases/16-unified-workspace-flow/16-01-PLAN.md` ... `16-06-PLAN.md`
+- `.planning/phases/16-unified-workspace-flow/16-01-SUMMARY.md` ... `16-06-SUMMARY.md`
+- `client/src/components/extensions/db-workbench/workbench-session.ts`
+- `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx`
+- `test/client/db-workbench-session-phase16.test.ts`
+- `test/client/db-workbench-flow-phase16.test.tsx`
+- `.planning/phases/16-unified-workspace-flow/16-04-PLAN.md`
 
 ## Verification Commands
 
 Executed in `C:\Users\ISI202502\Downloads\Db-Schema-Ddl`.
 
 - `node --test --experimental-strip-types test/client/db-workbench-session-phase16.test.ts` -> PASS (4/4)
-- `node --test --experimental-strip-types test/client/db-workbench-autocomplete-phase16.test.tsx test/client/db-workbench-flow-phase16.test.tsx` -> FAIL (`ERR_UNKNOWN_FILE_EXTENSION` for `.tsx`)
-- `node --import tsx --test --experimental-strip-types test/client/db-workbench-autocomplete-phase16.test.tsx test/client/db-workbench-flow-phase16.test.tsx` -> PASS (7/7)
-- historical note: original shell syntax used during that verification run was `NODE_OPTIONS=--import tsx node --test --experimental-strip-types test/client/db-workbench-autocomplete-phase16.test.tsx test/client/db-workbench-flow-phase16.test.tsx`.
+- `node --import tsx --test --experimental-strip-types test/client/db-workbench-autocomplete-phase16.test.tsx test/client/db-workbench-flow-phase16.test.tsx` -> PASS (8/8)
 - `npm run check` -> PASS (`tsc`)
 - `cargo test --manifest-path src-tauri/Cargo.toml introspect -- --nocapture` -> PASS (3/3 introspection tests)
 
-## Must-Have Verification (Plan Frontmatter)
+## Must-Have Audit (Plans 16-01 ... 16-06)
 
 Scoring model:
 
-- Truth checks: 12
-- Artifact checks: 15
-- Key-link checks: 5
-- Total checks: 32
+- Truth checks: 18
+- Artifact checks: 23
+- Key-link checks: 12
+- Total checks: 53
 
-Result: **32/32 verified**.
+Result: **53/53 verified**.
 
-### Plan 16-01 (FLOW-01, NAV-01 prerequisites)
+### 16-01 (FLOW-01, NAV-01 prereq) -> PASS
 
-Verified:
+- Primary route constant and default-to-SQL with active connection:
+  - `client/src/components/extensions/DbConnectorWorkspace.tsx:42`
+  - `client/src/components/extensions/DbConnectorWorkspace.tsx:52-55`
+- Legacy tools demoted but retained:
+  - `client/src/components/extensions/DbConnectorWorkspace.tsx:849-854`
+- Primary shell and explorer cues preserved:
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:1133`
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:255`
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:388`
 
-- Primary route constant exists: `PRIMARY_WORKSPACE_VIEW = "sql"`.
-  - Evidence: `client/src/components/extensions/DbConnectorWorkspace.tsx:42`
-- With selected connection, initial workspace view resolves to primary SQL route.
-  - Evidence: `DbConnectorWorkspace.tsx:52-56`
-- Route persistence keeps both view and connection query params.
-  - Evidence: `DbConnectorWorkspace.tsx:40-41`, `81-99`
-- Legacy tabs remain available and explicitly demoted in UI copy (`Legacy tools`).
-  - Evidence: `DbConnectorWorkspace.tsx:849-855`
-- Workbench is the active shell path via `<WorkbenchLayout .../>`.
-  - Evidence: `DbConnectorWorkspace.tsx:1097-1102`
-- Primary shell cue exists (`Primary DB workspace`).
-  - Evidence: `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:1127`
-- Object explorer is visible in fixed-width sidebar (`w-[240px]`).
-  - Evidence: `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:255`, `388-392`
+### 16-02 (FLOW-02, FLOW-03) -> PASS
 
-### Plan 16-02 (FLOW-02, FLOW-03)
+- Per-connection session contract + limits:
+  - `client/src/components/extensions/db-workbench/workbench-session.ts:1-2`
+  - `client/src/components/extensions/db-workbench/workbench-session.ts:35`
+- Per-connection tab wrappers and migration path:
+  - `client/src/components/extensions/db-workbench/QueryTabs.tsx:85`
+  - `client/src/components/extensions/db-workbench/QueryTabs.tsx:110`
+- Restore/persist and recent/snippet actions wired:
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:423`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:446`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:560`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:1184`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:1211`
+- Regression coverage:
+  - `test/client/db-workbench-session-phase16.test.ts:78`
 
-Verified:
+### 16-03 (NAV-01, NAV-02) -> PASS
 
-- Session key is per-connection (`db-workbench:session:v2:${connectionId}`).
-  - Evidence: `client/src/components/extensions/db-workbench/workbench-session.ts:33`
-- Limits are enforced (`MAX_RECENT_QUERIES = 30`, `MAX_SNIPPETS = 50`).
-  - Evidence: `workbench-session.ts:1-2`, `54`, `122`, `245`
-- Connection restore path is wired on connection change.
-  - Evidence: `WorkbenchLayout.tsx:419-427`
-- Session persistence writes connection-scoped tabs/draft/recent/snippets.
-  - Evidence: `WorkbenchLayout.tsx:439-447`
-- Query execution appends recent SQL per active connection.
-  - Evidence: `WorkbenchLayout.tsx:628-629`
-- UI supports snippet save/insert and recent SQL insert.
-  - Evidence: `WorkbenchLayout.tsx:1178-1229`
-- Legacy tab migration path exists when v2 session absent.
-  - Evidence: `client/src/components/extensions/db-workbench/QueryTabs.tsx:60-105`
-- Regression coverage exists for non-leak, dedupe/cap, snippet retrieval.
-  - Evidence: `test/client/db-workbench-session-phase16.test.ts:78-145`
+- Snapshot contracts include views/index/foreign-key shape:
+  - `shared/schema.ts:900-906`
+  - `src-tauri/src/db_connector/mod.rs:320-335`
+- Introspection populates indexes/foreign keys/views:
+  - `src-tauri/src/db_connector/introspect.rs:334`
+  - `src-tauri/src/db_connector/introspect.rs:485`
+- Explorer sections and starter query actions:
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:426`
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:440`
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:555`
+  - `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx:652`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:894`
 
-### Plan 16-03 (NAV-01, NAV-02)
+### 16-04 (NAV-03, FLOW-02/03 regression lock) -> PASS
 
-Verified:
+- Autocomplete context + alias resolver:
+  - `client/src/components/extensions/db-workbench/sql-autocomplete.ts:154`
+  - `client/src/components/extensions/db-workbench/sql-autocomplete.ts:206`
+- Monaco provider registration and cleanup:
+  - `client/src/components/extensions/db-workbench/SqlEditorPane.tsx:506-508`
+  - `client/src/components/extensions/db-workbench/SqlEditorPane.tsx:538-539`
+- Workbench passes metadata context:
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:368`
+- Regression tests cover scope + aliases + session continuity:
+  - `test/client/db-workbench-autocomplete-phase16.test.tsx:83`
+  - `test/client/db-workbench-autocomplete-phase16.test.tsx:99`
+  - `test/client/db-workbench-flow-phase16.test.tsx:84`
+  - `test/client/db-workbench-flow-phase16.test.tsx:101`
 
-- Shared snapshot type includes views/index/foreign-key structures.
-  - Evidence: `shared/schema.ts:872-907`
-- Rust snapshot structs include views and foreign keys/indexes.
-  - Evidence: `src-tauri/src/db_connector/mod.rs:309-336`
-- MySQL/PostgreSQL introspection populates indexes/foreign keys/views.
-  - Evidence: `src-tauri/src/db_connector/introspect.rs:254-355`, `421-506`
-- Explorer renders `Schemas`, `Tables`, `Views`, `Columns`, `Indexes`, `Foreign Keys`.
-  - Evidence: `ConnectionSidebar.tsx:425-440`, `487`, `512`, `530`, `555`
-- Starter query actions are present and wired to callback.
-  - Evidence: `ConnectionSidebar.tsx:652-681`, `WorkbenchLayout.tsx:888-917`
-- Starter queries execute/inject with active context + driver quoting.
-  - Evidence: `WorkbenchLayout.tsx:865-906`, `916`
+### 16-05 (FLOW-02/FLOW-03 gap closure) -> PASS
 
-### Plan 16-04 (NAV-03, FLOW-02/03 regression locking)
+- `selectedTableName` persisted in v2 session contract:
+  - `client/src/components/extensions/db-workbench/workbench-session.ts:23`
+  - `client/src/components/extensions/db-workbench/workbench-session.ts:31`
+- Restore + persist wiring in workbench:
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:429`
+  - `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx:451`
+- Regression tests for selected-object isolation:
+  - `test/client/db-workbench-session-phase16.test.ts:115-117`
+  - `test/client/db-workbench-flow-phase16.test.tsx:115`
 
-Verified:
+### 16-06 (NAV-03/FLOW-02 traceability + command-doc gap closure) -> PASS
 
-- Autocomplete context is metadata-backed and scoped to active schema.
-  - Evidence: `client/src/components/extensions/db-workbench/sql-autocomplete.ts:102-123`, `154-204`
-- Alias resolver supports FROM/JOIN and schema-qualified relation forms.
-  - Evidence: `sql-autocomplete.ts:42-49`, `206-240`
-- Monaco completion provider uses alias hint + context and is disposed/re-registered safely.
-  - Evidence: `client/src/components/extensions/db-workbench/SqlEditorPane.tsx:502-541`
-- Workbench derives and passes autocomplete context from runtime schema snapshot.
-  - Evidence: `WorkbenchLayout.tsx:309`, `363-366`, `1240`
-- Regression tests cover active-schema filtering and alias resolution.
-  - Evidence: `test/client/db-workbench-autocomplete-phase16.test.tsx:58-111`
-- Regression tests cover per-connection flow continuity (`tabs`, `recent sql`, `snippet`).
-  - Evidence: `test/client/db-workbench-flow-phase16.test.tsx:49-113`
+- NAV-03 synchronized to complete in canonical planning docs:
+  - `.planning/REQUIREMENTS.md:33`
+  - `.planning/REQUIREMENTS.md:84`
+  - `.planning/ROADMAP.md:104`
+- `.tsx` verification command shape standardized in phase docs:
+  - `.planning/phases/16-unified-workspace-flow/16-04-PLAN.md:139`
+  - `.planning/phases/16-unified-workspace-flow/16-04-PLAN.md:161`
+  - `.planning/phases/16-unified-workspace-flow/16-05-PLAN.md:138`
+- No stale `.tsx` plan command omits loader:
+  - `rg -n "node\\s+--test\\s+--experimental-strip-types\\s+[^\\n]*\\.tsx" .planning/phases/16-unified-workspace-flow -g "16-0*-PLAN.md"` -> no matches
 
-## Requirement-ID Traceability (All Phase 16 PLAN frontmatter)
+## Frontmatter Requirement-ID Cross-Reference
 
-Phase plan frontmatter IDs extracted:
+All phase-16 PLAN frontmatter requirement IDs exist in `.planning/REQUIREMENTS.md`.
 
-- `FLOW-01` (`16-01-PLAN.md`)
-- `FLOW-02` (`16-02-PLAN.md`, `16-04-PLAN.md`)
-- `FLOW-03` (`16-02-PLAN.md`, `16-04-PLAN.md`)
-- `NAV-01` (`16-01-PLAN.md`, `16-03-PLAN.md`)
-- `NAV-02` (`16-03-PLAN.md`)
-- `NAV-03` (`16-04-PLAN.md`)
+| Plan | Frontmatter IDs | REQUIREMENTS.md |
+|------|------------------|-----------------|
+| 16-01 | FLOW-01, NAV-01 | all present |
+| 16-02 | FLOW-02, FLOW-03 | all present |
+| 16-03 | NAV-01, NAV-02 | all present |
+| 16-04 | NAV-03, FLOW-02, FLOW-03 | all present |
+| 16-05 | FLOW-02, FLOW-03 | all present |
+| 16-06 | NAV-03, FLOW-02 | all present |
 
-Cross-reference against `.planning/REQUIREMENTS.md`: **all IDs are present**.
+## Requirement Goal Assessment
 
-Coverage verdict by requirement goal:
-
-- `FLOW-01`: Complete (primary SQL route is default when connection exists)
-- `FLOW-02`: **Partial** (tabs/drafts/recent/snippets isolate correctly, but selected object persistence is missing)
+- `FLOW-01`: Complete
+- `FLOW-02`: Complete (selected object persistence now covered by 16-05 implementation + tests)
 - `FLOW-03`: Complete
 - `NAV-01`: Complete
 - `NAV-02`: Complete
-- `NAV-03`: Complete in code/tests (note: checkbox still unchecked in `REQUIREMENTS.md`)
+- `NAV-03`: Complete
 
-## Gaps Found
+## Remaining Gaps
 
-### Gap 1 (Functional): FLOW-02 selected-object persistence is not implemented per connection
-
-Requirement text in `.planning/REQUIREMENTS.md` says FLOW-02 includes persisting "tabs, selected objects, and query drafts" per connection.
-
-Observed implementation persists:
-
-- tabs / active tab / recent SQL / snippets
-
-Observed missing persistence:
-
-- selected object state (for example `selectedTableName`) is local runtime state only and is not part of saved session payload.
-
-Evidence:
-
-- `selectedTableName` state exists: `WorkbenchLayout.tsx:291`
-- Session save payload excludes selected object fields: `WorkbenchLayout.tsx:441-446`
-- Session model excludes selected object fields: `workbench-session.ts:18-23`
-
-Impact:
-
-- Reopening/switching back to a connection does not guarantee restoration of prior selected object focus.
-
-### Gap 2 (Traceability hygiene): NAV-03 status in REQUIREMENTS is stale
-
-- `.planning/REQUIREMENTS.md` marks NAV-03 unchecked/pending while code and tests for NAV-03 are present.
-- This is a documentation synchronization gap, not a runtime behavior blocker.
-
-## Human Checks Recommended
-
-- Manual smoke for daily-use quality signal (not just existence):
-  - switch between at least two real connections repeatedly and verify object focus expectations
-  - validate autocomplete responsiveness and relevance under larger schema snapshots
-  - verify starter query actions remain intuitive under mixed schema/table naming patterns
+None found for phase-goal/must-have/traceability closure.
 
 ## Final Assessment
 
-- Phase 16 is largely implemented and test-backed for primary route, connection isolation (tabs/drafts/recent/snippets), object explorer depth, starter query actions, and alias-aware schema-scoped autocomplete.
-- Phase goal is **not fully achieved** because `FLOW-02` selected-object persistence is only partial.
-- Verification status is therefore **`gaps_found`**.
+Phase 16 goal is achieved after 16-05 and 16-06 gap-closure execution.
+Verification status is **`passed`**.
