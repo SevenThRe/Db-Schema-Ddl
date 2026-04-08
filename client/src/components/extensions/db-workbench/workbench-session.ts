@@ -20,6 +20,7 @@ export interface WorkbenchSessionState {
   activeTabId: string | null;
   recentQueries: string[];
   snippets: SavedSqlSnippet[];
+  selectedTableName: string | null;
 }
 
 const EMPTY_SESSION: WorkbenchSessionState = {
@@ -27,6 +28,7 @@ const EMPTY_SESSION: WorkbenchSessionState = {
   activeTabId: null,
   recentQueries: [],
   snippets: [],
+  selectedTableName: null,
 };
 
 function sessionStorageKey(connectionId: string): string {
@@ -135,12 +137,17 @@ function sanitizeSession(
     tabs.some((tab) => tab.id === session.activeTabId)
       ? session.activeTabId
       : tabs[0]?.id ?? null;
+  const selectedTableName =
+    typeof session.selectedTableName === "string" && session.selectedTableName.trim()
+      ? session.selectedTableName
+      : null;
 
   return {
     tabs,
     activeTabId,
     recentQueries: uniqueRecentQueries(session.recentQueries),
     snippets: sanitizeSnippets(session.snippets),
+    selectedTableName,
   };
 }
 

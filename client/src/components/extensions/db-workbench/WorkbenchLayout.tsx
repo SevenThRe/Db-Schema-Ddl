@@ -117,6 +117,7 @@ interface HydratedConnectionSession {
   activeTabId: string;
   recentQueries: string[];
   snippets: SavedSqlSnippet[];
+  selectedTableName: string | null;
 }
 
 function hydrateConnectionSession(
@@ -147,6 +148,7 @@ function hydrateConnectionSession(
     activeTabId,
     recentQueries: loadedSession.recentQueries,
     snippets: loadedSession.snippets,
+    selectedTableName: loadedSession.selectedTableName,
   };
 }
 
@@ -259,6 +261,9 @@ export function WorkbenchLayout({
   const [savedSnippets, setSavedSnippets] = useState<SavedSqlSnippet[]>(
     initialSession.snippets,
   );
+  const [selectedTableName, setSelectedTableName] = useState<string | null>(
+    initialSession.selectedTableName,
+  );
   const [selectedRecentSql, setSelectedRecentSql] = useState("");
   const [selectedSnippetId, setSelectedSnippetId] = useState("");
 
@@ -288,7 +293,6 @@ export function WorkbenchLayout({
   // 結果エリアのアクティブタブ（Results / Explain）
   const [resultTab, setResultTab] = useState<"results" | "explain">("results");
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
-  const [selectedTableName, setSelectedTableName] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [currentExportRequestId, setCurrentExportRequestId] = useState<string | null>(null);
   const [activeSchema, setActiveSchema] = useState<string>(() =>
@@ -422,6 +426,7 @@ export function WorkbenchLayout({
     setActiveTabId(restored.activeTabId);
     setRecentQueries(restored.recentQueries);
     setSavedSnippets(restored.snippets);
+    setSelectedTableName(restored.selectedTableName);
     setSelectedRecentSql("");
     setSelectedSnippetId("");
   }, [connection.id]);
@@ -443,8 +448,9 @@ export function WorkbenchLayout({
       activeTabId,
       recentQueries,
       snippets: savedSnippets,
+      selectedTableName,
     });
-  }, [activeTabId, connection.id, recentQueries, savedSnippets, tabs]);
+  }, [activeTabId, connection.id, recentQueries, savedSnippets, selectedTableName, tabs]);
 
   // ──────────────────────────────────────────────
   // タブ操作ハンドラー
