@@ -40,9 +40,9 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 
 ### Category: Compare & Sync (SYNC)
 
-- [ ] **SYNC-01**: User can compare source vs target live databases by key and see insert/update/delete classifications per table
-- [ ] **SYNC-02**: User can preview sync SQL and execution counts, and execution is blocked if the target snapshot changed after comparison
-- [ ] **SYNC-03**: User can execute selected sync actions with audit history and production-grade safety confirmations
+- [x] **SYNC-01**: User can compare source vs target live databases by key and see insert/update/delete classifications per table
+- [x] **SYNC-02**: User can preview sync SQL and execution counts, and execution is blocked if the target snapshot changed after comparison
+- [x] **SYNC-03**: User can execute selected sync actions with audit history and production-grade safety confirmations
 
 ---
 
@@ -85,13 +85,13 @@ Turn DB Workbench from a feature-demo surface into an app-grade daily database t
 | DATA-01 | Phase 17 | Complete |
 | DATA-02 | Phase 17 | Complete |
 | DATA-03 | Phase 17 | Complete |
-| SYNC-01 | Phase 18 | Pending |
-| SYNC-02 | Phase 18 | Pending |
-| SYNC-03 | Phase 18 | Pending |
+| SYNC-01 | Phase 18 | Complete |
+| SYNC-02 | Phase 18 | Complete |
+| SYNC-03 | Phase 18 | Complete |
 
 **Coverage: 17/17 requirements mapped (100%)**
 
 ---
 
 *Requirements defined: 2026-04-07*
-*Last updated: 2026-04-08 after Phase 17 completion (DATA-01/DATA-02/DATA-03 verified and closed)*
+*Last updated: 2026-04-08 after Phase 18 completion (SYNC-01/SYNC-02/SYNC-03 verified and closed)*
