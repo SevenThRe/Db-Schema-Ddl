@@ -38,5 +38,6 @@ must_have_score: "All phase-17 must-haves verified; 3/3 requirements satisfied"
 - `cargo test --manifest-path src-tauri/Cargo.toml grid_edit -- --nocapture` -> PASS
 - `npm run check` -> PASS (`tsc`)
 - `rg -n "DATA-01|DATA-02|DATA-03|Requirements Coverage" .planning/phases/17-safe-data-editing/17-VERIFICATION.md` -> PASS
+- `node C:/Users/ISI202502/.codex/get-shit-done/bin/gsd-tools.cjs verify phase-completeness 17` -> PASS (`complete: true`, `summary_count: 4/4`)
 
 Verification status: **`passed`**.

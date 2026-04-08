@@ -82,7 +82,7 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 |-------|----------------|--------|-----------|
 | 15. Query Runtime Hardening | 4/4 | Complete    | 2026-04-07 |
 | 16. Unified Workspace Flow | 6/6 | Complete    | 2026-04-08 |
-| 17. Safe Data Editing | 4/4 | Complete   | 2026-04-08 |
+| 17. Safe Data Editing | 4/4 | Complete    | 2026-04-08 |
 | 18. Live Data Compare & Sync | 0/0 | Not started | - |
 
 ---
@@ -102,9 +102,9 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 | NAV-01 | Phase 16 | Complete |
 | NAV-02 | Phase 16 | Complete |
 | NAV-03 | Phase 16 | Complete |
-| DATA-01 | Phase 17 | Pending |
-| DATA-02 | Phase 17 | Pending |
-| DATA-03 | Phase 17 | Pending |
+| DATA-01 | Phase 17 | Complete |
+| DATA-02 | Phase 17 | Complete |
+| DATA-03 | Phase 17 | Complete |
 | SYNC-01 | Phase 18 | Pending |
 | SYNC-02 | Phase 18 | Pending |
 | SYNC-03 | Phase 18 | Pending |
@@ -123,4 +123,4 @@ Turn DB Workbench into an app-grade daily database tool: trustworthy query/runti
 
 ---
 
-*Last updated: 2026-04-08 — Updated after completing 16-06 gap-closure sync (NAV-03 traceability + verification command docs alignment)*
+*Last updated: 2026-04-08 — Updated after completing Phase 17 Safe Data Editing (4/4 plans, verification passed)*
