@@ -2,23 +2,25 @@
 
 ## What This Is
 
-DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It already ships Excel parsing, DDL generation/import, schema comparison, and a DB Workbench for MySQL/PostgreSQL. In `v1.5`, the priority shifts from proving that DB Workbench features exist to making the workbench reliable enough to replace day-to-day Navicat-class workflows for core database work.
+DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It ships Excel parsing, DDL generation/import, schema comparison, and an operator-grade DB Workbench for MySQL/PostgreSQL. Milestone `v1.5` is now shipped and established the app-grade DB daily workflow baseline.
 
 ## Core Value
 
 Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
 
-## Current Milestone: v1.5 应用级 DB 工作台
+## Current State
 
-**Goal:** Turn the current DB Workbench shell into an app-grade daily database tool: one primary workflow, real result paging/export semantics, multi-schema awareness, safe data editing, and live DB-to-DB sync.
+- ✅ Milestone `v1.5` (应用级 DB 工作台) shipped on `2026-04-08`
+- ✅ Query/runtime/export/schema behavior hardened for large real-database workloads
+- ✅ One primary DB Workbench workflow with per-connection workspace persistence
+- ✅ Safe row editing with preview/confirm/transaction rollback guarantees
+- ✅ Live compare/sync path promoted to first-class flow with stale-target and production safety guards
 
-**Target features:**
-- True server-side query runtime for large result sets, cancellation, and predictable export
-- One primary DB Workbench path instead of split legacy vs workbench surfaces
-- Per-connection workspace sessions, recent queries, and saved SQL snippets
-- Multi-schema-aware object explorer and schema-scoped autocomplete
-- Safe single-table grid editing with SQL preview and transactional commit
-- Snapshot-guarded live DB compare and synchronization workflows
+## Next Milestone Goals
+
+- Define `v1.6` scope and requirements with `$gsd-new-milestone`
+- Expand operator productivity surfaces built on the v1.5 runtime/session baseline
+- Continue reducing residual integration risk with more live-environment validation coverage
 
 ## Requirements
 
@@ -28,14 +30,17 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - ✓ Users can import DDL back into workbook templates and reverse-import schema assets
 - ✓ Users can connect to MySQL/PostgreSQL, introspect schema, compare DB state, run SQL, browse results, and inspect execution plans inside the app
 - ✓ Users can ship and run the desktop app reliably enough for packaged and runtime smoke testing
+- ✓ Runtime paging/cancel/export flows are trustworthy on real databases (`v1.5`)
+- ✓ DB operations now flow through one primary workbench surface with per-connection state isolation (`v1.5`)
+- ✓ Object explorer/autocomplete behavior is schema-aware for daily operator usage (`v1.5`)
+- ✓ Safe single-table editing loop is complete with SQL preview and transactional commit/rollback (`v1.5`)
+- ✓ Live DB-to-DB compare/sync is first-class with snapshot guards and execution auditability (`v1.5`)
 
 ### Active
 
-- [ ] Runtime & paging are trustworthy on real databases, not just small/demo result sets
-- [ ] DB operations flow through one primary workbench surface with per-connection state isolation
-- [ ] Object navigation and autocomplete are schema-aware enough for daily operator use
-- [ ] Safe single-table data editing is complete and transactionally reliable
-- [ ] Live DB-to-DB compare/sync becomes a first-class workflow with auditing and safety gates
+- [ ] Define and ship v1.6 milestone roadmap and requirements
+- [ ] Expand live-environment reliability coverage (bigger datasets, unstable network, long-running operations)
+- [ ] Continue DB Workbench operator UX hardening without regressing Excel authoring/import workflows
 
 ### Out of Scope
 
@@ -46,11 +51,10 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 ## Context
 
 - `v1.0` through `v1.4` established the current desktop shell, DB connectivity, schema introspection, compare/apply flows, and the first usable DB Workbench surface
-- The current workbench already has Monaco SQL editing, result browsing, EXPLAIN visualization, and dangerous-SQL confirmation, but legacy routes still coexist with the newer workbench path
-- The current query runtime still fetches full result sets before applying frontend limits, which blocks app-grade behavior on large datasets
-- PostgreSQL introspection is still anchored to `public`, and workbench tab/session persistence is still global rather than connection-scoped
-- Data sync has design and partial scaffolding, but it is not yet wired as a first-class operator workflow
-- The user goal for this milestone is explicit: make DB Workbench credible as a replacement for Navicat-like tools, not a sidecar feature inside an Excel utility
+- `v1.5` closed the replacement-grade DB Workbench gap across runtime semantics, navigation workflow, edit safety, and compare/sync safeguards
+- Legacy routes still exist for compatibility, but the primary operator path is now the workbench shell
+- Milestone archives now track v1.5 details under `.planning/milestones/`
+- Next focus moves from baseline productization to targeted expansion and reliability depth
 
 ## Constraints
 
@@ -68,6 +72,7 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 | Prioritize query/runtime hardening before ER or cosmetic expansion | Replacement-grade DB tools live or die on large-query behavior and workflow continuity | Accepted |
 | Make per-connection sessions and multi-schema support milestone requirements | Global tab state and `public`-only assumptions break real operator usage quickly | Accepted |
 | Sequence safe row editing before live DB sync apply | Sync depends on trustworthy key mapping, SQL preview, and transaction semantics | Accepted |
+| Keep legacy paths while elevating one primary route | Compatibility preservation while converging operator workflow | Accepted |
 
 ---
-*Last updated: 2026-04-07 after opening v1.5 应用级 DB 工作台*
+*Last updated: 2026-04-08 after completing v1.5 milestone closeout*

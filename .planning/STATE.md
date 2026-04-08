@@ -1,25 +1,25 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: milestone
-status: completed
-last_updated: "2026-04-08T10:25:48.000Z"
-last_activity: 2026-04-08 — Completed Phase 18 execution, published `18-VERIFICATION.md`, and marked phase complete
+milestone: v1.6
+milestone_name: TBD
+status: planning
+last_updated: "2026-04-08T20:16:00.000+09:00"
+last_activity: 2026-04-08 — Completed v1.5 closeout (audit + archival) and prepared for next milestone definition
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 18
-  completed_plans: 18
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-07)
+See: `.planning/PROJECT.md` (updated 2026-04-08)
 
 **Core value:** Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
-**Current focus:** Milestone v1.5 closeout after Phase 18 completion
+**Current focus:** Define and start v1.6 milestone planning
 
 ## Current Status
 
@@ -28,14 +28,14 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 - `v1.2` is complete and audited at `.planning/v1.2-v1.2-MILESTONE-AUDIT.md`
 - `v1.3` established packaged/runtime stability and delivery hardening
 - `v1.4` established the current DB Workbench surface and surrounding DB management seams
-- `v1.5` is now active — 应用级 DB 工作台 milestone
+- `v1.5` is complete, audited, and archived under `.planning/milestones/`
 
 ## Current Position
 
-Phase: 18 (live-data-compare-sync) — COMPLETE
-Plan: 04 completed (4/4)
-Status: SYNC-01/SYNC-02/SYNC-03 verified with frontend regression evidence and phase completeness pass
-Last activity: 2026-04-08 — Completed Phase 18 execution, published `18-VERIFICATION.md`, and marked phase complete
+Milestone: v1.5 (应用级 DB 工作台) — SHIPPED
+Audit: `.planning/v1.5-v1.5-MILESTONE-AUDIT.md` (status: passed)
+Archive: `.planning/milestones/v1.5-ROADMAP.md`, `.planning/milestones/v1.5-REQUIREMENTS.md`
+Next step: define v1.6 requirements and roadmap
 
 ## Important Assumptions
 
