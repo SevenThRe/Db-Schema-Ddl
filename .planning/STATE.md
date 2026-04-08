@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: 应用级 DB 工作台
-status: Phase 16 now persists selected object focus per connection with regression-locked session continuity
-last_updated: "2026-04-08T16:16:05+09:00"
-last_activity: 2026-04-08 — Executed 16-05, recorded summary, and advanced Unified Workspace Flow to plan 5/6
+status: Phase 16 traceability and verification command docs are synchronized; Unified Workspace Flow is complete
+last_updated: "2026-04-08T16:24:40+09:00"
+last_activity: 2026-04-08 — Executed 16-06, closed NAV-03 traceability gaps, and completed Unified Workspace Flow (6/6)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-04-07)
 
 ## Current Position
 
-Phase: 16 (unified-workspace-flow) — IN PROGRESS
-Plan: 05 completed (5/6)
-Status: Selected object focus (`selectedTableName`) now restores per connection alongside tabs/drafts/recent/snippets
-Last activity: 2026-04-08 — Executed 16-05, recorded summary, and advanced Unified Workspace Flow to 5/6 plans
+Phase: 16 (unified-workspace-flow) — COMPLETE
+Plan: 06 completed (6/6)
+Status: NAV-03 traceability is marked complete and `.tsx` verification commands are standardized to loader-aware cross-shell form
+Last activity: 2026-04-08 — Executed 16-06, recorded summary, and closed phase-16 planning/documentation gaps
 
 ## Important Assumptions
 
@@ -153,10 +153,16 @@ Last activity: 2026-04-08 — Executed 16-05, recorded summary, and advanced Uni
 - Connection-switch hydration in `WorkbenchLayout` explicitly restores selected object focus via `setSelectedTableName(restored.selectedTableName)` before continuing normal explorer reconciliation.
 - Phase-16 session regressions now assert selected object isolation across at least two connection IDs in both session-contract and flow-level tests.
 
+## Architecture Decisions (Plan 16-06 Additions)
+
+- NAV-03 is treated as complete in REQUIREMENTS/ROADMAP once verification evidence already proves implementation and regression coverage in phase-16 artifacts.
+- `.tsx` verification command documentation now uses `node --import tsx --test --experimental-strip-types` as canonical form, with `NODE_OPTIONS=--import tsx node ...` retained as historical run context only.
+
 ## Next Command
 
-- `$gsd-execute-phase 16`
+- `$gsd-plan-phase 17`
 - `$gsd-verify-work 16`
+- `$gsd-discuss-phase 17`
 
 ---
-*Last updated: 2026-04-08 after completing 16-05 selected object persistence and continuity regression locking*
+*Last updated: 2026-04-08 after completing 16-06 traceability and verification-command gap closure*
