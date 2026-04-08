@@ -29,6 +29,12 @@ import type {
   QueryExecutionResponse,
   DbExplainPlan,
   DangerousSqlPreview,
+  DbGridEditPatchCell,
+  DbGridEditSource,
+  DbGridEditEligibility,
+  DbGridPrepareCommitResponse,
+  DbQueryBatchResult,
+  DbQueryRow,
 } from "@shared/schema";
 import type { HostApi } from "@/extensions/host-api";
 import { ConnectionSidebar } from "./ConnectionSidebar";
@@ -110,6 +116,50 @@ function quoteIdentifier(driver: DbConnectionConfig["driver"], identifier: strin
     return `\`${identifier.replace(/`/g, "``")}\``;
   }
   return `"${identifier.replace(/"/g, "\"\"")}"`;
+}
+
+function formatRowPkValue(value: string | number | boolean | null): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+
+function isCellValueEqual(
+  left: string | number | boolean | null,
+  right: string | number | boolean | null,
+): boolean {
+  return left === right;
+}
+
+function buildRowPrimaryKey(
+  row: DbQueryRow,
+  batch: DbQueryBatchResult,
+  primaryKeyColumns: string[],
+): Record<string, string | number | boolean | null> | null {
+  const rowPrimaryKey: Record<string, string | number | boolean | null> = {};
+  for (const primaryKeyColumn of primaryKeyColumns) {
+    const columnIndex = batch.columns.findIndex((column) => column.name === primaryKeyColumn);
+    if (columnIndex < 0) return null;
+    rowPrimaryKey[primaryKeyColumn] = row.values[columnIndex] ?? null;
+  }
+  return rowPrimaryKey;
+}
+
+function buildRowPkTuple(
+  rowPrimaryKey: Record<string, string | number | boolean | null>,
+  primaryKeyColumns: string[],
+): string {
+  return primaryKeyColumns
+    .map((column) => `${column}=${formatRowPkValue(rowPrimaryKey[column] ?? null)}`)
+    .join("|");
+}
+
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    map.set(key(item), item);
+  }
+  return Array.from(map.values());
 }
 
 interface HydratedConnectionSession {
@@ -286,6 +336,7 @@ export function WorkbenchLayout({
     useState<DangerousSqlPreview | null>(null);
   const [showDangerDialog, setShowDangerDialog] = useState(false);
   const [pendingSql, setPendingSql] = useState<string | null>(null);
+  const [pendingQuerySource, setPendingQuerySource] = useState<DbGridEditSource | null>(null);
 
   // Stop on error 状態（D-05: デフォルト ON）
   const [stopOnError, setStopOnError] = useState(true);
@@ -295,6 +346,10 @@ export function WorkbenchLayout({
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [currentExportRequestId, setCurrentExportRequestId] = useState<string | null>(null);
+  const [pendingEditCells, setPendingEditCells] = useState<Record<string, DbGridEditPatchCell>>({});
+  const [preparedGridPlan, setPreparedGridPlan] = useState<DbGridPrepareCommitResponse | null>(null);
+  const [isPreparingGridCommit, setIsPreparingGridCommit] = useState(false);
+  const [isCommittingGridEdit, setIsCommittingGridEdit] = useState(false);
   const [activeSchema, setActiveSchema] = useState<string>(() =>
     connection.driver === "postgres"
       ? connection.defaultSchema?.trim() || "public"
@@ -311,6 +366,7 @@ export function WorkbenchLayout({
   }, [connection.driver, connection.defaultSchema, connection.id]);
 
   const runtimeSchema = connection.driver === "postgres" ? activeSchema : undefined;
+  const [lastGridEditSource, setLastGridEditSource] = useState<DbGridEditSource | null>(null);
 
   // 接続リスト（切替ドロップダウン用）
   const { data: connections = [] } = useQuery({
@@ -429,6 +485,9 @@ export function WorkbenchLayout({
     setSelectedTableName(restored.selectedTableName);
     setSelectedRecentSql("");
     setSelectedSnippetId("");
+    setPendingEditCells({});
+    setPreparedGridPlan(null);
+    setLastGridEditSource(null);
   }, [connection.id]);
 
   useEffect(() => {
@@ -602,6 +661,268 @@ export function WorkbenchLayout({
     [insertSqlIntoActiveTab, recentQueries],
   );
 
+  const deriveBatchEditMetadata = useCallback(
+    (
+      batch: DbQueryBatchResult,
+      source: DbGridEditSource | null,
+    ): {
+      eligibility: DbGridEditEligibility;
+      primaryKeyColumns: string[];
+      columns: DbQueryBatchResult["columns"];
+      normalizedSource: DbGridEditSource;
+    } => {
+      const normalizedSource: DbGridEditSource = source ?? {
+        kind: "custom-sql",
+        schema: runtimeSchema,
+      };
+
+      if (!source) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "unsupported_source",
+                message: "Only starter table queries are editable in this phase.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      if (connection.readonly) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "readonly_connection",
+                message: "This connection is read-only.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      if (source.kind === "starter-count") {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "count_result",
+                message: "Count rows results are read-only. Run Select top 100 to edit rows.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      if (batch.error) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "result_error",
+                message: "Current batch has an error and cannot be edited.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      if (batch.rows.length === 0) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "empty_result",
+                message: "No rows are loaded for editing.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      const tableName = source.tableName?.trim();
+      if (!tableName) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "unsupported_source",
+                message: "Starter source is missing table context.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      const matchedTable = schemaSnapshot?.tables.find((table) => table.name === tableName);
+      if (!matchedTable) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "table_not_found",
+                message: "Table metadata is not available for this result batch.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      const primaryKeyColumns = matchedTable.columns
+        .filter((column) => column.primaryKey)
+        .map((column) => column.name);
+
+      if (primaryKeyColumns.length === 0) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: [
+              {
+                code: "missing_primary_key",
+                message: "Selected table has no detectable primary key columns.",
+              },
+            ],
+          },
+          primaryKeyColumns: [],
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      const missingPkColumns = primaryKeyColumns.filter(
+        (primaryKeyColumn) =>
+          !batch.columns.some((column) => column.name === primaryKeyColumn),
+      );
+      if (missingPkColumns.length > 0) {
+        return {
+          eligibility: {
+            eligible: false,
+            reasons: missingPkColumns.map((missingPrimaryKeyColumn) => ({
+              code: "missing_primary_key_column" as const,
+              message: `Result is missing primary key column: ${missingPrimaryKeyColumn}`,
+            })),
+          },
+          primaryKeyColumns,
+          columns: batch.columns,
+          normalizedSource,
+        };
+      }
+
+      const seenTuples = new Set<string>();
+      for (const row of batch.rows) {
+        const rowPrimaryKey = buildRowPrimaryKey(row, batch, primaryKeyColumns);
+        if (!rowPrimaryKey) {
+          return {
+            eligibility: {
+              eligible: false,
+              reasons: [
+                {
+                  code: "missing_primary_key_column",
+                  message: "Failed to resolve row primary key mapping.",
+                },
+              ],
+            },
+            primaryKeyColumns,
+            columns: batch.columns,
+            normalizedSource,
+          };
+        }
+
+        const rowPkTuple = buildRowPkTuple(rowPrimaryKey, primaryKeyColumns);
+        if (seenTuples.has(rowPkTuple)) {
+          return {
+            eligibility: {
+              eligible: false,
+              reasons: [
+                {
+                  code: "duplicate_primary_key_tuple",
+                  message: "Duplicate primary key tuples detected in loaded rows.",
+                },
+              ],
+            },
+            primaryKeyColumns,
+            columns: batch.columns,
+            normalizedSource,
+          };
+        }
+        seenTuples.add(rowPkTuple);
+      }
+
+      const decoratedColumns = batch.columns.map((column) => {
+        const matchedColumn = matchedTable.columns.find(
+          (tableColumn) => tableColumn.name === column.name,
+        );
+        return {
+          ...column,
+          sourceTable: tableName,
+          sourceSchema: source.schema ?? runtimeSchema,
+          sourceColumn: matchedColumn?.name ?? column.name,
+          isPrimaryKey: primaryKeyColumns.includes(column.name),
+        };
+      });
+
+      return {
+        eligibility: {
+          eligible: true,
+          reasons: [],
+        },
+        primaryKeyColumns,
+        columns: decoratedColumns,
+        normalizedSource,
+      };
+    },
+    [connection.readonly, runtimeSchema, schemaSnapshot?.tables],
+  );
+
+  const decorateResultsForEdit = useCallback(
+    (response: QueryExecutionResponse, source: DbGridEditSource | null): QueryExecutionResponse => {
+      const batches = response.batches.map((batch) => {
+        const metadata = deriveBatchEditMetadata(batch, source);
+        return {
+          ...batch,
+          columns: metadata.columns,
+          editEligibility: metadata.eligibility,
+          editSource: metadata.normalizedSource,
+          primaryKeyColumns: metadata.primaryKeyColumns,
+        };
+      });
+      return {
+        ...response,
+        batches,
+      };
+    },
+    [deriveBatchEditMetadata],
+  );
+
   // ──────────────────────────────────────────────
   // クエリ実行コア関数
   // ──────────────────────────────────────────────
@@ -611,7 +932,11 @@ export function WorkbenchLayout({
    * confirmed=true の場合、Rust 層でも危険 SQL チェックを通過させる（サーバーサイド強制）。
    */
   const executeImmediate = useCallback(
-    async (sql: string, confirmed: boolean) => {
+    async (
+      sql: string,
+      confirmed: boolean,
+      source: DbGridEditSource | null,
+    ) => {
       const requestId = crypto.randomUUID();
       setCurrentRequestId(requestId);
       setIsExecuting(true);
@@ -628,7 +953,10 @@ export function WorkbenchLayout({
           // confirmed=true は Rust 層への危険 SQL バイパスシグナル（SAFE-01）
           confirmed: confirmed ? true : undefined,
         });
-        setResults(response);
+        setResults(decorateResultsForEdit(response, source));
+        setLastGridEditSource(source);
+        setPendingEditCells({});
+        setPreparedGridPlan(null);
         setActiveBatchIndex(0);
         setResultTab("results");
         const updatedSession = appendRecentQuery(connection.id, sql);
@@ -652,8 +980,11 @@ export function WorkbenchLayout({
     },
     [
       connection.id,
+      decorateResultsForEdit,
       hostApi.connections,
       hostApi.notifications,
+      setLastGridEditSource,
+      setPendingEditCells,
       runtimeSchema,
       stopOnError,
     ],
@@ -665,10 +996,11 @@ export function WorkbenchLayout({
    * 危険がない場合は即座に実行する。
    */
   const handleExecute = useCallback(
-    async (sql: string) => {
+    async (sql: string, source: DbGridEditSource | null = null) => {
       if (!sql.trim() || isExecuting || isExporting) return;
 
       setPendingSql(sql);
+      setPendingQuerySource(source);
       setQueryError(null);
 
       try {
@@ -683,14 +1015,20 @@ export function WorkbenchLayout({
           setShowDangerDialog(true);
         } else {
           // 安全な SQL: 即座に実行（confirmed 不要）
-          await executeImmediate(sql, false);
+          await executeImmediate(sql, false, source);
         }
       } catch {
         // previewDangerousSql のエラーは無視して実行を試みる
-        await executeImmediate(sql, false);
+        await executeImmediate(sql, false, source);
       }
     },
-    [connection.id, hostApi.connections, isExecuting, isExporting, executeImmediate],
+    [
+      connection.id,
+      hostApi.connections,
+      isExecuting,
+      isExporting,
+      executeImmediate,
+    ],
   );
 
   /**
@@ -702,16 +1040,18 @@ export function WorkbenchLayout({
     setDangerPreview(null);
 
     if (pendingSql) {
-      await executeImmediate(pendingSql, true);
+      await executeImmediate(pendingSql, true, pendingQuerySource);
       setPendingSql(null);
+      setPendingQuerySource(null);
     }
-  }, [pendingSql, executeImmediate]);
+  }, [pendingQuerySource, pendingSql, executeImmediate]);
 
   /** ダイアログキャンセル */
   const handleDangerCancel = useCallback(() => {
     setShowDangerDialog(false);
     setDangerPreview(null);
     setPendingSql(null);
+    setPendingQuerySource(null);
   }, []);
 
   // ──────────────────────────────────────────────
@@ -841,6 +1181,9 @@ export function WorkbenchLayout({
         setExplainError(null);
         setActiveBatchIndex(0);
         setResultTab("results");
+        setPendingEditCells({});
+        setPreparedGridPlan(null);
+        setLastGridEditSource(null);
       } catch (error) {
         setActiveSchema(previousSchema);
         hostApi.notifications.show({
@@ -911,22 +1254,37 @@ export function WorkbenchLayout({
         nextSql = `SELECT *\nFROM ${qualifiedTable}\nLIMIT 100;`;
       }
 
+      const source: DbGridEditSource = {
+        kind:
+          mode === "count"
+            ? "starter-count"
+            : mode === "columns"
+              ? "starter-columns"
+              : "starter-select",
+        tableName,
+        schema: runtimeSchema,
+        queryMode: mode,
+      };
+
       updateActiveTabSql(nextSql);
       setResultTab("results");
+      setLastGridEditSource(source);
 
       if (mode === "columns") {
         focusSqlEditor();
         return;
       }
 
-      await handleExecute(nextSql);
+      await handleExecute(nextSql, source);
     },
     [
       buildQualifiedTableName,
       connection.driver,
       focusSqlEditor,
       handleExecute,
+      runtimeSchema,
       schemaSnapshot?.tables,
+      setLastGridEditSource,
       updateActiveTabSql,
     ],
   );
@@ -937,6 +1295,172 @@ export function WorkbenchLayout({
     },
     [handleRunStarterQuery],
   );
+
+  const handleEditCell = useCallback((patch: DbGridEditPatchCell) => {
+    const patchKey = `${patch.rowPkTuple}::${patch.columnName}`;
+    setPendingEditCells((previous) => {
+      const next = { ...previous };
+      if (isCellValueEqual(patch.beforeValue, patch.nextValue)) {
+        delete next[patchKey];
+        return next;
+      }
+      next[patchKey] = patch;
+      return next;
+    });
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleDiscardGridEdits = useCallback(() => {
+    setPendingEditCells({});
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handlePrepareGridCommit = useCallback(async () => {
+    if (!results) return;
+    const activeBatch = results.batches[activeBatchIndex];
+    if (!activeBatch) return;
+
+    if (activeBatch.editEligibility?.eligible !== true) {
+      const reason =
+        activeBatch.editEligibility?.reasons[0]?.message ??
+        "Current batch is read-only for safe editing.";
+      hostApi.notifications.show({
+        title: "Cannot prepare commit",
+        description: reason,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const source = activeBatch.editSource ?? lastGridEditSource;
+    const tableName = source?.tableName?.trim();
+    if (!source || !tableName) {
+      hostApi.notifications.show({
+        title: "Cannot prepare commit",
+        description: "Editable source table context is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const primaryKeyColumns = activeBatch.primaryKeyColumns ?? [];
+    if (primaryKeyColumns.length === 0) {
+      hostApi.notifications.show({
+        title: "Cannot prepare commit",
+        description: "Primary key columns are missing for this editable batch.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const patchCells = uniqueBy(
+      Object.values(pendingEditCells),
+      (patch) => `${patch.rowPkTuple}::${patch.columnName}`,
+    );
+    if (patchCells.length === 0) {
+      hostApi.notifications.show({
+        title: "No pending edits",
+        description: "Edit at least one non-primary-key cell before preparing commit.",
+        variant: "default",
+      });
+      return;
+    }
+
+    setIsPreparingGridCommit(true);
+    try {
+      const prepared = await hostApi.connections.prepareGridCommit({
+        connectionId: connection.id,
+        schema: runtimeSchema,
+        tableName,
+        source,
+        primaryKeyColumns,
+        patchCells,
+      });
+      setPreparedGridPlan(prepared);
+      hostApi.notifications.show({
+        title: "Commit plan prepared",
+        description: `${prepared.affectedRows} rows ready for review.`,
+        variant: "success",
+      });
+    } catch (error) {
+      hostApi.notifications.show({
+        title: "Prepare commit failed",
+        description: formatWorkbenchError(
+          error,
+          "Failed to prepare safe edit commit preview.",
+        ),
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreparingGridCommit(false);
+    }
+  }, [
+    activeBatchIndex,
+    connection.id,
+    hostApi.connections,
+    hostApi.notifications,
+    lastGridEditSource,
+    pendingEditCells,
+    results,
+    runtimeSchema,
+  ]);
+
+  const handleCommitGridEdits = useCallback(async () => {
+    if (!preparedGridPlan || isCommittingGridEdit) return;
+    setIsCommittingGridEdit(true);
+
+    try {
+      const result = await hostApi.connections.commitGridEdits({
+        connectionId: connection.id,
+        planId: preparedGridPlan.planId,
+        planHash: preparedGridPlan.planHash,
+      });
+
+      if (typeof result.failedSqlIndex === "number") {
+        hostApi.notifications.show({
+          title: "Commit rolled back",
+          description:
+            result.message ??
+            `Statement ${result.failedSqlIndex + 1} failed and the transaction was rolled back.`,
+          variant: "destructive",
+        });
+        setPreparedGridPlan(null);
+        return;
+      }
+
+      setPendingEditCells({});
+      setPreparedGridPlan(null);
+
+      if (selectedTableName) {
+        await handleRunStarterQuery(selectedTableName, "select");
+      }
+
+      hostApi.notifications.show({
+        title: "Commit applied",
+        description: `${result.committedRows} row updates committed.`,
+        variant: "success",
+      });
+    } catch (error) {
+      hostApi.notifications.show({
+        title: "Commit failed",
+        description: formatWorkbenchError(
+          error,
+          "Failed to commit prepared row edits.",
+        ),
+        variant: "destructive",
+      });
+    } finally {
+      setIsCommittingGridEdit(false);
+    }
+  }, [
+    connection.id,
+    handleRunStarterQuery,
+    hostApi.connections,
+    hostApi.notifications,
+    isCommittingGridEdit,
+    preparedGridPlan,
+    selectedTableName,
+  ]);
 
   // ──────────────────────────────────────────────
   // ロードモアハンドラー（D-06: 専用 fetchMore コマンド）
@@ -1115,12 +1639,24 @@ export function WorkbenchLayout({
     }
   }, [results, activeBatchIndex]);
 
+  useEffect(() => {
+    setPendingEditCells({});
+    setPreparedGridPlan(null);
+  }, [activeBatchIndex, results?.requestId]);
+
   // ──────────────────────────────────────────────
   // レンダリング
   // ──────────────────────────────────────────────
 
   // アクティブバッチ（結果エクスポートメニュー用）
   const activeBatch = results?.batches[Math.min(activeBatchIndex, Math.max(0, (results?.batches.length ?? 1) - 1))];
+  const pendingEditCount = Object.keys(pendingEditCells).length;
+  const activeEditEligibility = activeBatch?.editEligibility;
+  const activePrimaryKeyColumns = activeBatch?.primaryKeyColumns ?? [];
+  const activeEditBlockReason =
+    activeEditEligibility && !activeEditEligibility.eligible
+      ? activeEditEligibility.reasons[0]?.message ?? "Current result is read-only."
+      : null;
 
   return (
     <>
@@ -1297,6 +1833,12 @@ export function WorkbenchLayout({
                             description={queryError}
                           />
                         ) : null}
+                        {!queryError && activeEditBlockReason ? (
+                          <InlineIssue
+                            title="Result is currently read-only"
+                            description={activeEditBlockReason}
+                          />
+                        ) : null}
                         <div className="min-h-0 flex-1 overflow-hidden">
                           <ResultGridPane
                             batches={results?.batches ?? []}
@@ -1305,6 +1847,12 @@ export function WorkbenchLayout({
                             onLoadMore={handleLoadMore}
                             isLoading={isExecuting}
                             onStopOnErrorChange={setStopOnError}
+                            editEligibility={activeEditEligibility}
+                            primaryKeyColumns={activePrimaryKeyColumns}
+                            pendingEditCount={pendingEditCount}
+                            onEditCell={handleEditCell}
+                            onPrepareCommit={handlePrepareGridCommit}
+                            onDiscardEdits={handleDiscardGridEdits}
                           />
                         </div>
                       </div>
@@ -1339,6 +1887,7 @@ export function WorkbenchLayout({
         onConfirm={handleDangerConfirm}
         onCancel={handleDangerCancel}
       />
+
     </>
   );
 }
