@@ -219,6 +219,32 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         field_diffs_json TEXT NOT NULL,
         PRIMARY KEY(compare_id, table_name, row_key_json)
       );
+
+      CREATE TABLE IF NOT EXISTS db_data_apply_jobs (
+        job_id TEXT PRIMARY KEY,
+        compare_id TEXT NOT NULL,
+        source_connection_id TEXT NOT NULL,
+        target_connection_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        action_counts_json TEXT NOT NULL,
+        target_snapshot_hash TEXT NOT NULL,
+        current_target_snapshot_hash TEXT,
+        blockers_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS db_data_apply_results (
+        job_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        attempted_rows INTEGER NOT NULL,
+        succeeded_rows INTEGER NOT NULL,
+        failed_rows INTEGER NOT NULL,
+        failure_json TEXT,
+        PRIMARY KEY(job_id, table_name, action_type)
+      );
       ",
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
@@ -1428,4 +1454,222 @@ pub fn list_db_data_compare_rows(
     out.push(decode_row(row, "decode compare row")?);
   }
   Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDataApplyJobRecord {
+  pub job_id: String,
+  pub compare_id: String,
+  pub source_connection_id: String,
+  pub target_connection_id: String,
+  pub status: String,
+  pub action_counts_json: String,
+  pub target_snapshot_hash: String,
+  pub current_target_snapshot_hash: Option<String>,
+  pub blockers_json: String,
+  pub created_at: String,
+  pub started_at: Option<String>,
+  pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDataApplyResultRecord {
+  pub job_id: String,
+  pub table_name: String,
+  pub action_type: String,
+  pub attempted_rows: i64,
+  pub succeeded_rows: i64,
+  pub failed_rows: i64,
+  pub failure_json: Option<String>,
+}
+
+pub fn save_db_data_apply_job(
+  app: &AppHandle,
+  job: &DbDataApplyJobRecord,
+  results: &[DbDataApplyResultRecord],
+) -> Result<(), String> {
+  let (mut conn, _) = open_connection(app)?;
+  let tx = conn
+    .transaction()
+    .map_err(|error| storage_error("start apply job transaction", error))?;
+
+  tx
+    .execute(
+      "
+      INSERT INTO db_data_apply_jobs (
+        job_id,
+        compare_id,
+        source_connection_id,
+        target_connection_id,
+        status,
+        action_counts_json,
+        target_snapshot_hash,
+        current_target_snapshot_hash,
+        blockers_json,
+        created_at,
+        started_at,
+        finished_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+      ON CONFLICT(job_id) DO UPDATE SET
+        compare_id = excluded.compare_id,
+        source_connection_id = excluded.source_connection_id,
+        target_connection_id = excluded.target_connection_id,
+        status = excluded.status,
+        action_counts_json = excluded.action_counts_json,
+        target_snapshot_hash = excluded.target_snapshot_hash,
+        current_target_snapshot_hash = excluded.current_target_snapshot_hash,
+        blockers_json = excluded.blockers_json,
+        created_at = excluded.created_at,
+        started_at = excluded.started_at,
+        finished_at = excluded.finished_at
+      ",
+      params![
+        job.job_id,
+        job.compare_id,
+        job.source_connection_id,
+        job.target_connection_id,
+        job.status,
+        job.action_counts_json,
+        job.target_snapshot_hash,
+        job.current_target_snapshot_hash,
+        job.blockers_json,
+        job.created_at,
+        job.started_at,
+        job.finished_at,
+      ],
+    )
+    .map_err(|error| storage_error("upsert apply job", error))?;
+
+  tx
+    .execute(
+      "DELETE FROM db_data_apply_results WHERE job_id = ?1",
+      params![job.job_id],
+    )
+    .map_err(|error| storage_error("clear apply results", error))?;
+
+  let mut stmt = tx
+    .prepare(
+      "
+      INSERT INTO db_data_apply_results (
+        job_id,
+        table_name,
+        action_type,
+        attempted_rows,
+        succeeded_rows,
+        failed_rows,
+        failure_json
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ",
+    )
+    .map_err(|error| storage_error("prepare apply result insert", error))?;
+
+  for result in results {
+    stmt
+      .execute(params![
+        result.job_id,
+        result.table_name,
+        result.action_type,
+        result.attempted_rows,
+        result.succeeded_rows,
+        result.failed_rows,
+        result.failure_json,
+      ])
+      .map_err(|error| storage_error("insert apply result", error))?;
+  }
+  drop(stmt);
+
+  tx
+    .commit()
+    .map_err(|error| storage_error("commit apply job transaction", error))?;
+  Ok(())
+}
+
+pub fn get_db_data_apply_job(
+  app: &AppHandle,
+  job_id: &str,
+) -> Result<Option<(DbDataApplyJobRecord, Vec<DbDataApplyResultRecord>)>, String> {
+  let (conn, _) = open_connection(app)?;
+
+  let job = conn
+    .query_row(
+      "
+      SELECT
+        job_id,
+        compare_id,
+        source_connection_id,
+        target_connection_id,
+        status,
+        action_counts_json,
+        target_snapshot_hash,
+        current_target_snapshot_hash,
+        blockers_json,
+        created_at,
+        started_at,
+        finished_at
+      FROM db_data_apply_jobs
+      WHERE job_id = ?1
+      ",
+      params![job_id],
+      |row| {
+        Ok(DbDataApplyJobRecord {
+          job_id: row.get("job_id")?,
+          compare_id: row.get("compare_id")?,
+          source_connection_id: row.get("source_connection_id")?,
+          target_connection_id: row.get("target_connection_id")?,
+          status: row.get("status")?,
+          action_counts_json: row.get("action_counts_json")?,
+          target_snapshot_hash: row.get("target_snapshot_hash")?,
+          current_target_snapshot_hash: row.get("current_target_snapshot_hash")?,
+          blockers_json: row.get("blockers_json")?,
+          created_at: row.get("created_at")?,
+          started_at: row.get("started_at")?,
+          finished_at: row.get("finished_at")?,
+        })
+      },
+    )
+    .optional()
+    .map_err(|error| storage_error("load apply job", error))?;
+
+  let Some(job) = job else {
+    return Ok(None);
+  };
+
+  let mut stmt = conn
+    .prepare(
+      "
+      SELECT
+        job_id,
+        table_name,
+        action_type,
+        attempted_rows,
+        succeeded_rows,
+        failed_rows,
+        failure_json
+      FROM db_data_apply_results
+      WHERE job_id = ?1
+      ORDER BY table_name, action_type
+      ",
+    )
+    .map_err(|error| storage_error("prepare apply result list", error))?;
+
+  let rows = stmt
+    .query_map(params![job_id], |row| {
+      Ok(DbDataApplyResultRecord {
+        job_id: row.get("job_id")?,
+        table_name: row.get("table_name")?,
+        action_type: row.get("action_type")?,
+        attempted_rows: row.get("attempted_rows")?,
+        succeeded_rows: row.get("succeeded_rows")?,
+        failed_rows: row.get("failed_rows")?,
+        failure_json: row.get("failure_json")?,
+      })
+    })
+    .map_err(|error| storage_error("query apply results", error))?;
+
+  let mut results = Vec::new();
+  for row in rows {
+    results.push(decode_row(row, "decode apply result row")?);
+  }
+
+  Ok(Some((job, results)))
 }

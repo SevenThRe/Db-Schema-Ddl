@@ -7,6 +7,7 @@ pub mod query;
 pub mod explain;
 pub mod grid_edit;
 pub mod data_diff;
+pub mod data_apply;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
