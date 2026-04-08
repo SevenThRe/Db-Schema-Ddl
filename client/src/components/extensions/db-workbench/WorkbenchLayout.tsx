@@ -13,7 +13,7 @@
 // これにより Rust 層でのサーバーサイド安全性が保証される（SAFE-01 / SAFE-02）。
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { AlertTriangle, Lock } from "lucide-react";
+import { AlertTriangle, GitCompare, Lock } from "lucide-react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -35,6 +35,13 @@ import type {
   DbGridPrepareCommitResponse,
   DbQueryBatchResult,
   DbQueryRow,
+  DbDataDiffPreviewResponse,
+  DbDataDiffDetailResponse,
+  DbDataApplyPreviewResponse,
+  DbDataApplyExecuteResponse,
+  DbDataApplyJobDetailResponse,
+  DbDataSyncBlockerCode,
+  DbDataApplySelection,
 } from "@shared/schema";
 import type { HostApi } from "@/extensions/host-api";
 import { ConnectionSidebar } from "./ConnectionSidebar";
@@ -55,6 +62,8 @@ import { ResultExportMenu } from "./ResultExportMenu";
 import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
 import { GridEditCommitDialog } from "./GridEditCommitDialog";
+import { DataSyncRowDiffPane } from "./DataSyncRowDiffPane";
+import type { DataSyncRowDiffEntry } from "./data-sync-row-diff";
 import { buildAutocompleteContext } from "./sql-autocomplete";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -161,6 +170,73 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
     map.set(key(item), item);
   }
   return Array.from(map.values());
+}
+
+function hasBlockingDataSyncBlocker(
+  blockers: { code: DbDataSyncBlockerCode }[] | undefined,
+): boolean {
+  if (!blockers || blockers.length === 0) return false;
+  return blockers.some((blocker) =>
+    blocker.code === "target_snapshot_changed" ||
+    blocker.code === "artifact_expired" ||
+    blocker.code === "readonly_target" ||
+    blocker.code === "missing_stable_key"
+  );
+}
+
+function describeDataSyncBlocker(code: DbDataSyncBlockerCode): string {
+  if (code === "target_snapshot_changed") {
+    return "Target snapshot changed after compare. Re-run compare before execute.";
+  }
+  if (code === "artifact_expired") {
+    return "Compare artifact expired. Re-run compare preview.";
+  }
+  if (code === "unsafe_delete_threshold") {
+    return "Delete volume crossed unsafe_delete_threshold. Operator confirmation required.";
+  }
+  if (code === "readonly_target") {
+    return "Target connection is read-only and cannot apply changes.";
+  }
+  return "Missing stable key prevents deterministic row matching.";
+}
+
+function formatDataSyncCounts(counts: {
+  insert: number;
+  update: number;
+  delete: number;
+  unchanged: number;
+}): string {
+  return `I:${counts.insert} U:${counts.update} D:${counts.delete} =:${counts.unchanged}`;
+}
+
+function toDataSyncRowDiffEntry(
+  detail: DbDataDiffDetailResponse,
+): DataSyncRowDiffEntry[] {
+  return detail.rows.map((row) => ({
+    tableName: detail.tableName,
+    rowKey: Object.fromEntries(
+      Object.entries(row.rowKey).map(([key, value]) => {
+        if (
+          typeof value === "string" ||
+          typeof value === "number" ||
+          value === null
+        ) {
+          return [key, value];
+        }
+        return [key, String(value)];
+      }),
+    ),
+    status: row.status,
+    suggestedAction: row.suggestedAction,
+    sourceRow: row.sourceRow,
+    targetRow: row.targetRow,
+    fieldDiffs: row.fieldDiffs.map((field) => ({
+      columnName: field.columnName,
+      sourceValue: field.sourceValue,
+      targetValue: field.targetValue,
+      changed: field.changed,
+    })),
+  }));
 }
 
 interface HydratedConnectionSession {
@@ -343,10 +419,26 @@ export function WorkbenchLayout({
   const [stopOnError, setStopOnError] = useState(true);
 
   // 結果エリアのアクティブタブ（Results / Explain）
-  const [resultTab, setResultTab] = useState<"results" | "explain">("results");
+  const [resultTab, setResultTab] = useState<"results" | "explain" | "sync">("results");
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [currentExportRequestId, setCurrentExportRequestId] = useState<string | null>(null);
+  const [syncSourceConnectionId, setSyncSourceConnectionId] = useState(connection.id);
+  const [syncTargetConnectionId, setSyncTargetConnectionId] = useState(connection.id);
+  const [syncSelectedTables, setSyncSelectedTables] = useState<string[]>([]);
+  const [diffPreview, setDiffPreview] = useState<DbDataDiffPreviewResponse | null>(null);
+  const [diffDetail, setDiffDetail] = useState<DbDataDiffDetailResponse | null>(null);
+  const [diffRows, setDiffRows] = useState<DataSyncRowDiffEntry[]>([]);
+  const [selectedDiffRowIndex, setSelectedDiffRowIndex] = useState(0);
+  const [syncIncludeUnchanged, setSyncIncludeUnchanged] = useState(false);
+  const [applyPreview, setApplyPreview] = useState<DbDataApplyPreviewResponse | null>(null);
+  const [applyExecute, setApplyExecute] = useState<DbDataApplyExecuteResponse | null>(null);
+  const [applyJobDetail, setApplyJobDetail] = useState<DbDataApplyJobDetailResponse | null>(null);
+  const [applyProdConfirmation, setApplyProdConfirmation] = useState("");
+  const [syncIssue, setSyncIssue] = useState<string | null>(null);
+  const [isDiffPreviewing, setIsDiffPreviewing] = useState(false);
+  const [isApplyPreviewing, setIsApplyPreviewing] = useState(false);
+  const [isApplyExecuting, setIsApplyExecuting] = useState(false);
   const [pendingEditCells, setPendingEditCells] = useState<Record<string, DbGridEditPatchCell>>({});
   const [preparedGridPlan, setPreparedGridPlan] = useState<DbGridPrepareCommitResponse | null>(null);
   const [isPreparingGridCommit, setIsPreparingGridCommit] = useState(false);
@@ -470,6 +562,23 @@ export function WorkbenchLayout({
     );
   }, [schemaSnapshot]);
 
+  useEffect(() => {
+    const tableNames = [...(schemaSnapshot?.tables ?? [])].map((table) => table.name);
+    if (tableNames.length === 0) {
+      setSyncSelectedTables([]);
+      return;
+    }
+
+    setSyncSelectedTables((current) => {
+      const filtered = current.filter((name) => tableNames.includes(name));
+      if (filtered.length > 0) return filtered;
+      if (selectedTableName && tableNames.includes(selectedTableName)) {
+        return [selectedTableName];
+      }
+      return [tableNames[0]];
+    });
+  }, [schemaSnapshot, selectedTableName]);
+
   // ──────────────────────────────────────────────
   // アクティブタブ
   // ──────────────────────────────────────────────
@@ -489,6 +598,19 @@ export function WorkbenchLayout({
     setPendingEditCells({});
     setPreparedGridPlan(null);
     setLastGridEditSource(null);
+    setSyncSourceConnectionId(connection.id);
+    setSyncTargetConnectionId(connection.id);
+    setSyncSelectedTables([]);
+    setDiffPreview(null);
+    setDiffDetail(null);
+    setDiffRows([]);
+    setSelectedDiffRowIndex(0);
+    setSyncIncludeUnchanged(false);
+    setApplyPreview(null);
+    setApplyExecute(null);
+    setApplyJobDetail(null);
+    setApplyProdConfirmation("");
+    setSyncIssue(null);
   }, [connection.id]);
 
   useEffect(() => {
@@ -1297,6 +1419,249 @@ export function WorkbenchLayout({
     [handleRunStarterQuery],
   );
 
+  const buildDataApplySelections = useCallback((): DbDataApplySelection[] => {
+    return diffRows
+      .filter((row) => row.suggestedAction && row.suggestedAction !== "ignore")
+      .map((row) => ({
+        tableName: row.tableName,
+        rowKey: row.rowKey,
+        action:
+          row.suggestedAction === "insert"
+            ? "insert"
+            : row.suggestedAction === "delete"
+              ? "delete"
+              : "update",
+      }));
+  }, [diffRows]);
+
+  const handleLoadDataDiffDetail = useCallback(
+    async (tableName: string, includeUnchanged = syncIncludeUnchanged) => {
+      if (!diffPreview?.compareId) return;
+      try {
+        const detail = await hostApi.connections.fetchDataDiffDetail({
+          compareId: diffPreview.compareId,
+          tableName,
+          limit: 200,
+          offset: 0,
+          includeUnchanged,
+        });
+        setDiffDetail(detail);
+        setDiffRows(toDataSyncRowDiffEntry(detail));
+        setSelectedDiffRowIndex(0);
+      } catch (error) {
+        setSyncIssue(
+          formatWorkbenchError(
+            error,
+            "Failed to load row-level compare detail.",
+          ),
+        );
+      }
+    },
+    [diffPreview?.compareId, hostApi.connections, syncIncludeUnchanged],
+  );
+
+  const handlePreviewDataDiff = useCallback(async () => {
+    const tables = syncSelectedTables.length > 0
+      ? syncSelectedTables
+      : selectedTableName
+        ? [selectedTableName]
+        : [];
+    if (tables.length === 0) {
+      setSyncIssue("Select at least one table before compare.");
+      return;
+    }
+
+    setIsDiffPreviewing(true);
+    setSyncIssue(null);
+    setResultTab("sync");
+    setDiffDetail(null);
+    setDiffRows([]);
+    setSelectedDiffRowIndex(0);
+    setApplyPreview(null);
+    setApplyExecute(null);
+    setApplyJobDetail(null);
+    try {
+      const preview = await hostApi.connections.previewDataDiff({
+        sourceConnectionId: syncSourceConnectionId,
+        targetConnectionId: syncTargetConnectionId,
+        tables: tables.map((tableName) => ({
+          tableName,
+          keyColumns: [],
+          compareColumns: [],
+        })),
+      });
+      setDiffPreview(preview);
+      const firstTable = preview.tableSummaries[0]?.tableName;
+      if (firstTable) {
+        void handleLoadDataDiffDetail(firstTable, syncIncludeUnchanged);
+      }
+    } catch (error) {
+      setSyncIssue(
+        formatWorkbenchError(
+          error,
+          "Failed to preview data diff for source -> target.",
+        ),
+      );
+    } finally {
+      setIsDiffPreviewing(false);
+    }
+  }, [
+    handleLoadDataDiffDetail,
+    hostApi.connections,
+    selectedTableName,
+    syncSelectedTables,
+    syncSourceConnectionId,
+    syncTargetConnectionId,
+    syncIncludeUnchanged,
+  ]);
+
+  const handlePreviewDataApply = useCallback(async () => {
+    if (!diffPreview) {
+      setSyncIssue("Run compare preview first.");
+      return;
+    }
+
+    const selections = buildDataApplySelections();
+    if (selections.length === 0) {
+      setSyncIssue("No row actions are selected for apply preview.");
+      return;
+    }
+    setIsApplyPreviewing(true);
+    setSyncIssue(null);
+    setResultTab("sync");
+    try {
+      const preview = await hostApi.connections.previewDataApply({
+        compareId: diffPreview.compareId,
+        sourceConnectionId: syncSourceConnectionId,
+        targetConnectionId: syncTargetConnectionId,
+        targetSnapshotHash: diffPreview.targetSnapshotHash,
+        currentTargetSnapshotHash: diffDetail?.currentTargetSnapshotHash,
+        selections,
+        deleteWarningThreshold: 500,
+      });
+      setApplyPreview(preview);
+    } catch (error) {
+      setSyncIssue(
+        formatWorkbenchError(
+          error,
+          "Failed to preview apply operation.",
+        ),
+      );
+    } finally {
+      setIsApplyPreviewing(false);
+    }
+  }, [
+    buildDataApplySelections,
+    diffDetail?.currentTargetSnapshotHash,
+    diffPreview,
+    hostApi.connections,
+    syncSourceConnectionId,
+    syncTargetConnectionId,
+  ]);
+
+  const handleLoadDataApplyJobDetail = useCallback(
+    async (jobId: string) => {
+      const detail = await hostApi.connections.fetchDataApplyJobDetail({ jobId });
+      setApplyJobDetail(detail);
+      return detail;
+    },
+    [hostApi.connections],
+  );
+
+  const handleExecuteDataApply = useCallback(async () => {
+    if (!diffPreview || !applyPreview) {
+      setSyncIssue("Run apply preview before execute.");
+      return;
+    }
+    if (hasBlockingDataSyncBlocker(applyPreview.blockers)) {
+      const codes = applyPreview.blockers.map((blocker) => blocker.code).join(", ");
+      setSyncIssue(
+        `Execution blocked by sync guards: ${codes}. Re-run compare when target_snapshot_changed or artifact_expired is present.`,
+      );
+      return;
+    }
+    if (!applyPreview.executable) {
+      setSyncIssue("Apply preview is not executable yet. Resolve warnings before execute.");
+      return;
+    }
+
+    const targetConnection = connections.find((item) => item.id === syncTargetConnectionId);
+    const requiresProdConfirmation = targetConnection?.environment === "prod";
+    if (requiresProdConfirmation && applyProdConfirmation !== targetConnection.database) {
+      setSyncIssue("Execution requires typed confirmation for prod target database.");
+      return;
+    }
+
+    setIsApplyExecuting(true);
+    setSyncIssue(null);
+    setResultTab("sync");
+    try {
+      const executeResult = await hostApi.connections.executeDataApply({
+        compareId: diffPreview.compareId,
+        sourceConnectionId: syncSourceConnectionId,
+        targetConnectionId: syncTargetConnectionId,
+        targetSnapshotHash: applyPreview.targetSnapshotHash,
+        currentTargetSnapshotHash: applyPreview.currentTargetSnapshotHash,
+        selections: buildDataApplySelections(),
+      });
+      setApplyExecute(executeResult);
+      await handleLoadDataApplyJobDetail(executeResult.jobId);
+    } catch (error) {
+      setSyncIssue(
+        formatWorkbenchError(
+          error,
+          "Failed to execute apply operation.",
+        ),
+      );
+    } finally {
+      setIsApplyExecuting(false);
+    }
+  }, [
+    applyPreview,
+    applyProdConfirmation,
+    buildDataApplySelections,
+    connections,
+    diffPreview,
+    handleLoadDataApplyJobDetail,
+    hostApi.connections,
+    syncSourceConnectionId,
+    syncTargetConnectionId,
+  ]);
+
+  const handleToggleSyncTable = useCallback((tableName: string) => {
+    setSyncSelectedTables((current) => {
+      if (current.includes(tableName)) {
+        const next = current.filter((name) => name !== tableName);
+        return next.length > 0 ? next : [tableName];
+      }
+      return [...current, tableName];
+    });
+  }, []);
+
+  const handleChangeSyncRowAction = useCallback(
+    (rowIndex: number, nextAction: "insert" | "update" | "delete" | "ignore") => {
+      setDiffRows((current) =>
+        current.map((row, index) =>
+          index === rowIndex ? { ...row, suggestedAction: nextAction } : row,
+        ),
+      );
+      setApplyPreview(null);
+      setApplyExecute(null);
+      setApplyJobDetail(null);
+    },
+    [],
+  );
+
+  const handleToggleIncludeUnchangedRows = useCallback(
+    (nextIncludeUnchanged: boolean) => {
+      setSyncIncludeUnchanged(nextIncludeUnchanged);
+      if (diffDetail) {
+        void handleLoadDataDiffDetail(diffDetail.tableName, nextIncludeUnchanged);
+      }
+    },
+    [diffDetail, handleLoadDataDiffDetail],
+  );
+
   const handleEditCell = useCallback((patch: DbGridEditPatchCell) => {
     const patchKey = `${patch.rowPkTuple}::${patch.columnName}`;
     setPendingEditCells((previous) => {
@@ -1658,6 +2023,28 @@ export function WorkbenchLayout({
     activeEditEligibility && !activeEditEligibility.eligible
       ? activeEditEligibility.reasons[0]?.message ?? "Current result is read-only."
       : null;
+  const syncAvailableTableNames = (schemaSnapshot?.tables ?? [])
+    .map((table) => table.name)
+    .sort((left, right) => left.localeCompare(right));
+  const activeDiffRow = diffRows[selectedDiffRowIndex] ?? null;
+  const syncConnectionOptions = connections.length > 0 ? connections : [connection];
+  const activeSyncSourceConnection =
+    connections.find((item) => item.id === syncSourceConnectionId) ?? connection;
+  const activeSyncTargetConnection =
+    connections.find((item) => item.id === syncTargetConnectionId) ?? connection;
+  const syncRequiresProdTypedConfirmation = activeSyncTargetConnection.environment === "prod";
+  const applyPreviewHasBlockingGuard = hasBlockingDataSyncBlocker(applyPreview?.blockers);
+  const applyPreviewHasUnsafeDeleteWarning =
+    applyPreview?.blockers.some((blocker) => blocker.code === "unsafe_delete_threshold") ?? false;
+  const activeApplyJobId = applyExecute?.jobId ?? applyJobDetail?.jobId ?? null;
+  const canExecuteDataApply =
+    Boolean(diffPreview) &&
+    Boolean(applyPreview) &&
+    !isApplyExecuting &&
+    !applyPreviewHasBlockingGuard &&
+    applyPreview?.executable === true &&
+    (!syncRequiresProdTypedConfirmation ||
+      applyProdConfirmation === activeSyncTargetConnection.database);
 
   return (
     <>
@@ -1801,7 +2188,7 @@ export function WorkbenchLayout({
                     <Tabs
                       value={resultTab}
                       onValueChange={(v) =>
-                        setResultTab(v as "results" | "explain")
+                        setResultTab(v as "results" | "explain" | "sync")
                       }
                     >
                       <TabsList className="h-7">
@@ -1810,6 +2197,10 @@ export function WorkbenchLayout({
                         </TabsTrigger>
                         <TabsTrigger value="explain" className="h-6 text-xs">
                           Explain
+                        </TabsTrigger>
+                        <TabsTrigger value="sync" className="h-6 text-xs">
+                          <GitCompare className="mr-1 h-3.5 w-3.5" />
+                          Sync
                         </TabsTrigger>
                       </TabsList>
                     </Tabs>
@@ -1822,9 +2213,14 @@ export function WorkbenchLayout({
                         isExporting={isExporting}
                       />
                     )}
+                    {resultTab === "sync" && (
+                      <div className="text-[11px] text-muted-foreground">
+                        source -&gt; target
+                      </div>
+                    )}
                   </div>
 
-                  {/* 結果/EXPLAIN コンテンツエリア */}
+                  {/* 結果/EXPLAIN/SYNC コンテンツエリア */}
                   <div className="flex-1 overflow-hidden">
                     {resultTab === "results" ? (
                       <div className="flex h-full flex-col overflow-hidden">
@@ -1857,7 +2253,7 @@ export function WorkbenchLayout({
                           />
                         </div>
                       </div>
-                    ) : (
+                    ) : resultTab === "explain" ? (
                       <div className="flex h-full flex-col overflow-hidden">
                         {explainError ? (
                           <InlineIssue
@@ -1870,6 +2266,383 @@ export function WorkbenchLayout({
                             plan={explainPlan}
                             isLoading={isExplaining}
                           />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-full flex-col overflow-hidden">
+                        {syncIssue ? (
+                          <InlineIssue
+                            title="Data sync action failed"
+                            description={syncIssue}
+                          />
+                        ) : null}
+
+                        <div className="shrink-0 border-b border-border bg-background px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                              <GitCompare className="h-3.5 w-3.5 text-muted-foreground" />
+                              source -&gt; target
+                            </span>
+                            <span className="rounded-sm border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+                              {activeSyncSourceConnection.name} -&gt; {activeSyncTargetConnection.name}
+                            </span>
+                            {diffPreview ? (
+                              <>
+                                <span className="rounded-sm border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+                                  compareId: {diffPreview.compareId}
+                                </span>
+                                <span className="rounded-sm border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+                                  {formatDataSyncCounts(diffPreview.statusCounts)}
+                                </span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 border-b border-border bg-panel-muted/40 px-3 py-2">
+                          <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                            <div className="space-y-1">
+                              <label htmlFor="sync-source-connection" className="text-[11px] font-medium text-muted-foreground">
+                                Source connection
+                              </label>
+                              <select
+                                id="sync-source-connection"
+                                className="h-8 w-full rounded-sm border border-border bg-background px-2 text-xs"
+                                value={syncSourceConnectionId}
+                                onChange={(event) => setSyncSourceConnectionId(event.target.value)}
+                              >
+                                {syncConnectionOptions.map((item) => (
+                                  <option key={`sync-source-${item.id}`} value={item.id}>
+                                    {item.name} ({item.environment ?? "dev"}) / {item.database}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label htmlFor="sync-target-connection" className="text-[11px] font-medium text-muted-foreground">
+                                Target connection
+                              </label>
+                              <select
+                                id="sync-target-connection"
+                                className="h-8 w-full rounded-sm border border-border bg-background px-2 text-xs"
+                                value={syncTargetConnectionId}
+                                onChange={(event) => setSyncTargetConnectionId(event.target.value)}
+                              >
+                                {syncConnectionOptions.map((item) => (
+                                  <option key={`sync-target-${item.id}`} value={item.id}>
+                                    {item.name} ({item.environment ?? "dev"}) / {item.database}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                void handlePreviewDataDiff();
+                              }}
+                              disabled={isDiffPreviewing || syncSelectedTables.length === 0}
+                            >
+                              {isDiffPreviewing ? "Comparing..." : "Compare source -> target"}
+                            </Button>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {syncAvailableTableNames.length === 0 ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                No tables detected for sync compare.
+                              </span>
+                            ) : (
+                              syncAvailableTableNames.map((tableName) => {
+                                const selected = syncSelectedTables.includes(tableName);
+                                return (
+                                  <label
+                                    key={`sync-table-${tableName}`}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px]",
+                                      selected
+                                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                        : "border-border bg-background text-muted-foreground",
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      onChange={() => handleToggleSyncTable(tableName)}
+                                    />
+                                    <span className="font-mono">{tableName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="min-h-0 flex flex-1 overflow-hidden">
+                          <div className="w-[280px] shrink-0 border-r border-border">
+                            <div className="border-b border-border bg-panel-muted/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                              Compare Summary
+                            </div>
+                            <div className="h-full overflow-auto p-2">
+                              {!diffPreview ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Run compare preview to inspect per-table insert/update/delete deltas.
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {diffPreview.tableSummaries.map((summary) => {
+                                    const active = diffDetail?.tableName === summary.tableName;
+                                    return (
+                                      <button
+                                        key={`summary-${summary.tableName}`}
+                                        type="button"
+                                        onClick={() => {
+                                          void handleLoadDataDiffDetail(summary.tableName);
+                                        }}
+                                        className={cn(
+                                          "w-full rounded-sm border p-2 text-left text-xs",
+                                          active
+                                            ? "border-emerald-500/40 bg-emerald-500/10"
+                                            : "border-border bg-background hover:bg-muted/30",
+                                        )}
+                                      >
+                                        <p className="truncate font-mono text-[11px] font-semibold">
+                                          {summary.tableName}
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-muted-foreground">
+                                          {formatDataSyncCounts(summary.statusCounts)}
+                                        </p>
+                                        {summary.blockerCodes.length > 0 ? (
+                                          <p className="mt-1 text-[11px] text-destructive">
+                                            {summary.blockerCodes.join(", ")}
+                                          </p>
+                                        ) : null}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="w-[320px] shrink-0 border-r border-border">
+                            <div className="flex items-center justify-between border-b border-border bg-panel-muted/40 px-3 py-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                                Row Deltas
+                              </span>
+                              <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={syncIncludeUnchanged}
+                                  onChange={(event) =>
+                                    handleToggleIncludeUnchangedRows(event.target.checked)
+                                  }
+                                />
+                                include unchanged
+                              </label>
+                            </div>
+                            <div className="h-full overflow-auto p-2">
+                              {!diffDetail ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Select a table summary to load row-level diff detail.
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {diffDetail.blockers.length > 0 ? (
+                                    <div className="rounded-sm border border-destructive/30 bg-destructive/5 p-2 text-[11px] text-destructive">
+                                      {diffDetail.blockers.map((blocker) => (
+                                        <p key={`detail-blocker-${blocker.code}`}>
+                                          {blocker.code}: {describeDataSyncBlocker(blocker.code)}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {diffRows.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      No row differences found in current table.
+                                    </p>
+                                  ) : (
+                                    diffRows.map((row, index) => {
+                                      const active = index === selectedDiffRowIndex;
+                                      const rowKeyLabel = Object.entries(row.rowKey)
+                                        .map(([key, value]) => `${key}=${value ?? "null"}`)
+                                        .join(", ");
+                                      return (
+                                        <div
+                                          key={`row-diff-${index}-${rowKeyLabel}`}
+                                          className={cn(
+                                            "rounded-sm border p-2",
+                                            active
+                                              ? "border-emerald-500/40 bg-emerald-500/10"
+                                              : "border-border bg-background",
+                                          )}
+                                        >
+                                          <button
+                                            type="button"
+                                            className="w-full text-left"
+                                            onClick={() => setSelectedDiffRowIndex(index)}
+                                          >
+                                            <p className="truncate font-mono text-[11px]">{rowKeyLabel}</p>
+                                            <p className="mt-1 text-[11px] text-muted-foreground">
+                                              {row.status}
+                                            </p>
+                                          </button>
+                                          <div className="mt-2">
+                                            <label className="mb-1 block text-[11px] text-muted-foreground">
+                                              Apply action
+                                            </label>
+                                            <select
+                                              className="h-7 w-full rounded-sm border border-border bg-background px-2 text-xs"
+                                              value={row.suggestedAction ?? "ignore"}
+                                              onChange={(event) =>
+                                                handleChangeSyncRowAction(
+                                                  index,
+                                                  event.target.value as "insert" | "update" | "delete" | "ignore",
+                                                )
+                                              }
+                                            >
+                                              <option value="insert">insert</option>
+                                              <option value="update">update</option>
+                                              <option value="delete">delete</option>
+                                              <option value="ignore">ignore</option>
+                                            </select>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="min-w-0 flex-1 overflow-hidden bg-background">
+                            <DataSyncRowDiffPane entry={activeDiffRow} className="h-full" />
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 border-t border-border bg-panel-muted/40 px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                void handlePreviewDataApply();
+                              }}
+                              disabled={!diffPreview || isApplyPreviewing}
+                            >
+                              {isApplyPreviewing ? "Previewing..." : "Preview apply"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="h-8 text-xs"
+                              disabled={!canExecuteDataApply}
+                              onClick={() => {
+                                void handleExecuteDataApply();
+                              }}
+                            >
+                              {isApplyExecuting ? "Executing..." : "Execute apply"}
+                            </Button>
+                            {activeApplyJobId ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  void handleLoadDataApplyJobDetail(activeApplyJobId);
+                                }}
+                              >
+                                View job detail
+                              </Button>
+                            ) : null}
+                          </div>
+
+                          {applyPreview ? (
+                            <div className="mt-2 space-y-1 text-[11px]">
+                              <p className="font-mono text-foreground">
+                                apply preview: {formatDataSyncCounts(applyPreview.statusCounts)}
+                              </p>
+                              <p className="text-muted-foreground">
+                                target snapshot {applyPreview.currentTargetSnapshotHash}
+                              </p>
+                              <p className="text-muted-foreground">
+                                executable: {applyPreview.executable ? "yes" : "no"}
+                              </p>
+                              {applyPreview.sqlPreviewLines.length > 0 ? (
+                                <pre className="max-h-28 overflow-auto rounded-sm border border-border bg-background p-2 font-mono text-[11px]">
+                                  {applyPreview.sqlPreviewLines.join("\n")}
+                                </pre>
+                              ) : null}
+                              {applyPreview.blockers.length > 0 ? (
+                                <div
+                                  className={cn(
+                                    "rounded-sm border p-2",
+                                    applyPreviewHasBlockingGuard
+                                      ? "border-destructive/40 bg-destructive/5 text-destructive"
+                                      : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                  )}
+                                >
+                                  {applyPreview.blockers.map((blocker) => (
+                                    <p key={`apply-blocker-${blocker.code}`}>
+                                      {blocker.code}: {describeDataSyncBlocker(blocker.code)}
+                                    </p>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {applyPreviewHasUnsafeDeleteWarning ? (
+                                <p className="text-amber-700 dark:text-amber-300">
+                                  unsafe_delete_threshold warning is active. Review delete volume before execute.
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {syncRequiresProdTypedConfirmation && (
+                            <div className="mt-2 rounded-sm border border-destructive/30 bg-destructive/5 p-2">
+                              <p className="text-[11px] text-destructive">
+                                typed confirmation required for prod target.
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">
+                                Type target database name: {activeSyncTargetConnection.database}
+                              </p>
+                              <input
+                                value={applyProdConfirmation}
+                                onChange={(event) => setApplyProdConfirmation(event.target.value)}
+                                placeholder={activeSyncTargetConnection.database}
+                                className="mt-1 h-8 w-full rounded-sm border border-border bg-background px-2 text-xs"
+                              />
+                            </div>
+                          )}
+
+                          {applyExecute ? (
+                            <div className="mt-2 rounded-sm border border-border bg-background p-2 text-[11px]">
+                              <p className="font-mono">
+                                apply result job: {applyExecute.jobId} ({applyExecute.status})
+                              </p>
+                              <p className="mt-1 text-muted-foreground">
+                                {formatDataSyncCounts(applyExecute.statusCounts)}
+                              </p>
+                            </div>
+                          ) : null}
+
+                          {applyJobDetail ? (
+                            <div className="mt-2 rounded-sm border border-border bg-background p-2 text-[11px]">
+                              <p className="font-mono">
+                                job detail: {applyJobDetail.jobId} ({applyJobDetail.status})
+                              </p>
+                              <p className="mt-1 text-muted-foreground">
+                                created: {applyJobDetail.createdAt}
+                                {applyJobDetail.finishedAt ? ` / finished: ${applyJobDetail.finishedAt}` : ""}
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     )}
