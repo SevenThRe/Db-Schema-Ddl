@@ -54,6 +54,7 @@ import type { ExportFormat, ExportScope } from "./ResultExportMenu";
 import { ResultExportMenu } from "./ResultExportMenu";
 import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
+import { GridEditCommitDialog } from "./GridEditCommitDialog";
 import { buildAutocompleteContext } from "./sql-autocomplete";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -1879,6 +1880,18 @@ export function WorkbenchLayout({
           </div>
         </div>
       </div>
+
+      {/* 行編集コミット確認ダイアログ（DATA-02 / DATA-03） */}
+      <GridEditCommitDialog
+        open={preparedGridPlan !== null}
+        affectedRows={preparedGridPlan?.affectedRows ?? 0}
+        changedColumnsSummary={preparedGridPlan?.changedColumnsSummary ?? []}
+        sqlPreviewLines={preparedGridPlan?.sqlPreviewLines ?? []}
+        previewTruncated={preparedGridPlan?.previewTruncated ?? false}
+        isConfirming={isCommittingGridEdit}
+        onConfirm={handleCommitGridEdits}
+        onCancel={() => setPreparedGridPlan(null)}
+      />
 
       {/* 危険 SQL 確認ダイアログ（SAFE-01 / SAFE-02） */}
       <DangerousSqlDialog
