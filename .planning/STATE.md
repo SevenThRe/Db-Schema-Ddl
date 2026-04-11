@@ -1,13 +1,12 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: TBD
-status: planning
-last_updated: "2026-04-08T20:16:00.000+09:00"
-last_activity: 2026-04-08 — Completed v1.5 closeout (audit + archival) and prepared for next milestone definition
+milestone: v1.7
+milestone_name: Operator Productivity Surfaces
+status: Defining requirements
+last_updated: "2026-04-11T00:00:00+09:00"
 progress:
-  total_phases: 0
-  completed_phases: 0
+  total_phases: 22
+  completed_phases: 18
   total_plans: 0
   completed_plans: 0
 ---
@@ -16,10 +15,10 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-08)
+See: `.planning/PROJECT.md` (updated 2026-04-11)
 
 **Core value:** Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
-**Current focus:** Define and start v1.6 milestone planning
+**Current focus:** Not started (defining requirements for v1.7)
 
 ## Current Status
 
@@ -29,13 +28,15 @@ See: `.planning/PROJECT.md` (updated 2026-04-08)
 - `v1.3` established packaged/runtime stability and delivery hardening
 - `v1.4` established the current DB Workbench surface and surrounding DB management seams
 - `v1.5` is complete, audited, and archived under `.planning/milestones/`
+- `v1.6` closed runtime resilience and Nyquist validation debt and is archived under `.planning/milestones/`
+- `v1.7` is now active — Operator Productivity Surfaces
 
 ## Current Position
 
-Milestone: v1.5 (应用级 DB 工作台) — SHIPPED
-Audit: `.planning/v1.5-v1.5-MILESTONE-AUDIT.md` (status: passed)
-Archive: `.planning/milestones/v1.5-ROADMAP.md`, `.planning/milestones/v1.5-REQUIREMENTS.md`
-Next step: define v1.6 requirements and roadmap
+Phase: Not started (defining requirements)
+Plan: -
+Status: Defining requirements
+Last activity: 2026-04-11 — Milestone v1.7 Operator Productivity Surfaces started
 
 ## Important Assumptions
 
@@ -43,7 +44,7 @@ Next step: define v1.6 requirements and roadmap
 - Daily replacement-grade value comes from runtime trust, workflow continuity, and safety before feature breadth
 - Per-connection workspace isolation and multi-schema support are first-order requirements, not polish
 - Safe data sync must be built on top of proven key mapping, SQL preview, and transaction semantics
-- All v1.0-v1.4 user flows must remain intact while the primary DB path is consolidated
+- All v1.0-v1.6 user flows must remain intact while operator productivity surfaces expand
 
 ## Accumulated Context
 
@@ -61,6 +62,12 @@ Next step: define v1.6 requirements and roadmap
 - Workbench shell exists, but replacement blockers are runtime semantics, split legacy/new workflow, per-connection session leakage, hardcoded PostgreSQL `public`, and unfinished edit/sync loops
 - New milestone phases continue global sequencing at Phase 15
 - Treat `v1.4` as baseline capability inventory, not proof of app-grade DB tool readiness
+
+### v1.7 Milestone Direction
+
+- Trust and validation are baseline assumptions now; the next step is operator speed, repeatability, and inspection depth
+- Feature phases continue at Phase 19 so the mainline DB Workbench sequence stays readable after the archived v1.5 build-out
+- Productivity work must not quietly regress runtime correctness; supported statements must still execute even when paging is unavailable
 
 ### Key Files That Change in Phase 1
 
@@ -160,9 +167,7 @@ Next step: define v1.6 requirements and roadmap
 
 ## Next Command
 
-- `$gsd-progress`
-- `$gsd-complete-milestone`
-- `$gsd-new-milestone`
+- Continue milestone initialization: define requirements and create roadmap
 
 ---
-*Last updated: 2026-04-08 after completing Phase 18 live data compare and sync*
+*Last updated: 2026-04-11 after starting v1.7 Operator Productivity Surfaces*

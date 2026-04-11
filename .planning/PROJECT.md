@@ -2,7 +2,7 @@
 
 ## What This Is
 
-DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It ships Excel parsing, DDL generation/import, schema comparison, and an operator-grade DB Workbench for MySQL/PostgreSQL. Milestone `v1.5` is now shipped and established the app-grade DB daily workflow baseline.
+DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It ships Excel parsing, DDL generation/import, schema comparison, and an operator-grade DB Workbench for MySQL/PostgreSQL. Milestones `v1.5` and `v1.6` established the runtime trust and validation baseline; `v1.7` now focuses on making the workbench faster and deeper for repeat operator workflows.
 
 ## Core Value
 
@@ -11,16 +11,23 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 ## Current State
 
 - ✅ Milestone `v1.5` (应用级 DB 工作台) shipped on `2026-04-08`
+- ✅ Milestone `v1.6` (Reliability & Validation Hardening) shipped on `2026-04-11`
 - ✅ Query/runtime/export/schema behavior hardened for large real-database workloads
 - ✅ One primary DB Workbench workflow with per-connection workspace persistence
 - ✅ Safe row editing with preview/confirm/transaction rollback guarantees
 - ✅ Live compare/sync path promoted to first-class flow with stale-target and production safety guards
+- ✅ Live-environment resilience evidence and archived validation coverage now exist for the v1.5 baseline
 
-## Next Milestone Goals
+## Current Milestone: v1.7 Operator Productivity Surfaces
 
-- Define `v1.6` scope and requirements with `$gsd-new-milestone`
-- Expand operator productivity surfaces built on the v1.5 runtime/session baseline
-- Continue reducing residual integration risk with more live-environment validation coverage
+**Goal:** Make DB Workbench faster to live in every day by adding persistent operator memory, deeper object inspection, richer browse controls, and quick-launch shortcuts without regressing the trusted v1.5/v1.6 baseline.
+
+**Target features:**
+- Runtime correctness closeout for supported-but-non-pageable statements so execution semantics stay trustworthy
+- Persistent recent-query history across restarts and connection-scoped script/snippet library
+- Favorites and quick-launch surfaces for repeat queries, tables, and saved work
+- Deeper object explorer coverage for views, triggers, functions/procedures, and object-definition preview
+- Richer data-browse helpers for repeat table inspection and copy/export workflows
 
 ## Requirements
 
@@ -38,9 +45,10 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 
 ### Active
 
-- [ ] Define and ship v1.6 milestone roadmap and requirements
-- [ ] Expand live-environment reliability coverage (bigger datasets, unstable network, long-running operations)
-- [ ] Continue DB Workbench operator UX hardening without regressing Excel authoring/import workflows
+- [ ] Close remaining runtime-correctness drifts so unsupported paging never means skipped execution
+- [ ] Add persistent operator memory surfaces: recent queries, script library, and favorites
+- [ ] Expand object inspection depth: views, routines/triggers, and DDL/definition preview
+- [ ] Improve repeat data-browse workflows without regressing Excel authoring/import paths
 
 ### Out of Scope
 
@@ -52,9 +60,10 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 
 - `v1.0` through `v1.4` established the current desktop shell, DB connectivity, schema introspection, compare/apply flows, and the first usable DB Workbench surface
 - `v1.5` closed the replacement-grade DB Workbench gap across runtime semantics, navigation workflow, edit safety, and compare/sync safeguards
+- `v1.6` closed runtime resilience evidence debt and archived Nyquist validation gaps for the `v1.5` phases
 - Legacy routes still exist for compatibility, but the primary operator path is now the workbench shell
-- Milestone archives now track v1.5 details under `.planning/milestones/`
-- Next focus moves from baseline productization to targeted expansion and reliability depth
+- Milestone archives now track `v1.5` and `v1.6` under `.planning/milestones/`
+- Next focus moves from baseline productization to operator productivity depth and inspection breadth
 
 ## Constraints
 
@@ -73,6 +82,7 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 | Make per-connection sessions and multi-schema support milestone requirements | Global tab state and `public`-only assumptions break real operator usage quickly | Accepted |
 | Sequence safe row editing before live DB sync apply | Sync depends on trustworthy key mapping, SQL preview, and transaction semantics | Accepted |
 | Keep legacy paths while elevating one primary route | Compatibility preservation while converging operator workflow | Accepted |
+| Treat v1.7 as productivity depth, not broad platform expansion | The baseline is trustworthy now; the next value step is speed and repeatability for operators | Accepted |
 
 ---
-*Last updated: 2026-04-08 after completing v1.5 milestone closeout*
+*Last updated: 2026-04-11 after opening v1.7 Operator Productivity Surfaces*
