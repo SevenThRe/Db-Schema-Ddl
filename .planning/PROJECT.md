@@ -2,7 +2,7 @@
 
 ## What This Is
 
-DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It ships Excel parsing, DDL generation/import, schema comparison, and an operator-grade DB Workbench for MySQL/PostgreSQL. Milestones `v1.5` and `v1.6` established the runtime trust and validation baseline; `v1.7` now focuses on making the workbench faster and deeper for repeat operator workflows.
+DB Schema DDL is a desktop-first schema workbench built around two connected loops: Excel-based schema authoring and live database operations. It ships Excel parsing, DDL generation/import, schema comparison, and a DB Workbench for MySQL/PostgreSQL. Milestones `v1.5` and `v1.6` established the runtime trust baseline; `v1.7` proved part of the operator-continuity direction, but also exposed that the remaining blocker is no longer feature breadth. The next milestone shifts the product from "capable prototype" to "publishable DB tool".
 
 ## Core Value
 
@@ -12,22 +12,21 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 
 - ✅ Milestone `v1.5` (应用级 DB 工作台) shipped on `2026-04-08`
 - ✅ Milestone `v1.6` (Reliability & Validation Hardening) shipped on `2026-04-11`
-- ✅ Query/runtime/export/schema behavior hardened for large real-database workloads
-- ✅ One primary DB Workbench workflow with per-connection workspace persistence
-- ✅ Safe row editing with preview/confirm/transaction rollback guarantees
-- ✅ Live compare/sync path promoted to first-class flow with stale-target and production safety guards
-- ✅ Live-environment resilience evidence and archived validation coverage now exist for the v1.5 baseline
+- ✅ Phase 19 in `v1.7` closed trusted execution continuity gaps around supported non-pageable statements and recent-query continuity
+- ✅ Query/runtime/export/schema behavior now has a substantially stronger trust baseline than the original workbench prototype
+- ⚠️ DB Workbench is still not release-grade because credential storage, workflow coherence, inspection depth, and live verification standards are not yet at publishable quality
+- ⚠️ Remaining `v1.7` productivity work is deferred until release blockers are closed
 
-## Current Milestone: v1.7 Operator Productivity Surfaces
+## Current Milestone: v1.8 Release-Grade DB Workbench
 
-**Goal:** Make DB Workbench faster to live in every day by adding persistent operator memory, deeper object inspection, richer browse controls, and quick-launch shortcuts without regressing the trusted v1.5/v1.6 baseline.
+**Goal:** Turn DB Workbench from a capable internal-style operator surface into a publishable daily-use product by closing release blockers in credential safety, runtime semantics, workflow coherence, inspection depth, and ship validation.
 
 **Target features:**
-- Runtime correctness closeout for supported-but-non-pageable statements so execution semantics stay trustworthy
-- Persistent recent-query history across restarts and connection-scoped script/snippet library
-- Favorites and quick-launch surfaces for repeat queries, tables, and saved work
-- Deeper object explorer coverage for views, triggers, functions/procedures, and object-definition preview
-- Richer data-browse helpers for repeat table inspection and copy/export workflows
+- Secure local credential handling with a migration path away from plaintext storage
+- Release-safe runtime guardrails so readonly, destructive-action, export, edit, and cancel semantics stay aligned with what the UI promises
+- One canonical workbench workflow instead of split primary-vs-legacy operator paths
+- Deeper object inspection and object-definition coverage for real daily database operations
+- Reproducible MySQL/PostgreSQL release verification and explicit ship gates for desktop delivery
 
 ## Requirements
 
@@ -42,34 +41,44 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - ✓ Object explorer/autocomplete behavior is schema-aware for daily operator usage (`v1.5`)
 - ✓ Safe single-table editing loop is complete with SQL preview and transactional commit/rollback (`v1.5`)
 - ✓ Live DB-to-DB compare/sync is first-class with snapshot guards and execution auditability (`v1.5`)
+- ✓ Supported non-pageable statements now execute visibly without pretending paging exists, and recent-query continuity survives restart (`v1.7` Phase 19)
 
 ### Active
 
-- [ ] Close remaining runtime-correctness drifts so unsupported paging never means skipped execution
-- [ ] Add persistent operator memory surfaces: recent queries, script library, and favorites
-- [ ] Expand object inspection depth: views, routines/triggers, and DDL/definition preview
-- [ ] Improve repeat data-browse workflows without regressing Excel authoring/import paths
+- [ ] Credentials must be stored and migrated in a release-safe way instead of relying on plaintext local storage
+- [ ] Workbench runtime semantics must remain consistent across execute/export/edit/cancel/readonly paths
+- [ ] Operators must have one canonical product workflow rather than split modern-vs-legacy entry paths
+- [ ] Object inspection depth must cover the daily database surfaces expected from a publishable tool
+- [ ] Release readiness must be backed by live verification evidence, not only source-level tests
+
+### Future Requirements
+
+- Connection-scoped script library, favorites, and quick-launch surfaces from `v1.7`
+- Richer data-browse presets and repeat-inspection accelerators from `v1.7`
+- Broader personalization and operator-memory niceties after publishability blockers are closed
 
 ### Out of Scope
 
-- Full parity with every Navicat feature in a single milestone — daily high-frequency workflows come first
-- Expansion beyond MySQL/PostgreSQL to Oracle/SQL Server/SSH-tunnel/team features — widen support after the core workbench is credible
-- Visual schema authoring or drag-to-design ER editing — operational workflows and data safety take priority
+- Full parity with every Navicat feature in a single milestone
+- Expansion beyond MySQL/PostgreSQL to Oracle/SQL Server/SSH-tunnel/team features before the core product is publishable
+- Visual schema authoring or drag-to-design ER editing while release blockers remain open
+- Productivity niceties that do not materially improve product readiness
 
 ## Context
 
 - `v1.0` through `v1.4` established the current desktop shell, DB connectivity, schema introspection, compare/apply flows, and the first usable DB Workbench surface
 - `v1.5` closed the replacement-grade DB Workbench gap across runtime semantics, navigation workflow, edit safety, and compare/sync safeguards
 - `v1.6` closed runtime resilience evidence debt and archived Nyquist validation gaps for the `v1.5` phases
-- Legacy routes still exist for compatibility, but the primary operator path is now the workbench shell
-- Milestone archives now track `v1.5` and `v1.6` under `.planning/milestones/`
-- Next focus moves from baseline productization to operator productivity depth and inspection breadth
+- `v1.7` started as an operator-productivity milestone, but Phase 19 completion and the subsequent review made the deeper problem explicit: publishability blockers now matter more than new convenience surfaces
+- Legacy routes still exist for compatibility, but the product goal now requires one canonical operator path
+- Milestone archives currently track shipped `v1.5` and `v1.6` under `.planning/milestones/`
 
 ## Constraints
 
 - **Architecture**: Keep internal extension ID `db-connector`; improve the product in place rather than creating a second DB extension
-- **Compatibility**: Preserve existing `v1.0` to `v1.4` user-facing flows while consolidating the primary DB workflow
-- **Safety**: Readonly, production, and destructive-action protections must be enforced in Rust command paths, not trusted to frontend-only checks
+- **Compatibility**: Preserve existing `v1.0` to `v1.7` user-facing flows while converging on one publishable primary DB workflow
+- **Safety**: Readonly, production, destructive-action, export, and edit protections must be enforced in Rust command paths, not trusted to frontend-only checks
+- **Security**: No release claim is valid while saved DB credentials still depend on plaintext storage
 - **Performance**: No runtime path may require full result prefetch before first paint for large query browsing scenarios
 - **Capability accuracy**: Planning claims must track actual reachable code paths, not design-doc intent
 
@@ -77,12 +86,28 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Treat `v1.5` as productization, not feature sprawl | The blocker is trust and daily usability, not lack of surfaces | Accepted |
-| Prioritize query/runtime hardening before ER or cosmetic expansion | Replacement-grade DB tools live or die on large-query behavior and workflow continuity | Accepted |
-| Make per-connection sessions and multi-schema support milestone requirements | Global tab state and `public`-only assumptions break real operator usage quickly | Accepted |
-| Sequence safe row editing before live DB sync apply | Sync depends on trustworthy key mapping, SQL preview, and transaction semantics | Accepted |
-| Keep legacy paths while elevating one primary route | Compatibility preservation while converging operator workflow | Accepted |
-| Treat v1.7 as productivity depth, not broad platform expansion | The baseline is trustworthy now; the next value step is speed and repeatability for operators | Accepted |
+| Treat `v1.8` as a release-blocker milestone instead of continuing `v1.7` productivity breadth | The current gap is publishability and trust, not missing shortcuts | Accepted |
+| Defer unfinished `v1.7` productivity items into future scope | Script libraries and favorites do not solve plaintext secrets, split workflows, or shallow inspection coverage | Accepted |
+| Make credential safety a first-order milestone requirement | A database tool cannot be considered publishable while local DB passwords remain plaintext by default | Accepted |
+| Require one canonical workbench route before calling the product ready | Split legacy/new entry points keep the user experience in prototype territory | Accepted |
+| Put live MySQL/PostgreSQL ship verification into milestone scope | Static tests are not enough evidence for a release-grade DB operator tool | Accepted |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? -> Move to Out of Scope with reason
+2. Requirements validated? -> Move to Validated with phase reference
+3. New requirements emerged? -> Add to Active
+4. Decisions to log? -> Add to Key Decisions
+5. "What This Is" still accurate? -> Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check - still the right priority?
+3. Audit Out of Scope - reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-04-11 after opening v1.7 Operator Productivity Surfaces*
+*Last updated: 2026-04-11 after opening v1.8 Release-Grade DB Workbench*
