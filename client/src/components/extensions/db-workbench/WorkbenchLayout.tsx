@@ -172,6 +172,18 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
   return Array.from(map.values());
 }
 
+function getCurrentPageRows(batch: DbQueryBatchResult): DbQueryRow[] {
+  if (batch.rows.length === 0) {
+    return [];
+  }
+
+  const currentPageSize = Math.max(
+    1,
+    Math.min(batch.rows.length, Math.trunc(batch.returnedRows || 0)),
+  );
+  return batch.rows.slice(batch.rows.length - currentPageSize);
+}
+
 function hasBlockingDataSyncBlocker(
   blockers: { code: DbDataSyncBlockerCode }[] | undefined,
 ): boolean {
@@ -1882,7 +1894,7 @@ export function WorkbenchLayout({
               ...b,
               rows: mergedRows,
               totalRows: moreBatch.totalRows ?? b.totalRows,
-              returnedRows: mergedRows.length,
+              returnedRows: moreBatch.returnedRows,
               hasMore: moreBatch.hasMore,
               pagingMode: moreBatch.pagingMode,
               pagingReason: moreBatch.pagingReason,
@@ -1923,6 +1935,15 @@ export function WorkbenchLayout({
 
       const activeBatch = results.batches[activeBatchIndex];
       if (!activeBatch) return;
+      if (scope === "full_result" && activeBatch.pagingMode !== "offset") {
+        hostApi.notifications.show({
+          title: "Full result unavailable",
+          description:
+            "Only single pageable SELECT-style results support full result export.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const exportRequestId = crypto.randomUUID();
       setCurrentExportRequestId(exportRequestId);
@@ -1937,7 +1958,9 @@ export function WorkbenchLayout({
           format,
           scope,
           batchIndex: activeBatchIndex,
-          loadedRows: scope === "full_result" ? undefined : activeBatch.rows,
+          currentPageRows:
+            scope === "current_page" ? getCurrentPageRows(activeBatch) : undefined,
+          loadedRows: scope === "loaded_rows" ? activeBatch.rows : undefined,
           columns: scope === "full_result" ? undefined : activeBatch.columns,
           maxRows: scope === "full_result" ? 100_000 : undefined,
         });
@@ -2211,6 +2234,7 @@ export function WorkbenchLayout({
                         batch={activeBatch}
                         onExport={handleExport}
                         isExporting={isExporting}
+                        supportsFullResultExport={activeBatch.pagingMode === "offset"}
                       />
                     )}
                     {resultTab === "sync" && (
@@ -2243,6 +2267,7 @@ export function WorkbenchLayout({
                             onActiveIndexChange={setActiveBatchIndex}
                             onLoadMore={handleLoadMore}
                             isLoading={isExecuting}
+                            stopOnError={stopOnError}
                             onStopOnErrorChange={setStopOnError}
                             editEligibility={activeEditEligibility}
                             primaryKeyColumns={activePrimaryKeyColumns}

@@ -1,183 +1,228 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working in this repository.
 
-## Project Overview
+## Project Reality
 
-DDL Generator — a full-stack TypeScript web application that parses Japanese Excel-based database definition documents (データベース定義書) and generates SQL DDL statements for MySQL or Oracle. The application handles multi-table Excel sheets by using a generator pattern to scan for specific Japanese labels (論理テーブル名, 物理テーブル名) that mark table boundaries.
+This repository is no longer just an `Excel -> DDL` converter.
+
+It is now a desktop-first schema workbench built with:
+
+- Vite + React + TypeScript for the UI
+- Tauri + Rust for desktop capabilities and DB access
+- shared TypeScript contracts in `shared/schema.ts`
+
+The product currently spans these workflows:
+
+- Excel definition parsing and DDL generation
+- DDL import back into workbook templates
+- schema diff / rename suggestion flows
+- name-fix workflows
+- builtin extension hosting
+- DB Workbench for live database introspection and query execution
+
+Do not assume design docs describe shipped behavior. Verify the code path first.
+
+## Source Of Truth Order
+
+When project docs disagree, use this precedence:
+
+1. Runtime code and invoked command wiring
+2. `shared/schema.ts`
+3. builtin extension manifests and workspace registration
+4. focused design docs under `docs/`
+5. `agent.md` UI intent notes
+
+`agent.md` is design guidance, not a capability contract.
 
 ## Development Commands
 
+Use the actual scripts from `package.json`:
+
 ```bash
-# Development server with HMR
+# Web UI dev server
 npm run dev
 
-# Production build (client + server bundle)
+# Desktop app dev
+npm run tauri:dev
+
+# Web build
 npm run build
 
-# Run production server
-npm start
+# Desktop build
+npm run tauri:build
 
-# Type checking only
+# TypeScript check
 npm run check
 
-# Database schema sync
-npm run db:push
+# i18n key validation
+npm run check:i18n
+
+# Docs site
+npm run docs:dev
+npm run docs:build
+npm run docs:serve
 ```
 
-## Architecture Patterns
+The older `npm start` / `npm run db:push` guidance is obsolete for this repository state.
 
-### Excel Parsing Algorithm (server/lib/excel.ts)
+## Architecture Map
 
-The core parsing logic uses a **generator pattern** (`findTablesInSheet`) to handle Excel sheets containing multiple table definitions:
+### Frontend Shell
 
-1. **Table Boundary Detection**: Scans for `論理テーブル名` labels to identify where each table definition starts
-2. **Header Row Discovery**: Searches forward from each table start to find the column header row (must contain: `No`, `論理名`, `物理名`, `データ型`)
-3. **Column Mapping**: Builds a dynamic column index map from the header row to handle varying Excel layouts
-4. **Next Table Detection**: Finds the next `論理テーブル名` to determine current table boundary
-5. **Column Parsing**: Extracts rows between header and boundary, stopping at first empty `物理名` cell
+The main desktop shell is centered around:
 
-When modifying parsing logic, understand that:
-- Tables can appear at arbitrary row positions within a sheet
-- Column headers may be in different column positions across sheets
-- `getCellValue` searches right-then-down from labels to handle both horizontal and vertical layouts
-- The `findCellRow` function performs a 2D scan, not just row iteration
+- `client/src/pages/Dashboard.tsx`
+- `client/src/components/Sidebar.tsx`
+- `client/src/extensions/ExtensionWorkspaceHost.tsx`
+- `client/src/extensions/builtin/register-all.tsx`
 
-### Type-Safe API Contract (shared/routes.ts)
+Builtin extensions are first-class surfaces, not side experiments. When a feature lives under an extension workspace, treat that as part of the main product architecture.
 
-The `shared/routes.ts` file defines a **centralized API contract** using Zod schemas that is consumed by BOTH client and server:
-- Server uses it to validate requests/responses
-- Client uses it for type inference and URL building via `buildUrl` helper
-- Changes to API shape require updating only this single source of truth
-- All endpoints, methods, and response schemas are statically typed
+### DB Workbench
+
+The DB Workbench currently uses a shell + specialized pane model:
+
+- `client/src/components/extensions/DbConnectorWorkspace.tsx`
+- `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx`
+- `client/src/components/extensions/db-workbench/ConnectionSidebar.tsx`
+- `client/src/components/extensions/db-workbench/SqlEditorPane.tsx`
+- `client/src/components/extensions/db-workbench/ResultGridPane.tsx`
+- `client/src/components/extensions/db-workbench/ExplainPlanPane.tsx`
+- `client/src/components/extensions/db-workbench/QueryTabs.tsx`
+- `client/src/components/extensions/db-workbench/DangerousSqlDialog.tsx`
+
+Current implemented DB Workbench capabilities include:
+
+- saved DB connections
+- schema introspection
+- indexes and foreign keys in schema snapshots
+- Monaco SQL editor with keyboard actions
+- query execution and cancellation
+- EXPLAIN plan visualization
+- dangerous SQL preview / confirmation flow
+- result grid with batch tabs, filtering, column resize, and incremental loading
+- desktop-style split panes and persistent query tabs
+
+Important boundary:
+
+- `DbConnectorWorkspace.tsx` still contains a legacy `连接 / Schema / DIFF` path
+- `WorkbenchLayout.tsx` is the newer operator-focused path
+- both paths coexist, so do not remove one unless the migration is intentional and complete
+
+Not fully integrated yet:
+
+- data sync workflow is designed and partially scaffolded, but not yet wired as a first-class workbench view
+- row editing / transactional grid commit is not complete
+- ER authoring is not present as a finished shipped feature
+
+### Desktop Bridge And DB Backend
+
+DB Workbench behavior is spread across these layers and must stay in sync:
+
+- `client/src/extensions/host-api.ts`
+- `client/src/extensions/host-api-runtime.ts`
+- `client/src/lib/desktop-bridge.ts`
+- `shared/schema.ts`
+- `src-tauri/src/db_connector/mod.rs`
+- `src-tauri/src/db_connector/commands.rs`
+- `src-tauri/src/db_connector/query.rs`
+- `src-tauri/src/db_connector/explain.rs`
+- `src-tauri/src/db_connector/introspect.rs`
+- `src-tauri/src/lib.rs`
+
+If you change query, explain, schema, or export behavior, verify all of those layers.
+
+### Excel Parsing Core
+
+The original parser architecture still matters, but it now lives in Rust.
+
+The core parsing logic is centered in `src-tauri/src/excel.rs` and still uses the multi-table scan pattern to handle sheets containing multiple table definitions:
+
+1. Detect `論理テーブル名` to locate table starts
+2. Search forward for the header row containing required labels
+3. Build a dynamic column map from the discovered header row
+4. Use the next `論理テーブル名` as the boundary
+5. Stop parsing columns at the first empty physical-name cell
+
+When touching Excel parsing:
+
+- tables can appear anywhere in a sheet
+- headers can shift by column
+- label lookup is not limited to a single row direction
+- parser fixes should be validated against real workbook structure, not assumptions
+
+## Shared Contract Rules
+
+`shared/schema.ts` is the typed contract between UI and desktop backend.
+
+When a DB feature changes shape:
+
+- update `shared/schema.ts` first
+- then update host API interfaces
+- then update desktop bridge invoke payloads
+- then update Rust command/request/response types
+- then update UI consumers
+
+Do not silently change only one layer.
+
+## Frontend Conventions
 
 ### Path Aliases
 
-```
-@/       → client/src/
-@shared/ → shared/
-```
-
-These are configured in:
-- TypeScript: `tsconfig.json` (paths)
-- Vite: `vite.config.ts` (resolve.alias)
-
-Always use these aliases for imports across the frontend and shared code.
-
-### DDL Generation Dual-Dialect Pattern (server/lib/ddl.ts)
-
-The `generateDDL` function supports both MySQL and Oracle through:
-- **Separate generators**: `generateMySQL()` and `generateOracle()` with distinct formatting rules
-- **Type mapping functions**: `mapDataTypeMySQL()` and `mapDataTypeOracle()` that convert generic data types (varchar, int, datetime, etc.) to dialect-specific types
-- **Comment handling**: MySQL uses inline `COMMENT` clauses; Oracle uses separate `COMMENT ON` statements
-- **PK constraints**: MySQL uses unnamed `PRIMARY KEY`; Oracle uses named constraints (e.g., `pk_tablename`)
-
-When adding dialect support or modifying DDL output, these functions must stay in sync with expected Excel data type values.
-
-### Storage Abstraction (server/storage.ts)
-
-While currently implemented with PostgreSQL (`DatabaseStorage`), the `IStorage` interface allows swapping storage backends. The uploaded files are stored on disk (`uploads/` directory), while metadata is in the database.
-
-## Frontend Architecture
-
-### Component Hierarchy
-
-```
-App.tsx
-└── Dashboard Layout (react-resizable-panels)
-    ├── Sidebar (file list + upload)
-    ├── SheetSelector (sheet list from selected file)
-    ├── TablePreview (parsed column grid)
-    └── DdlGenerator (dialect selector + DDL output)
+```text
+@/       -> client/src/
+@shared/ -> shared/
 ```
 
-Each panel component:
-- Uses TanStack Query for server state (`useQuery`, `useMutation`)
-- Derives its data from URL params or parent selection state
-- Fetches independently (no prop drilling)
+Prefer these aliases for frontend/shared imports.
 
-### State Management Strategy
+### Desktop UI Baseline
 
-- **Server State**: TanStack React Query (files list, sheet names, table data)
-- **UI State**: React local state (selected file, selected sheet, selected dialect)
-- **No global state library**: Data flows via React Query cache and URL parameters
+This product should feel like a native database tool, not a marketing page.
 
-### Desktop UI Design Baseline
+- prefer panes over cards
+- prefer density and alignment over decorative spacing
+- prefer borders over shadows
+- prefer small radii
+- use monospace in code/data contexts
+- preserve persistent workspace controls where practical
+- avoid hero sections, glassmorphism, and ornamental gradients in primary work surfaces
 
-This project should feel like a native desktop database tool, not a marketing-style web app.
+### Capability Accuracy
 
-- Prefer **panes over cards**:
-  Use tight pane boundaries, shared borders, and resizable splits. Avoid large floating cards with generous outside margins.
-- Prefer **density and alignment** over “breathing room”:
-  Lists, inspectors, and table-like views should stay compact and grid-aligned. Tighten row heights before adding decorative spacing.
-- Prefer **borders over shadows**:
-  Main workspace surfaces should be separated primarily by 1px borders and slight background contrast. Shadows should be reserved for transient overlays such as dialogs, menus, and tooltips.
-- Prefer **small radii**:
-  Use square corners or micro-radius surfaces. Avoid 12px+ rounding on primary work areas.
-- Prefer **functional background contrast**:
-  Navigation and utility panes may use a slightly different neutral background from the primary editor/output surface so users can distinguish navigation from work canvas instantly.
-- Prefer **monospace in code/data contexts**:
-  DDL output, column metadata, identifiers, and structured technical content should use the mono font to reinforce tool semantics.
-- Prefer **persistent workspace control**:
-  Panel visibility, resizable widths, and similar workspace chrome should remember user preference whenever practical.
-- Avoid **web-style ornamentation**:
-  Do not reintroduce dashboard hero blocks, oversized pills, heavy drop shadows, glassmorphism, or decorative gradients into the main tool surfaces.
-- Use **non-selectable chrome**:
-  Buttons, tabs, labels, sidebars, and inspector chrome should generally disable text selection. Leave text selection enabled in editors, textareas, code previews, and other content surfaces where copy is useful.
+For DB Workbench work, do not promote design intentions into user-facing claims unless the path is actually wired.
 
-## Debugging Tools
+Examples:
 
-### Excel Inspection Script
+- a file existing under `db-workbench/` does not mean the feature is reachable
+- a design doc under `docs/` does not mean the command exists
+- a type in `shared/schema.ts` does not mean the Tauri invoke handler is registered
 
-```bash
-tsx script/inspect_excel.ts
-```
+Trace the actual route before claiming support.
 
-This script is configured to inspect a specific Excel file and sheet. When debugging Excel parsing issues:
-1. Update the `filePath` and `sheetName` variables in the script
-2. Run it to see the raw 2D array structure that the parser receives
-3. Compare against the expected header positions and table boundaries
-
-## Database Schema
-
-**`uploaded_files` table**:
-- `id` (serial, PK)
-- `file_path` (text) — disk path to uploaded file
-- `original_name` (text) — original filename from upload
-- `uploaded_at` (timestamp)
-
-Drizzle ORM is used for schema definition and migrations. To modify schema:
-1. Edit `shared/schema.ts`
-2. Run `npm run db:push` to sync with database
-
-## Important Development Considerations
-
-### Excel Parsing Edge Cases
-
-- **Empty rows**: Parser stops at first row with empty `物理名`, so ensure test files don't have gaps
-- **Column order**: Header detection requires exact matches for `No`, `論理名`, `物理名`, `データ型` but they can be in any column position
-- **Multiple tables per sheet**: The generator pattern yields all tables sequentially; API returns an array
-- **PK detection**: Uses exact match `'〇'` (Japanese circle character) in the `PK` column
-
-### DDL Generation Constraints
-
-- **SQL injection protection**: `escapeSql()` escapes single quotes in comments by doubling them (`'` → `''`)
-- **Size parameter**: Passed as string (e.g., `"10,2"` for DECIMAL), not parsed or validated
-- **Default fallbacks**: Missing data types default to `VARCHAR(255)` (MySQL) or `VARCHAR2(255)` (Oracle)
-
-### Production Build
-
-Production build creates:
-- `dist/public/` — Static frontend assets (Vite build)
-- `dist/index.cjs` — Bundled server (esbuild with CommonJS output)
-
-The server serves static files from `dist/public/` in production mode, and uses Vite middleware in development.
-
-## File Organization
+## Important Files
 
 - `client/` — React frontend
-- `server/` — Express backend
-- `shared/` — Types, schemas, and API contracts shared between client and server
-- `script/` — Development utility scripts
-- `uploads/` — Uploaded Excel files (not in git)
-- `attached_assets/` — Test Excel files for development
+- `shared/` — shared API and schema contracts
+- `src-tauri/` — desktop backend and builtin extension manifests
+- `docs/` — targeted product/design docs
+- `docs-site/` — published manual site
+- `script/` — project utilities
+- `attached_assets/` — local workbook assets for testing
+- `uploads/` — runtime uploads, not source-controlled
+
+## Working Guidance
+
+- Prefer small, verifiable fixes over broad rewrites in DB Workbench files because the area is actively evolving.
+- Preserve both desktop shell consistency and operator safety.
+- When fixing DB Workbench robustness, prioritize:
+  - connection context clarity
+  - safe execution boundaries
+  - schema/query/result synchronization
+  - explicit handling of incomplete backend wiring
+- Before saying a DB workflow is “done”, confirm:
+  - the frontend surface is reachable
+  - the host API is wired
+  - the Tauri command is registered
+  - the shared schema matches the runtime payload

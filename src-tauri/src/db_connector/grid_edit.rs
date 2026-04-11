@@ -675,6 +675,8 @@ mod tests {
       database: "app".to_string(),
       username: "postgres".to_string(),
       password: "postgres".to_string(),
+      has_stored_password: false,
+      clear_stored_password: false,
       environment: Some(DbEnvironment::Dev),
       readonly,
       color_tag: None,

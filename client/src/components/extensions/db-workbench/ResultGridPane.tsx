@@ -47,6 +47,7 @@ export interface ResultGridPaneProps {
   onLoadMore: (batchIndex: number) => void;
   /** クエリ実行中フラグ */
   isLoading: boolean;
+  stopOnError: boolean;
   /** Stop on error 変更コールバック */
   onStopOnErrorChange: (value: boolean) => void;
   editEligibility?: DbGridEditEligibility;
@@ -466,9 +467,11 @@ function SingleBatchGrid({
       ? Math.max(1, Math.min(1000, Math.max(0, totalRows - batch.nextOffset)))
       : 1000;
   const pagingMode = batch.pagingMode;
+  const canLoadMore = pagingMode === "offset" && hasMore;
   const isPagingUnsupported = pagingMode === "unsupported";
   const unsupportedPagingText = "Load more unavailable for this result.";
   const filteredCount = filteredRows.length;
+  const footerStatusLabel = `${filteredCount.toLocaleString()} shown / ${loadedCount.toLocaleString()} loaded / ${totalLabel}`;
 
   const headerHeight = 28;
   const filterBarHeight = 42;
@@ -763,10 +766,10 @@ function SingleBatchGrid({
       </div>
 
       <div className="flex shrink-0 items-center gap-3 border-t border-border bg-panel-muted px-3 py-1">
-        {hasMore ? (
+        {canLoadMore ? (
           <>
             <span className="text-xs text-muted-foreground">
-              {filteredCount.toLocaleString()} shown / {loadedCount.toLocaleString()} loaded / {totalLabel}
+              {footerStatusLabel}
             </span>
             <Button
               variant="outline"
@@ -779,7 +782,7 @@ function SingleBatchGrid({
           </>
         ) : isPagingUnsupported ? (
           <span className="text-xs text-muted-foreground">
-            {unsupportedPagingText}
+            {footerStatusLabel}. {unsupportedPagingText}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">
@@ -839,6 +842,7 @@ export function ResultGridPane({
   onActiveIndexChange,
   onLoadMore,
   isLoading,
+  stopOnError,
   onStopOnErrorChange,
   editEligibility,
   primaryKeyColumns,
@@ -847,8 +851,6 @@ export function ResultGridPane({
   onPrepareCommit,
   onDiscardEdits,
 }: ResultGridPaneProps) {
-  const [stopOnError, setStopOnError] = useState(true);
-
   useEffect(() => {
     if (activeIndex >= batches.length && batches.length > 0) {
       onActiveIndexChange(batches.length - 1);
@@ -856,7 +858,6 @@ export function ResultGridPane({
   }, [batches.length, activeIndex, onActiveIndexChange]);
 
   const handleStopOnErrorChange = (value: boolean) => {
-    setStopOnError(value);
     onStopOnErrorChange(value);
   };
 

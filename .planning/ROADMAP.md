@@ -24,7 +24,7 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 
 ## Phases
 
-- [ ] **Phase 23: Release Safety Foundations** - Close credential, readonly, confirmation, and runtime-semantics blockers that prevent a publishable release claim
+- [x] **Phase 23: Release Safety Foundations** - Close credential, readonly, confirmation, and runtime-semantics blockers that prevent a publishable release claim (completed 2026-04-11)
 - [ ] **Phase 24: Canonical Workbench Flow** - Converge onto one coherent operator workflow and eliminate misleading legacy-vs-primary surface split
 - [ ] **Phase 25: Deep Inspection Coverage** - Expand explorer and definition coverage so daily object inspection is credible beyond toy schemas
 - [ ] **Phase 26: Release Candidate Verification** - Prove the packaged product against live MySQL/PostgreSQL workflows and enforce a real ship gate
@@ -41,7 +41,7 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
   1. Saved DB credentials no longer rely on plaintext local storage, and existing installs have a safe migration path
   2. Read-only and destructive-action protections are enforced in Rust runtime paths across execute, export, edit, and sync behaviors
   3. Operator-facing labels such as current-page export, loaded-rows export, stop-on-error, and cancel all match the behavior that actually runs
-**Plans**: TBD
+**Plans**: 23-01
 
 ### Phase 24: Canonical Workbench Flow
 **Goal**: Daily DB workflows flow through one coherent product path instead of prototype-era split surfaces
@@ -81,7 +81,7 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 23. Release Safety Foundations | 0/TBD | Not started | - |
+| 23. Release Safety Foundations | 1/1 | Complete    | 2026-04-11 |
 | 24. Canonical Workbench Flow | 0/TBD | Not started | - |
 | 25. Deep Inspection Coverage | 0/TBD | Not started | - |
 | 26. Release Candidate Verification | 0/TBD | Not started | - |
@@ -92,11 +92,11 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SAFE-01 | Phase 23 | Pending |
-| SAFE-02 | Phase 23 | Pending |
-| SAFE-03 | Phase 23 | Pending |
-| SAFE-04 | Phase 23 | Pending |
-| SAFE-05 | Phase 23 | Pending |
+| SAFE-01 | Phase 23 | Complete |
+| SAFE-02 | Phase 23 | Complete |
+| SAFE-03 | Phase 23 | Complete |
+| SAFE-04 | Phase 23 | Complete |
+| SAFE-05 | Phase 23 | Complete |
 | FLOW-01 | Phase 24 | Pending |
 | FLOW-02 | Phase 24 | Pending |
 | FLOW-03 | Phase 24 | Pending |
@@ -122,4 +122,4 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 
 ---
 
-*Last updated: 2026-04-11 after creating the v1.8 roadmap*
+*Last updated: 2026-04-11 after completing Phase 23 Release Safety Foundations*

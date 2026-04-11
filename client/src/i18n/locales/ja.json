@@ -20,6 +20,9 @@
     "rightClickSheetHint": "右クリックでシートを直接切り替え",
     "deleteFile": "ファイルを削除",
     "deleteSelected": "一括削除",
+    "batchDeleteConfirm": "選択した {{count}} 件のファイルを削除しますか？",
+    "batchSelectMode": "一括選択",
+    "selectFileForBatch": "{{name}} を選択",
     "sortRecent": "日時順",
     "sortName": "名前順",
     "timestampUnavailable": "タイムスタンプなし",
@@ -787,6 +790,8 @@
     "center": {
       "title": "Extension Catalog",
       "description": "ここでは外部拡張のインストールと管理のみを扱います。アプリ本体に同梱された機能は、この一覧には表示しません。",
+      "marketplaceTitle": "外部拡張",
+      "marketplaceDescription": "ここではインストール可能で保守対象の外部拡張ディレクトリのみを管理します。",
       "installedLabel": "Installed",
       "emptyTitle": "利用可能な拡張カタログはまだありません",
       "emptyDescription": "外部 catalog を接続すると、ここにインストール可能な拡張とその状態が表示されます。"

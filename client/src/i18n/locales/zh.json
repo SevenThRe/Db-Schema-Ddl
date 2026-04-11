@@ -25,6 +25,9 @@
     "rightClickSheetHint": "右键可直接切换工作表",
     "deleteFile": "删除文件",
     "deleteSelected": "批量删除",
+    "batchDeleteConfirm": "确认删除已选择的 {{count}} 个文件吗？",
+    "batchSelectMode": "批量选择",
+    "selectFileForBatch": "选择 {{name}}",
     "sortRecent": "按时间",
     "sortName": "按名称",
     "timestampUnavailable": "无时间戳",
@@ -788,6 +791,8 @@
     "center": {
       "title": "扩展中心",
       "description": "这里只管理可安装和可维护的外部扩展，不再把应用自带功能混在这里显示。",
+      "marketplaceTitle": "外部扩展",
+      "marketplaceDescription": "这里只管理可安装和可维护的外部扩展目录。",
       "installedLabel": "已安装",
       "emptyTitle": "当前还没有可用扩展目录",
       "emptyDescription": "接入外部 catalog 后，这里会显示可安装的扩展及其当前状态。"

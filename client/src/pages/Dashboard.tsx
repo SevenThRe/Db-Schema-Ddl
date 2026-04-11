@@ -12,7 +12,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, RotateCcw, Sparkles, Database } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFiles, useSettings, useSheets } from "@/hooks/use-ddl";
@@ -655,6 +655,8 @@ export default function Dashboard() {
   const selectedFileMemoryKey = selectedFile ? buildSheetStorageKey(selectedFile) : null;
   const activeTables = viewMode === "spreadsheet" && regionTables ? regionTables : null;
   const selectedFileName = selectedFile?.originalName ?? null;
+  const isDedicatedDatabaseSurface =
+    activeSurface.kind === "extension" && activeSurface.extensionId === "db-connector";
   const isResolvingDefaultSheet =
     Boolean(selectedFileId) &&
     !selectedSheet &&
@@ -810,14 +812,32 @@ export default function Dashboard() {
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   {t("dashboard.workspace")}
                 </Button>
+                {isDedicatedDatabaseSurface ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 rounded-lg px-3 text-xs font-medium"
+                    onClick={() =>
+                      setActiveSurface({
+                        kind: "extension",
+                        extensionId: "db-connector",
+                        panelId: "db-connector-workspace",
+                      })
+                    }
+                  >
+                    <Database className="mr-1.5 h-3.5 w-3.5" />
+                    数据库
+                  </Button>
+                ) : null}
               </div>
               <p className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
-                {selectedFileName || t("sidebar.noFilesYet")}
-                {selectedSheet ? ` / ${selectedSheet}` : ""}
-                {currentTable ? ` / ${currentTable.physicalTableName}` : ""}
+                {isDedicatedDatabaseSurface
+                  ? "Database workspace"
+                  : `${selectedFileName || t("sidebar.noFilesYet")}${selectedSheet ? ` / ${selectedSheet}` : ""}${currentTable ? ` / ${currentTable.physicalTableName}` : ""}`}
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {!isDedicatedDatabaseSurface ? (
               <div className="hidden items-center gap-1.5 lg:flex">
                 <span className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-white px-2.5 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                   {viewMode === "auto" ? t("view.autoParse") : viewMode === "spreadsheet" ? t("view.spreadsheet") : "Diff"}
@@ -828,6 +848,8 @@ export default function Dashboard() {
                   </span>
                 ) : null}
               </div>
+              ) : null}
+              {!isDedicatedDatabaseSurface ? (
               <div className="hidden items-center gap-0.5 rounded-lg border border-slate-200/80 bg-slate-50/80 p-0.5 xl:flex dark:border-slate-800 dark:bg-slate-950">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -886,6 +908,7 @@ export default function Dashboard() {
                   <TooltipContent>{t("dashboard.resetLayout")}</TooltipContent>
                 </Tooltip>
               </div>
+              ) : null}
               {desktopCapabilities.features.updater ? <UpdateNotifier /> : null}
               <ThemeToggle />
             </div>
@@ -893,19 +916,21 @@ export default function Dashboard() {
         </header>
 
         <div className="mt-2.5 flex flex-1 overflow-hidden gap-2">
-          <Sidebar
-            selectedFileId={selectedFileId}
-            selectedFileIds={selectedFileIds}
-            selectedSheet={selectedSheet}
-            onSelectFile={setSelectedFileId}
-            onSelectedFileIdsChange={handleSelectedFileIdsChange}
-            onSelectSheetForFile={handleSelectSheetFromSidebar}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-            activeSurface={activeSurface}
-            onNavigate={setActiveSurface}
-            className="workspace-nav-pane overflow-hidden"
-          />
+          {!isDedicatedDatabaseSurface ? (
+            <Sidebar
+              selectedFileId={selectedFileId}
+              selectedFileIds={selectedFileIds}
+              selectedSheet={selectedSheet}
+              onSelectFile={setSelectedFileId}
+              onSelectedFileIdsChange={handleSelectedFileIdsChange}
+              onSelectSheetForFile={handleSelectSheetFromSidebar}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              activeSurface={activeSurface}
+              onNavigate={setActiveSurface}
+              className="workspace-nav-pane overflow-hidden"
+            />
+          ) : null}
 
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden">

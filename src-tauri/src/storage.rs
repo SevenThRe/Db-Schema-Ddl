@@ -23,6 +23,7 @@ const UPLOADED_FILE_TOO_LARGE_MESSAGE: &str = "Uploaded file is too large";
 const LEGACY_UPLOAD_TOO_LARGE_MESSAGE: &str = "Legacy upload file is too large";
 const RELOAD_UPLOADED_FILE_MESSAGE: &str = "Uploaded file was saved but could not be reloaded";
 const APP_DATA_DIR_DERIVE_MESSAGE: &str = "Failed to derive app data directory";
+const DB_CONNECTION_SECRET_SERVICE: &str = "com.seventhre.db-schema-ddl.db-connection";
 const SELECT_UPLOADED_FILE_BY_ID_SQL: &str = "
   SELECT id, file_path, original_name, original_modified_at, file_hash, file_size, uploaded_at
   FROM uploaded_files
@@ -69,6 +70,239 @@ fn decode_row<T>(row: rusqlite::Result<T>, action: &str) -> Result<T, String> {
 
 fn now_iso_string() -> String {
   Utc::now().to_rfc3339()
+}
+
+trait ConnectionSecretStore {
+  fn get_password(&self, connection_id: &str) -> Result<Option<String>, String>;
+  fn set_password(&self, connection_id: &str, password: &str) -> Result<(), String>;
+  fn delete_password(&self, connection_id: &str) -> Result<(), String>;
+}
+
+struct OsKeyringSecretStore;
+
+impl OsKeyringSecretStore {
+  fn entry(connection_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(DB_CONNECTION_SECRET_SERVICE, connection_id)
+      .map_err(|error| storage_error("initialize db connection secure store entry", error))
+  }
+}
+
+impl ConnectionSecretStore for OsKeyringSecretStore {
+  fn get_password(&self, connection_id: &str) -> Result<Option<String>, String> {
+    match Self::entry(connection_id)?.get_password() {
+      Ok(password) => Ok(Some(password)),
+      Err(keyring::Error::NoEntry) => Ok(None),
+      Err(error) => Err(storage_error("read db connection password from secure store", error)),
+    }
+  }
+
+  fn set_password(&self, connection_id: &str, password: &str) -> Result<(), String> {
+    Self::entry(connection_id)?
+      .set_password(password)
+      .map_err(|error| storage_error("write db connection password to secure store", error))
+  }
+
+  fn delete_password(&self, connection_id: &str) -> Result<(), String> {
+    match Self::entry(connection_id)?.delete_credential() {
+      Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+      Err(error) => Err(storage_error("delete db connection password from secure store", error)),
+    }
+  }
+}
+
+fn redact_saved_connection(
+  mut config: crate::db_connector::DbConnectionConfig,
+) -> crate::db_connector::DbConnectionConfig {
+  config.password.clear();
+  config.clear_stored_password = false;
+  config
+}
+
+fn decode_db_connection_config(
+  json: &str,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  serde_json::from_str(json).map_err(|error| storage_error("deserialize db_connection", error))
+}
+
+fn upsert_db_connection_record(
+  conn: &Connection,
+  config: &crate::db_connector::DbConnectionConfig,
+) -> Result<(), String> {
+  let json =
+    serde_json::to_string(config).map_err(|error| storage_error("serialize db_connection", error))?;
+  let now = now_iso_string();
+  conn
+    .execute(
+      "INSERT INTO db_connections (id, config_json, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?3)
+       ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at",
+      params![config.id, json, now],
+    )
+    .map_err(|error| storage_error("upsert db_connection", error))?;
+  Ok(())
+}
+
+fn load_db_connection_row(
+  conn: &Connection,
+  id: &str,
+) -> Result<Option<crate::db_connector::DbConnectionConfig>, String> {
+  let json = conn
+    .query_row(
+      "SELECT config_json FROM db_connections WHERE id = ?1",
+      params![id],
+      |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|error| storage_error("query db_connection by id", error))?;
+
+  json
+    .as_deref()
+    .map(decode_db_connection_config)
+    .transpose()
+}
+
+fn maybe_migrate_legacy_db_connection<S: ConnectionSecretStore>(
+  conn: &Connection,
+  secret_store: &S,
+  mut config: crate::db_connector::DbConnectionConfig,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  if config.password.is_empty() {
+    config.clear_stored_password = false;
+    return Ok(config);
+  }
+
+  if config.id.trim().is_empty() {
+    return Err("Saved connection is missing an id for secure-secret migration.".to_string());
+  }
+
+  secret_store.set_password(&config.id, &config.password)?;
+  config.has_stored_password = true;
+  config.password.clear();
+  config.clear_stored_password = false;
+  upsert_db_connection_record(conn, &config)?;
+  Ok(config)
+}
+
+fn resolve_runtime_connection_secret<S: ConnectionSecretStore>(
+  secret_store: &S,
+  mut config: crate::db_connector::DbConnectionConfig,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  if !config.password.is_empty() {
+    config.clear_stored_password = false;
+    return Ok(config);
+  }
+
+  if config.clear_stored_password {
+    config.clear_stored_password = false;
+    return Ok(config);
+  }
+
+  if !config.has_stored_password {
+    return Ok(config);
+  }
+
+  if config.id.trim().is_empty() {
+    return Err("Saved connection is missing an id for secure-password lookup.".to_string());
+  }
+
+  config.password = secret_store
+    .get_password(&config.id)?
+    .ok_or_else(|| format!("Stored password not found for saved connection: {}", config.id))?;
+  config.clear_stored_password = false;
+  Ok(config)
+}
+
+fn materialize_db_connection<S: ConnectionSecretStore>(
+  conn: &Connection,
+  secret_store: &S,
+  connection_id: &str,
+  hydrate_password: bool,
+) -> Result<Option<crate::db_connector::DbConnectionConfig>, String> {
+  let config = load_db_connection_row(conn, connection_id)?
+    .map(|value| maybe_migrate_legacy_db_connection(conn, secret_store, value))
+    .transpose()?;
+
+  let Some(config) = config else {
+    return Ok(None);
+  };
+
+  if hydrate_password {
+    return resolve_runtime_connection_secret(secret_store, config).map(Some);
+  }
+
+  Ok(Some(redact_saved_connection(config)))
+}
+
+fn list_db_connections_with_store<S: ConnectionSecretStore>(
+  conn: &Connection,
+  secret_store: &S,
+) -> Result<Vec<crate::db_connector::DbConnectionConfig>, String> {
+  let mut stmt = conn
+    .prepare("SELECT config_json FROM db_connections ORDER BY created_at ASC")
+    .map_err(|error| storage_error("prepare db_connections list", error))?;
+  let rows = stmt
+    .query_map([], |row| row.get::<_, String>(0))
+    .map_err(|error| storage_error("query db_connections", error))?
+    .collect::<rusqlite::Result<Vec<String>>>()
+    .map_err(|error| storage_error("read db_connection rows", error))?;
+  drop(stmt);
+
+  let mut result = Vec::with_capacity(rows.len());
+  for json in rows {
+    let config = decode_db_connection_config(&json)?;
+    let config = maybe_migrate_legacy_db_connection(conn, secret_store, config)?;
+    result.push(redact_saved_connection(config));
+  }
+
+  Ok(result)
+}
+
+fn save_db_connection_with_store<S: ConnectionSecretStore>(
+  conn: &Connection,
+  secret_store: &S,
+  mut config: crate::db_connector::DbConnectionConfig,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  if config.id.trim().is_empty() {
+    let hash = Sha256::digest(format!("{}{}", config.name, now_iso_string()).as_bytes());
+    config.id = format!("{:x}", hash)[..16].to_string();
+  }
+
+  let existing = load_db_connection_row(conn, &config.id)?
+    .map(|value| maybe_migrate_legacy_db_connection(conn, secret_store, value))
+    .transpose()?;
+
+  if !config.password.is_empty() {
+    secret_store.set_password(&config.id, &config.password)?;
+    config.has_stored_password = true;
+  } else if config.clear_stored_password {
+    secret_store.delete_password(&config.id)?;
+    config.has_stored_password = false;
+  } else {
+    config.has_stored_password = existing
+      .as_ref()
+      .map(|value| value.has_stored_password)
+      .unwrap_or(false);
+  }
+
+  config.password.clear();
+  config.clear_stored_password = false;
+  upsert_db_connection_record(conn, &config)?;
+  Ok(redact_saved_connection(config))
+}
+
+pub fn hydrate_runtime_db_connection(
+  config: crate::db_connector::DbConnectionConfig,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  resolve_runtime_connection_secret(&OsKeyringSecretStore, config)
+}
+
+pub fn load_db_connection_for_runtime(
+  app: &AppHandle,
+  connection_id: &str,
+) -> Result<crate::db_connector::DbConnectionConfig, String> {
+  let (conn, _) = open_connection(app)?;
+  materialize_db_connection(&conn, &OsKeyringSecretStore, connection_id, true)?
+    .ok_or_else(|| format!("接続設定が見つかりません: {connection_id}"))
 }
 
 fn sanitize_file_name(file_name: &str) -> String {
@@ -924,7 +1158,43 @@ pub fn get_name_fix_plan(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::db_connector::{DbConnectionConfig, DbDriver};
   use crate::models::DdlSettings;
+  use std::collections::HashMap;
+  use std::sync::Mutex;
+
+  #[derive(Default)]
+  struct MemorySecretStore {
+    secrets: Mutex<HashMap<String, String>>,
+  }
+
+  impl ConnectionSecretStore for MemorySecretStore {
+    fn get_password(&self, connection_id: &str) -> Result<Option<String>, String> {
+      let secrets = self
+        .secrets
+        .lock()
+        .map_err(|error| storage_error("lock in-memory secret store", error))?;
+      Ok(secrets.get(connection_id).cloned())
+    }
+
+    fn set_password(&self, connection_id: &str, password: &str) -> Result<(), String> {
+      let mut secrets = self
+        .secrets
+        .lock()
+        .map_err(|error| storage_error("lock in-memory secret store", error))?;
+      secrets.insert(connection_id.to_string(), password.to_string());
+      Ok(())
+    }
+
+    fn delete_password(&self, connection_id: &str) -> Result<(), String> {
+      let mut secrets = self
+        .secrets
+        .lock()
+        .map_err(|error| storage_error("lock in-memory secret store", error))?;
+      secrets.remove(connection_id);
+      Ok(())
+    }
+  }
 
   // インメモリ SQLite 接続を作成し、スキーマを初期化するヘルパー
   fn in_memory_connection() -> Connection {
@@ -1089,6 +1359,105 @@ mod tests {
       .expect("count should succeed");
     assert_eq!(count, 1, "upsert must not create duplicate rows");
   }
+
+  fn sample_connection(password: &str) -> DbConnectionConfig {
+    DbConnectionConfig {
+      id: "conn-1".to_string(),
+      name: "Primary".to_string(),
+      driver: DbDriver::Mysql,
+      host: "localhost".to_string(),
+      port: 3306,
+      database: "app".to_string(),
+      username: "root".to_string(),
+      password: password.to_string(),
+      has_stored_password: false,
+      clear_stored_password: false,
+      environment: None,
+      readonly: false,
+      color_tag: None,
+      default_schema: None,
+    }
+  }
+
+  #[test]
+  fn save_db_connection_redacts_password_and_persists_secret() {
+    let conn = in_memory_connection();
+    let secret_store = MemorySecretStore::default();
+
+    let saved = save_db_connection_with_store(&conn, &secret_store, sample_connection("secret"))
+      .expect("secure save should succeed");
+
+    assert_eq!(saved.password, "");
+    assert!(saved.has_stored_password, "saved metadata should advertise secure password");
+
+    let stored_json: String = conn
+      .query_row("SELECT config_json FROM db_connections WHERE id = 'conn-1'", [], |row| row.get(0))
+      .expect("connection row should exist");
+    let stored = decode_db_connection_config(&stored_json).expect("stored json should parse");
+    assert_eq!(stored.password, "", "plaintext password must not remain in sqlite");
+    assert!(stored.has_stored_password);
+    assert_eq!(
+      secret_store.get_password("conn-1").expect("secret lookup should work"),
+      Some("secret".to_string())
+    );
+  }
+
+  #[test]
+  fn list_db_connections_migrates_legacy_plaintext_password() {
+    let conn = in_memory_connection();
+    let secret_store = MemorySecretStore::default();
+
+    let legacy = sample_connection("legacy-secret");
+    let legacy_json = serde_json::to_string(&legacy).expect("legacy json should serialize");
+    conn
+      .execute(
+        "INSERT INTO db_connections (id, config_json, created_at, updated_at)
+         VALUES (?1, ?2, '2026-04-11T00:00:00Z', '2026-04-11T00:00:00Z')",
+        params![legacy.id, legacy_json],
+      )
+      .expect("legacy row insert should succeed");
+
+    let listed =
+      list_db_connections_with_store(&conn, &secret_store).expect("listing should migrate legacy row");
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].password, "");
+    assert!(listed[0].has_stored_password, "legacy row should migrate to secure secret metadata");
+    assert_eq!(
+      secret_store.get_password("conn-1").expect("secret lookup should work"),
+      Some("legacy-secret".to_string())
+    );
+
+    let rewritten_json: String = conn
+      .query_row("SELECT config_json FROM db_connections WHERE id = 'conn-1'", [], |row| row.get(0))
+      .expect("rewritten row should exist");
+    let rewritten = decode_db_connection_config(&rewritten_json).expect("rewritten json should parse");
+    assert_eq!(rewritten.password, "");
+    assert!(rewritten.has_stored_password);
+  }
+
+  #[test]
+  fn save_db_connection_preserves_existing_secure_password_when_field_is_blank() {
+    let conn = in_memory_connection();
+    let secret_store = MemorySecretStore::default();
+
+    save_db_connection_with_store(&conn, &secret_store, sample_connection("secret"))
+      .expect("initial secure save should succeed");
+
+    let mut edited = sample_connection("");
+    edited.name = "Renamed".to_string();
+    edited.has_stored_password = true;
+
+    let saved =
+      save_db_connection_with_store(&conn, &secret_store, edited).expect("blank save should preserve secret");
+
+    assert_eq!(saved.password, "");
+    assert!(saved.has_stored_password);
+    assert_eq!(
+      secret_store.get_password("conn-1").expect("secret lookup should work"),
+      Some("secret".to_string())
+    );
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -1099,52 +1468,25 @@ pub fn list_db_connections(
   app: &AppHandle,
 ) -> Result<Vec<crate::db_connector::DbConnectionConfig>, String> {
   let (conn, _) = open_connection(app)?;
-  let mut stmt = conn
-    .prepare("SELECT config_json FROM db_connections ORDER BY created_at ASC")
-    .map_err(|e| storage_error("prepare db_connections list", e))?;
-  let rows = stmt
-    .query_map([], |row| {
-      let json: String = row.get(0)?;
-      Ok(json)
-    })
-    .map_err(|e| storage_error("query db_connections", e))?;
-  let mut result = Vec::new();
-  for json_res in rows {
-    let json = decode_row(json_res, "read db_connection row")?;
-    let config: crate::db_connector::DbConnectionConfig =
-      serde_json::from_str(&json).map_err(|e| storage_error("deserialize db_connection", e))?;
-    result.push(config);
-  }
-  Ok(result)
+  list_db_connections_with_store(&conn, &OsKeyringSecretStore)
 }
 
 pub fn save_db_connection(
   app: &AppHandle,
-  mut config: crate::db_connector::DbConnectionConfig,
+  config: crate::db_connector::DbConnectionConfig,
 ) -> Result<crate::db_connector::DbConnectionConfig, String> {
   let (conn, _) = open_connection(app)?;
-  if config.id.trim().is_empty() {
-    // 新規作成: UUID 相当のランダム ID を生成
-    use sha2::Digest;
-    let hash = sha2::Sha256::digest(format!("{}{}", config.name, now_iso_string()).as_bytes());
-    config.id = format!("{:x}", hash)[..16].to_string();
-  }
-  let json =
-    serde_json::to_string(&config).map_err(|e| storage_error("serialize db_connection", e))?;
-  let now = now_iso_string();
-  conn
-    .execute(
-      "INSERT INTO db_connections (id, config_json, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?3)
-       ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at",
-      params![config.id, json, now],
-    )
-    .map_err(|e| storage_error("upsert db_connection", e))?;
-  Ok(config)
+  save_db_connection_with_store(&conn, &OsKeyringSecretStore, config)
 }
 
 pub fn delete_db_connection(app: &AppHandle, id: &str) -> Result<(), String> {
   let (conn, _) = open_connection(app)?;
+  if let Some(existing) = load_db_connection_row(&conn, id)? {
+    let had_secret = existing.has_stored_password || !existing.password.is_empty();
+    if had_secret {
+      OsKeyringSecretStore.delete_password(id)?;
+    }
+  }
   conn
     .execute("DELETE FROM db_connections WHERE id = ?1", params![id])
     .map_err(|e| storage_error("delete db_connection", e))?;

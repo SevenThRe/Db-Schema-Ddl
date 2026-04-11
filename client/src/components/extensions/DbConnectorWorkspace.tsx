@@ -253,6 +253,7 @@ function ConnectionForm({
   const host = useHostApiFor(extensionId);
   const toast = host.notifications.show;
   const formId = useId();
+  const showStoredPasswordControls = form.hasStoredPassword && !form.password;
 
   // 接続文字列を解析してフォームに反映する
   const handleParsePaste = () => {
@@ -267,6 +268,9 @@ function ConnectionForm({
       // 名前が自動生成状態なら更新する
       if (isAutoName(prev)) {
         next.name = autoNameFrom(next.host, next.port, next.database);
+      }
+      if (parsed.password) {
+        next.clearStoredPassword = false;
       }
       return next;
     });
@@ -427,10 +431,31 @@ function ConnectionForm({
             autoComplete="current-password"
             type="password"
             value={form.password}
-            onChange={(e) => set("password", e.target.value)}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                password: e.target.value,
+                clearStoredPassword: e.target.value ? false : prev.clearStoredPassword,
+              }))}
+            placeholder={form.hasStoredPassword ? "已安全保存，留空则保持不变" : ""}
             className="h-7 text-xs"
           />
         </div>
+        {showStoredPasswordControls ? (
+          <div className="col-span-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+            <p>
+              当前密码已安全保存在系统凭据库中。留空并保存会继续使用该密码。
+            </p>
+            <label className="mt-2 flex items-center gap-2 text-[11px]">
+              <input
+                type="checkbox"
+                checked={Boolean(form.clearStoredPassword)}
+                onChange={(e) => set("clearStoredPassword", e.target.checked)}
+              />
+              <span>保存时移除已保存的密码</span>
+            </label>
+          </div>
+        ) : null}
       </div>
 
       {testResult ? (

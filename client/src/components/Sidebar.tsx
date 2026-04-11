@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2, Puzzle, ArrowDownAZ, FileCode2, GitCompareArrows } from "lucide-react";
+import { Upload, FileSpreadsheet, Database, Loader2, PanelLeftClose, PanelLeft, Trash2, Settings, BookOpen, ChevronDown, FilePlus2, Puzzle, ArrowDownAZ } from "lucide-react";
 import type { CreateWorkbookFromTemplateRequest } from "@shared/schema";
 import { useCreateWorkbookFromTemplate, useDeleteFile, useFiles, useSheets, useUploadFile, useWorkbookTemplates } from "@/hooks/use-ddl";
 import { Button } from "@/components/ui/button";
@@ -295,6 +295,62 @@ export function Sidebar({
     if (!droppedFile) return;
     uploadSelectedFile(droppedFile);
   };
+
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      Array.from(event.dataTransfer?.types ?? []).includes("Files");
+
+    const handleWindowDragEnter = (event: DragEvent) => {
+      if (event.defaultPrevented) return;
+      if (isUploading || !hasFiles(event)) return;
+      event.preventDefault();
+      setIsDragOverUpload(true);
+    };
+
+    const handleWindowDragOver = (event: DragEvent) => {
+      if (event.defaultPrevented) return;
+      if (isUploading || !hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+      if (!isDragOverUpload) {
+        setIsDragOverUpload(true);
+      }
+    };
+
+    const handleWindowDragLeave = (event: DragEvent) => {
+      if (event.defaultPrevented) return;
+      if (!hasFiles(event)) return;
+      if (event.clientX === 0 && event.clientY === 0) {
+        setIsDragOverUpload(false);
+      }
+    };
+
+    const handleWindowDrop = (event: DragEvent) => {
+      if (event.defaultPrevented) return;
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      setIsDragOverUpload(false);
+      dragEnterDepthRef.current = 0;
+      if (isUploading) return;
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) return;
+      uploadSelectedFile(file);
+    };
+
+    window.addEventListener("dragenter", handleWindowDragEnter);
+    window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("dragleave", handleWindowDragLeave);
+    window.addEventListener("drop", handleWindowDrop);
+
+    return () => {
+      window.removeEventListener("dragenter", handleWindowDragEnter);
+      window.removeEventListener("dragover", handleWindowDragOver);
+      window.removeEventListener("dragleave", handleWindowDragLeave);
+      window.removeEventListener("drop", handleWindowDrop);
+    };
+  }, [isDragOverUpload, isUploading]);
 
   const requestDelete = (e: React.MouseEvent, fileId: number, fileName: string) => {
     e.stopPropagation();
@@ -679,33 +735,6 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
-          {/* Built-in ワークスペース — 静的ナビゲーションエントリ */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={activeSurface?.kind === "ddl-import" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8 rounded-md"
-                onClick={() => onNavigate?.({ kind: "ddl-import" })}
-              >
-                <FileCode2 className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">DDL 导入</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={activeSurface?.kind === "extension" && activeSurface.extensionId === "schema-diff" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8 rounded-md"
-                onClick={() => onNavigate?.({ kind: "extension", extensionId: "schema-diff", panelId: "schema-diff-workspace" })}
-              >
-                <GitCompareArrows className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Schema Diff</TooltipContent>
-          </Tooltip>
           {/* 有効な拡張が Contribution で宣言したナビゲーション */}
           {extNavItems.map((item) => renderExtensionWorkspaceButton(item, true))}
           <Tooltip>
@@ -1014,23 +1043,6 @@ export function Sidebar({
 
       {/* ナビゲーション + ユーティリティ下部セクション */}
       <div className="space-y-1.5 border-t border-slate-200/80 bg-slate-50/80 p-2 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
-        {/* Built-in ワークスペース — 拡張ではなくアプリ本体の機能 */}
-        <Button
-          variant={activeSurface?.kind === "ddl-import" ? "secondary" : "ghost"}
-          className="h-8 w-full justify-start gap-2 rounded-md text-xs"
-          onClick={() => onNavigate?.({ kind: "ddl-import" })}
-        >
-          <FileCode2 className="w-3.5 h-3.5" />
-          DDL 导入
-        </Button>
-        <Button
-          variant={activeSurface?.kind === "extension" && activeSurface.extensionId === "schema-diff" ? "secondary" : "ghost"}
-          className="h-8 w-full justify-start gap-2 rounded-md text-xs"
-          onClick={() => onNavigate?.({ kind: "extension", extensionId: "schema-diff", panelId: "schema-diff-workspace" })}
-        >
-          <GitCompareArrows className="w-3.5 h-3.5" />
-          Schema Diff
-        </Button>
         {/* 有効な拡張が Contribution で宣言したナビゲーション */}
         {extNavItems.map((item) => renderExtensionWorkspaceButton(item, false))}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>

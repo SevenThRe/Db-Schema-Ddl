@@ -850,6 +850,10 @@ export interface DbConnectionConfig {
   database: string;
   username: string;
   password: string;
+  /** true when a saved connection already has a password stored securely outside config JSON */
+  hasStoredPassword?: boolean;
+  /** explicit operator intent to remove the secure-stored password on save */
+  clearStoredPassword?: boolean;
   /** 環境ラベル（dev / test / prod）— 省略時は未分類 */
   environment?: DbEnvironment;
   /** 読み取り専用モード — true の場合 DML/DDL 実行を Rust 側でブロック */
@@ -1334,6 +1338,7 @@ export interface ExportRowsRequest {
   format: "json" | "csv" | "markdown" | "sql-insert";
   scope: "current_page" | "loaded_rows" | "full_result";
   batchIndex?: number;
+  currentPageRows?: DbQueryRow[];
   loadedRows?: DbQueryRow[];
   columns?: DbQueryColumn[];
   maxRows?: number;

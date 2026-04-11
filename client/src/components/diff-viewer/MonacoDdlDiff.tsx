@@ -13,6 +13,8 @@ import type { editor } from "monaco-editor";
 export interface MonacoDdlDiffProps {
   oldValue: string;
   newValue: string;
+  /** Monaco 语言 ID，默认 sql */
+  language?: string;
   /** サイドバイサイド表示（false でインライン） */
   sideBySide?: boolean;
   /** エディタの高さ（CSS値、デフォルト: 100%） */
@@ -23,6 +25,7 @@ export interface MonacoDdlDiffProps {
 export const MonacoDdlDiff = memo(function MonacoDdlDiff({
   oldValue,
   newValue,
+  language = "sql",
   sideBySide = true,
   height = "100%",
   className,
@@ -38,7 +41,7 @@ export const MonacoDdlDiff = memo(function MonacoDdlDiff({
       <DiffEditor
         original={oldValue}
         modified={newValue}
-        language="sql"
+        language={language}
         theme="vs-dark"
         onMount={handleMount}
         options={{

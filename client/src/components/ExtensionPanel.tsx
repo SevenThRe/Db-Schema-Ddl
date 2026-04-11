@@ -30,6 +30,13 @@ import { cn } from "@/lib/utils";
 
 const OFFICIAL_EXTENSION_IDS: readonly string[] = [];
 
+const OFFICIAL_EXTENSION_I18N: Record<string, { nameKey: string; descriptionKey: string }> = {
+  "db-management": {
+    nameKey: "extensions.officialExtensions.dbManagement.name",
+    descriptionKey: "extensions.officialExtensions.dbManagement.description",
+  },
+};
+
 // ──────────────────────────────────────────────
 // Props 型
 // ──────────────────────────────────────────────
@@ -186,9 +193,9 @@ export function ExtensionPanel({ open, onOpenChange }: ExtensionPanelProps) {
                 ) : (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
                     {OFFICIAL_EXTENSION_IDS.map((extId, index) => {
-                  const camelKey = extId.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-                  const extName = t(`extensions.officialExtensions.${camelKey}.name`, { defaultValue: extId });
-                  const extDesc = t(`extensions.officialExtensions.${camelKey}.description`, { defaultValue: "" });
+                  const localizedKeys = OFFICIAL_EXTENSION_I18N[extId];
+                  const extName = localizedKeys ? t(localizedKeys.nameKey, { defaultValue: extId }) : extId;
+                  const extDesc = localizedKeys ? t(localizedKeys.descriptionKey, { defaultValue: "" }) : "";
                   const installed = installedMap.get(extId);
                   const running = runningIds.has(extId);
                   const catalog = catalogMap[extId];

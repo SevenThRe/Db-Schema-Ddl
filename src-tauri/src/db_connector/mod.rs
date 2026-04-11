@@ -15,6 +15,10 @@ use std::sync::{Arc, Mutex};
 use sqlx::{MySqlPool, PgPool};
 use tokio_util::sync::CancellationToken;
 
+fn is_false(value: &bool) -> bool {
+  !*value
+}
+
 // ──────────────────────────────────────────────
 // 公開型定義
 // ──────────────────────────────────────────────
@@ -36,7 +40,7 @@ pub enum DbEnvironment {
   Prod,
 }
 
-/// DB 接続設定（パスワードは平文保存。本番では OS キーチェーンへの移行を推奨）
+/// DB 接続設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbConnectionConfig {
@@ -48,6 +52,12 @@ pub struct DbConnectionConfig {
   pub database: String,
   pub username: String,
   pub password: String,
+  /// 保存済み接続に secure store のパスワードが存在する場合 true
+  #[serde(default, skip_serializing_if = "is_false")]
+  pub has_stored_password: bool,
+  /// 明示的に secure store のパスワードを削除する保存操作でのみ true
+  #[serde(default, skip_serializing_if = "is_false")]
+  pub clear_stored_password: bool,
   /// 環境ラベル（dev / test / prod）— 旧設定には存在しないためオプション
   #[serde(skip_serializing_if = "Option::is_none")]
   pub environment: Option<DbEnvironment>,
@@ -347,6 +357,8 @@ pub struct ExportRowsRequest {
   pub scope: ExportRowsScope,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub batch_index: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub current_page_rows: Option<Vec<DbQueryRow>>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub loaded_rows: Option<Vec<DbQueryRow>>,
   #[serde(skip_serializing_if = "Option::is_none")]

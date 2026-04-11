@@ -69,6 +69,52 @@ describe("DbConnectionConfig", () => {
     assert.equal(parsed.defaultSchema, "public");
   });
 
+  it("保存済み接続設定の配列シリアライズでも defaultSchema が維持される", () => {
+    const savedConfigs: DbConnectionConfig[] = [
+      {
+        ...makeBaseConfig(),
+        id: "pg-conn",
+        driver: "postgres",
+        defaultSchema: "tenant_ops",
+      },
+      {
+        ...makeBaseConfig(),
+        id: "mysql-conn",
+        driver: "mysql",
+      },
+    ];
+
+    const json = JSON.stringify(savedConfigs);
+    const parsed: DbConnectionConfig[] = JSON.parse(json);
+
+    assert.equal(parsed[0]?.defaultSchema, "tenant_ops");
+    assert.equal(parsed[1]?.defaultSchema, undefined);
+  });
+
+  it("hasStoredPassword フィールドのラウンドトリップが正しく動作する", () => {
+    const config: DbConnectionConfig = {
+      ...makeBaseConfig(),
+      password: "",
+      hasStoredPassword: true,
+    };
+    const json = JSON.stringify(config);
+    const parsed: DbConnectionConfig = JSON.parse(json);
+    assert.equal(parsed.hasStoredPassword, true);
+    assert.equal(parsed.password, "");
+  });
+
+  it("clearStoredPassword フィールドのラウンドトリップが正しく動作する", () => {
+    const config: DbConnectionConfig = {
+      ...makeBaseConfig(),
+      password: "",
+      hasStoredPassword: true,
+      clearStoredPassword: true,
+    };
+    const json = JSON.stringify(config);
+    const parsed: DbConnectionConfig = JSON.parse(json);
+    assert.equal(parsed.clearStoredPassword, true);
+  });
+
   it("新フィールドなしの設定は後方互換性を持つ（フィールドが undefined になる）", () => {
     // 旧形式（新フィールドなし）のシリアライズ・デシリアライズ
     const legacyJson = JSON.stringify({
@@ -83,6 +129,8 @@ describe("DbConnectionConfig", () => {
     });
     const parsed: DbConnectionConfig = JSON.parse(legacyJson);
     assert.equal(parsed.environment, undefined);
+    assert.equal(parsed.hasStoredPassword, undefined);
+    assert.equal(parsed.clearStoredPassword, undefined);
     assert.equal(parsed.readonly, undefined);
     assert.equal(parsed.colorTag, undefined);
     assert.equal(parsed.defaultSchema, undefined);

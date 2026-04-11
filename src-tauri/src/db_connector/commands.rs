@@ -9,8 +9,9 @@ use tauri::{AppHandle, State};
 use tokio_util::sync::CancellationToken;
 
 use super::query::{
-  execute_statement, export_request_key, get_or_create_pool, load_connection_config,
-  resolve_active_schema, split_sql_statements,
+  execute_statement, export_request_key, get_or_create_pool, invalidate_connection_pool,
+  load_connection_config, resolve_active_schema, split_sql_statements,
+  supports_full_result_export,
 };
 use super::{
   compute_schema_diff, introspect_schema, test_connection, AnyPool, CancellationRegistry,
@@ -38,14 +39,26 @@ pub fn db_conn_list(app: AppHandle) -> Result<Vec<DbConnectionConfig>, String> {
 
 /// DB 接続設定を保存する（id が空なら新規作成、既存 id なら上書き）
 #[tauri::command]
-pub fn db_conn_save(app: AppHandle, config: DbConnectionConfig) -> Result<DbConnectionConfig, String> {
-  storage::save_db_connection(&app, config)
+pub fn db_conn_save(
+  app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
+  config: DbConnectionConfig,
+) -> Result<DbConnectionConfig, String> {
+  let saved = storage::save_db_connection(&app, config)?;
+  invalidate_connection_pool(&pool_registry, &saved.id)?;
+  Ok(saved)
 }
 
 /// DB 接続設定を削除する
 #[tauri::command]
-pub fn db_conn_delete(app: AppHandle, id: String) -> Result<(), String> {
-  storage::delete_db_connection(&app, &id)
+pub fn db_conn_delete(
+  app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
+  id: String,
+) -> Result<(), String> {
+  storage::delete_db_connection(&app, &id)?;
+  invalidate_connection_pool(&pool_registry, &id)?;
+  Ok(())
 }
 
 // ──────────────────────────────────────────────
@@ -55,7 +68,8 @@ pub fn db_conn_delete(app: AppHandle, id: String) -> Result<(), String> {
 /// 接続設定で実際に接続テストを行い、DB バージョン文字列を返す
 #[tauri::command]
 pub async fn db_conn_test(config: DbConnectionConfig) -> Result<String, String> {
-  test_connection(&config).await
+  let hydrated = storage::hydrate_runtime_db_connection(config)?;
+  test_connection(&hydrated).await
 }
 
 // ──────────────────────────────────────────────
@@ -159,14 +173,7 @@ async fn execute_export_request(
   // scope values handled here: current_page / loaded_rows / full_result
   let (columns, rows, truncated) = match request.scope {
     ExportRowsScope::CurrentPage | ExportRowsScope::LoadedRows => {
-      let columns = request
-        .columns
-        .clone()
-        .ok_or_else(|| "columns が指定されていません".to_string())?;
-      let rows = request
-        .loaded_rows
-        .clone()
-        .ok_or_else(|| "loadedRows が指定されていません".to_string())?;
+      let (columns, rows) = resolve_inline_export_rows(request)?;
       (columns, rows, false)
     }
     ExportRowsScope::FullResult => {
@@ -196,6 +203,31 @@ async fn execute_export_request(
   })
 }
 
+fn resolve_inline_export_rows(
+  request: &ExportRowsRequest,
+) -> Result<(Vec<DbQueryColumn>, Vec<DbQueryRow>), String> {
+  let columns = request
+    .columns
+    .clone()
+    .ok_or_else(|| "columns が指定されていません".to_string())?;
+
+  let rows = match request.scope {
+    ExportRowsScope::CurrentPage => request
+      .current_page_rows
+      .clone()
+      .ok_or_else(|| "currentPageRows が指定されていません".to_string())?,
+    ExportRowsScope::LoadedRows => request
+      .loaded_rows
+      .clone()
+      .ok_or_else(|| "loadedRows が指定されていません".to_string())?,
+    ExportRowsScope::FullResult => {
+      return Err("full_result scope cannot use inline rows".to_string());
+    }
+  };
+
+  Ok((columns, rows))
+}
+
 async fn export_full_result_rows(
   app: &AppHandle,
   pool_registry: &DbPoolRegistry,
@@ -212,6 +244,12 @@ async fn export_full_result_rows(
     .cloned()
     .ok_or_else(|| "実行する SQL がありません".to_string())?;
   let config = load_connection_config(app, &request.connection_id)?;
+  if !supports_full_result_export(&statement_sql, &config.driver) {
+    return Err(
+      "full_result export only supports single SELECT-style queries with load more."
+        .to_string(),
+    );
+  }
   let active_schema = resolve_active_schema(&config, request.schema.as_deref());
   let pool = get_or_create_pool(pool_registry, &config).await?;
   let max_rows = request.max_rows.unwrap_or(MAX_EXPORT_ROWS).min(MAX_EXPORT_ROWS);
@@ -430,6 +468,65 @@ fn json_value_to_string(value: &Value) -> String {
   match value {
     Value::String(v) => v.clone(),
     _ => value.to_string(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn sample_columns() -> Vec<DbQueryColumn> {
+    vec![DbQueryColumn {
+      name: "id".to_string(),
+      data_type: "INT".to_string(),
+    }]
+  }
+
+  fn sample_row(value: i64) -> DbQueryRow {
+    DbQueryRow {
+      values: vec![Value::from(value)],
+    }
+  }
+
+  #[test]
+  fn current_page_export_uses_current_page_rows_only() {
+    let request = ExportRowsRequest {
+      connection_id: "conn-1".to_string(),
+      request_id: "req-1".to_string(),
+      sql: "SELECT * FROM users".to_string(),
+      schema: None,
+      format: "json".to_string(),
+      scope: ExportRowsScope::CurrentPage,
+      batch_index: Some(0),
+      current_page_rows: Some(vec![sample_row(2)]),
+      loaded_rows: Some(vec![sample_row(1), sample_row(2)]),
+      columns: Some(sample_columns()),
+      max_rows: None,
+    };
+
+    let (_, rows) = resolve_inline_export_rows(&request).expect("current page rows should resolve");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].values[0], Value::from(2));
+  }
+
+  #[test]
+  fn loaded_rows_export_keeps_full_loaded_set() {
+    let request = ExportRowsRequest {
+      connection_id: "conn-1".to_string(),
+      request_id: "req-1".to_string(),
+      sql: "SELECT * FROM users".to_string(),
+      schema: None,
+      format: "json".to_string(),
+      scope: ExportRowsScope::LoadedRows,
+      batch_index: Some(0),
+      current_page_rows: Some(vec![sample_row(2)]),
+      loaded_rows: Some(vec![sample_row(1), sample_row(2)]),
+      columns: Some(sample_columns()),
+      max_rows: None,
+    };
+
+    let (_, rows) = resolve_inline_export_rows(&request).expect("loaded rows should resolve");
+    assert_eq!(rows.len(), 2);
   }
 }
 

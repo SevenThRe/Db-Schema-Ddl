@@ -32,7 +32,10 @@ attached_assets/*
 .omc/
 .mcp.json
 .codex-runtime/
+.codex/environments/
 output/
+*.tmp
+.tmp-*.txt
 
 # OS
 Thumbs.db

@@ -77,7 +77,7 @@ export function ExtensionWorkspaceHost({
 
   return (
     <ScopedHostApiContext.Provider value={scopedHostApi}>
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
         <Panel {...props} />
       </div>
     </ScopedHostApiContext.Provider>
