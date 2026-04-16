@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "openai-symphony-autonomous-agents": {
+      "source": "aradotso/trending-skills",
+      "sourceType": "github",
+      "computedHash": "7c6c9afa5bd874cf3f7b7fd5dde35e42dd81561020cd7fc8f51bb63f8aa88e30"
+    }
+  }
+}

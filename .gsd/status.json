@@ -1,0 +1,60 @@
+{
+  "run_id": "run-20260415-135947",
+  "host": "claude",
+  "profile": "balanced",
+  "state": "stopped",
+  "control_state": "stopped",
+  "total_phases": 1,
+  "completed_phase_count": 1,
+  "remaining_phase_count": 0,
+  "completed_phases": [
+    "31"
+  ],
+  "remaining_phases": [],
+  "phases": [
+    {
+      "number": "31",
+      "name": "db-workbench-runtime-and-sync-hardening",
+      "phase_dir": ".planning/phases/31-db-workbench-runtime-and-sync-hardening",
+      "status": "complete",
+      "complete": true,
+      "has_context": true,
+      "plan_count": 1,
+      "summary_count": 1,
+      "verification_status": "passed",
+      "next_action": null,
+      "next_command": null,
+      "current_unit": null,
+      "current_plan": null,
+      "waiting_reason": null,
+      "execution_mode": "serial",
+      "execution_reason": null,
+      "isolation": "n/a"
+    }
+  ],
+  "current_phase": null,
+  "current_phase_name": null,
+  "current_unit": null,
+  "current_plan": null,
+  "next_action": "All milestone phases are complete",
+  "next_command": null,
+  "next_host_command": null,
+  "next_skill": null,
+  "next_skill_args": "",
+  "waiting_reason": null,
+  "pending_inputs": 0,
+  "pending_input_types": [],
+  "execution_mode": "serial",
+  "execution_reason": null,
+  "isolation": "n/a",
+  "budget": {
+    "spent_usd": 0,
+    "soft_ceiling_usd": 10,
+    "hard_ceiling_usd": 15,
+    "capped": false,
+    "cap_reason": null
+  },
+  "resume_command": "/gsd:autonomous",
+  "status_path": ".gsd/status.json",
+  "updated_at": "2026-04-15T14:22:19.534Z"
+}

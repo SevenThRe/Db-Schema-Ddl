@@ -1,0 +1,9 @@
+{
+  "phase": "28",
+  "phase_name": "advanced-data-editing-and-review-workflows",
+  "source": ".planning/phases/28-advanced-data-editing-and-review-workflows/28-CONTEXT.md",
+  "source_sha1": "9a424deba889803bc47591507192e392675fddc5",
+  "captured_at": "2026-04-12T07:27:04.775Z",
+  "kind": "context_snapshot",
+  "summary": "## Phase 28 Context\n\nGoal: move DB Workbench grid editing from cell-update baseline to a coherent operator workflow that can stage, review, revert, and commit larger edit sets without losing row context.\n\nCurrent repo reality:\n\n- Update staging is already real in the canonical workbench route.\n- Delete staging is already supported by shared contracts and Rust commit planning, but the frontend does not expose it.\n- Insert staging is not supported by the current grid-edit contract or runtime yet.\n\nConfirmed implementation boundaries:\n\n- Canonical surface: `client/src/components/extensions/db-workbench/WorkbenchLayout.tsx`\n- Grid UI: `client/src/components/extensions/db-workbench/ResultGridPane.tsx`\n- Review dialog: `client/src/components/extensions/db-workbench/GridEditCommitDialog.tsx`\n- Shared delete summary helper: `client/src/components/extensions/db-workbench/grid-edit-summary.ts`\n- Runtime planner/commit: `src-tauri/src/db_connector/grid_edit.rs`\n\nExecution split for this phase:\n\n1. 28-01: land staged row deletes in the existing starter-query editing workflow.\n2. 28-02: add inserted-row drafting and commit support as a follow-on slice.\n\nGuardrails to preserve while moving fast:\n\n- Keep editing fail-closed for non-table or non-PK-safe result sets.\n- Keep review explicit through `prepareGridCommit` before `commitGridEdits`.\n- Prevent conflicting update/delete staging for the same row.\n- Preserve row context in summaries and memory-trim protection.\n"
+}

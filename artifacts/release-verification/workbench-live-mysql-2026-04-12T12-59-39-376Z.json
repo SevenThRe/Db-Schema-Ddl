@@ -1,0 +1,58 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-mysql-2026-04-12T12-59-39-376Z",
+  "generatedAt": "2026-04-12T12:59:39.376Z",
+  "driver": "mysql",
+  "flows": [
+    {
+      "id": "connect",
+      "status": "failed",
+      "note": "No saved connection matched the requested live verification target."
+    },
+    {
+      "id": "query",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "paging",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "export",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "cancel",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "edit",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "readonly",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "inspection",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 1,
+    "warningCount": 0,
+    "skippedCount": 7,
+    "overallStatus": "failed"
+  },
+  "notes": [
+    "Live verification stopped before connection because no matching saved connection was found."
+  ]
+}

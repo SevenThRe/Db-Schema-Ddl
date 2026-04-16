@@ -1,0 +1,27 @@
+{
+  "artifactVersion": "v1",
+  "runId": "ship-gate-2026-04-12T06-32-35-571Z",
+  "generatedAt": "2026-04-12T06:32:35.571Z",
+  "decision": "blocked",
+  "blocked": true,
+  "blockers": [
+    {
+      "code": "MYSQL_LIVE_VERIFICATION_MISSING",
+      "severity": "blocking",
+      "message": "Missing MySQL live verification artifact."
+    },
+    {
+      "code": "POSTGRES_LIVE_VERIFICATION_MISSING",
+      "severity": "blocking",
+      "message": "Missing PostgreSQL live verification artifact."
+    }
+  ],
+  "warnings": [],
+  "packagedSmokeArtifactPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\tauri-packaged-smoke-2026-04-12T06-30-19-330Z.json",
+  "liveArtifactPaths": [],
+  "requiredEvidence": {
+    "packagedSmokePresent": true,
+    "mysqlLivePresent": false,
+    "postgresLivePresent": false
+  }
+}

@@ -22,22 +22,22 @@ Turn DB Workbench from a capable prototype into a publishable daily-use desktop 
 
 ### Category: Canonical Product Workflow (FLOW)
 
-- [ ] **FLOW-01**: User reaches all primary DB tasks through one canonical workbench workflow, not split between modern and legacy surfaces.
-- [ ] **FLOW-02**: User can manage connection context, active schema, environment cues, and read-only cues from one coherent workbench surface without ambiguous state loss.
-- [ ] **FLOW-03**: User can switch among editor, results, explain, sync, and connection views without misleading resets or hidden state changes.
-- [ ] **FLOW-04**: User can reopen the app and recover the last active connection/workspace state with clear recovery behavior when the connection is unavailable.
+- [x] **FLOW-01**: User reaches all primary DB tasks through one canonical workbench workflow, not split between modern and legacy surfaces.
+- [x] **FLOW-02**: User can manage connection context, active schema, environment cues, and read-only cues from one coherent workbench surface without ambiguous state loss.
+- [x] **FLOW-03**: User can switch among editor, results, explain, sync, and connection views without misleading resets or hidden state changes.
+- [x] **FLOW-04**: User can reopen the app and recover the last active connection/workspace state with clear recovery behavior when the connection is unavailable.
 
 ### Category: Deep Inspection Coverage (INSP)
 
-- [ ] **INSP-01**: User can inspect tables, views, indexes, and foreign keys from the explorer in a way that scales beyond toy schemas.
-- [ ] **INSP-02**: User can inspect supported routines, triggers, functions, or procedures when the active driver exposes them.
-- [ ] **INSP-03**: User can open a definition or DDL preview for supported objects directly from the explorer.
+- [x] **INSP-01**: User can inspect tables, views, indexes, and foreign keys from the explorer in a way that scales beyond toy schemas.
+- [x] **INSP-02**: User can inspect supported routines, triggers, functions, or procedures when the active driver exposes them.
+- [x] **INSP-03**: User can open a definition or DDL preview for supported objects directly from the explorer.
 
 ### Category: Release Validation & Ship Gate (QUAL)
 
 - [ ] **QUAL-01**: Maintainer has reproducible live-database verification coverage for MySQL and PostgreSQL across connect, query, paging, export, cancel, edit, readonly, and object-inspection flows.
-- [ ] **QUAL-02**: Packaged desktop builds have smoke-test evidence that covers startup, saved-connection recovery, and critical DB Workbench workflows.
-- [ ] **QUAL-03**: The project has an explicit ship gate that classifies release blockers versus deferrable issues before a public publish decision.
+- [x] **QUAL-02**: Packaged desktop builds have smoke-test evidence that covers startup, saved-connection recovery, and critical DB Workbench workflows.
+- [x] **QUAL-03**: The project has an explicit ship gate that classifies release blockers versus deferrable issues before a public publish decision.
 
 ---
 
@@ -71,20 +71,20 @@ Turn DB Workbench from a capable prototype into a publishable daily-use desktop 
 | SAFE-03 | Phase 23 | Complete |
 | SAFE-04 | Phase 23 | Complete |
 | SAFE-05 | Phase 23 | Complete |
-| FLOW-01 | Phase 24 | Pending |
-| FLOW-02 | Phase 24 | Pending |
-| FLOW-03 | Phase 24 | Pending |
-| FLOW-04 | Phase 24 | Pending |
-| INSP-01 | Phase 25 | Pending |
-| INSP-02 | Phase 25 | Pending |
-| INSP-03 | Phase 25 | Pending |
-| QUAL-01 | Phase 26 | Pending |
-| QUAL-02 | Phase 26 | Pending |
-| QUAL-03 | Phase 26 | Pending |
+| FLOW-01 | Phase 24 | Complete |
+| FLOW-02 | Phase 24 | Complete |
+| FLOW-03 | Phase 24 | Complete |
+| FLOW-04 | Phase 24 | Complete |
+| INSP-01 | Phase 25 | Complete |
+| INSP-02 | Phase 25 | Complete |
+| INSP-03 | Phase 25 | Complete |
+| QUAL-01 | Phase 26 | Blocked on external live DB evidence |
+| QUAL-02 | Phase 26 | Complete |
+| QUAL-03 | Phase 26 | Complete |
 
 **Coverage: 15/15 requirements mapped (100%)**
 
 ---
 
 *Requirements defined: 2026-04-11*
-*Last updated: 2026-04-11 after completing Phase 23 Release Safety Foundations*
+*Last updated: 2026-04-12 after implementing Phase 26 verification infrastructure and packaged smoke evidence*

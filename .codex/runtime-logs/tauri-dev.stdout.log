@@ -1,0 +1,80 @@
+
+> db-schema-excel-2-ddl@1.1.4 tauri:dev
+> tauri dev
+
+
+> db-schema-excel-2-ddl@1.1.4 dev
+> vite --port 5001 --strictPort --host 127.0.0.1
+
+
+  [32m[1mVITE[22m v7.3.1[39m  [2mready in [0m[1m294[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5001[22m/[39m
+[2m上午4:32:45[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午4:56:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m上午4:56:28[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/extensions/host-context.tsx[22m
+[2m上午4:56:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/extensions/host-context.tsx[22m Could not Fast Refresh ("useExtensionHost" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m上午4:56:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/extensions/ExtensionWorkspaceHost.tsx, /src/components/extension-management/ExtensionManagementPage.tsx, /src/components/Sidebar.tsx, /src/components/ddl-import/DdlImportWorkspace.tsx, /src/components/extensions/DbConnectorWorkspace.tsx, /src/components/SchemaDiffPanel.tsx[22m
+[2m上午4:56:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/extensions/ExtensionWorkspaceHost.tsx[22m Could not Fast Refresh ("useScopedHostApi" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m上午4:56:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Dashboard.tsx, /src/components/extensions/EnumGenWorkspace.tsx, /src/components/extensions/DdlToExcelWorkspace.tsx[22m
+[2m上午4:56:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/extensions/host-context.tsx, /src/index.css[22m
+[2m上午4:56:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/extensions/host-context.tsx[22m Could not Fast Refresh ("useExtensionHost" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m上午4:56:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/extensions/ExtensionWorkspaceHost.tsx, /src/components/extension-management/ExtensionManagementPage.tsx, /src/components/Sidebar.tsx, /src/components/ddl-import/DdlImportWorkspace.tsx, /src/components/extensions/DbConnectorWorkspace.tsx, /src/components/SchemaDiffPanel.tsx[22m
+[2m上午4:56:35[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/extensions/ExtensionWorkspaceHost.tsx[22m Could not Fast Refresh ("useScopedHostApi" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m上午4:56:35[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Dashboard.tsx, /src/components/extensions/EnumGenWorkspace.tsx, /src/components/extensions/DdlToExcelWorkspace.tsx[22m
+[2m上午4:56:40[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/extensions/host-context.tsx, /src/pages/Dashboard.tsx, /src/pages/Settings.tsx, /src/components/UpdateNotifier.tsx, /src/components/StatusBar.tsx, /src/components/SheetSelector.tsx, /src/components/SearchDialog.tsx, /src/components/SpreadsheetViewer.tsx, /src/components/extensions/EnumGenWorkspace.tsx, /src/components/extensions/DdlToExcelWorkspace.tsx, /src/components/TablePreview.tsx, /src/components/Sidebar.tsx, /src/components/ddl-import/DdlImportWorkspace.tsx, /src/components/SchemaDiffPanel.tsx, /src/components/DdlGenerator.tsx, /src/index.css[22m
+[2m上午4:56:41[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/extensions/host-context.tsx[22m Could not Fast Refresh ("useExtensionHost" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m上午4:56:41[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/extensions/ExtensionWorkspaceHost.tsx, /src/components/extension-management/ExtensionManagementPage.tsx, /src/components/Sidebar.tsx, /src/components/ddl-import/DdlImportWorkspace.tsx, /src/components/extensions/DbConnectorWorkspace.tsx, /src/components/SchemaDiffPanel.tsx[22m
+[2m上午4:58:13[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午4:58:39[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午5:07:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午5:08:09[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午5:08:15[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午5:08:33[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:08:41[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:08:51[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:09:40[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:09:48[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:10:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:10:12[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:10:33[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:10:55[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:10:59[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m上午5:19:15[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:19:23[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:19:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:19:36[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:19:44[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:19:54[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:20:05[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:20:11[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:20:23[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:22:09[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx, /src/components/extensions/db-workbench/GridEditCommitDialog.tsx, /src/components/extensions/db-workbench/ResultGridPane.tsx[22m
+[2m上午5:22:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/GridEditCommitDialog.tsx[22m
+[2m上午5:40:06[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:40:08[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:43:11[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:51:39[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午5:52:52[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:12:04[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:12:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:12:29[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:12:42[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:13:09[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:13:09[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:13:31[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/WorkbenchLayout.tsx[22m
+[2m上午6:14:22[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/ResultGridPane.tsx[22m
+[2m上午6:14:31[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/ResultGridPane.tsx[22m
+[2m上午6:14:40[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/ResultGridPane.tsx[22m
+[2m下午12:54:54[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:55:24[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:55:37[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:55:50[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:55:58[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:56:06[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:57:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:57:19[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:57:45[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/db-workbench/ConnectionSidebar.tsx[22m
+[2m下午12:58:00[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+[2m下午12:58:08[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/extensions/DbConnectorWorkspace.tsx[22m
+PS E:\work\Db-Schema-Ddl> 

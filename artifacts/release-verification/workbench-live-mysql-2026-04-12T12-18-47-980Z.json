@@ -1,0 +1,56 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-mysql-2026-04-12T12-18-47-980Z",
+  "generatedAt": "2026-04-12T12:18:47.980Z",
+  "driver": "mysql",
+  "flows": [
+    {
+      "id": "connect",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "query",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "paging",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "export",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "cancel",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "edit",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "readonly",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "inspection",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 0,
+    "warningCount": 0,
+    "skippedCount": 8,
+    "overallStatus": "warning"
+  },
+  "notes": []
+}

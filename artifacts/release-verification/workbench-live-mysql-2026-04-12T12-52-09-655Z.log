@@ -1,0 +1,9 @@
+1775998391259 [checkpoint:tauri_setup_ready] {"productName":"DBSchemaExcel2DDL"}
+1775998391292 [checkpoint:browser_window_loaded]
+1775998395683 [checkpoint:browser_window_loaded]
+1775998395844 [checkpoint:dashboard_ready] {"activeSurface":"extension"}
+1775998395850 [checkpoint:dashboard_ready] {"activeSurface":"workspace"}
+1775998396435 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1775998396804 [checkpoint:db_workbench_recovery_classified] {"activeConnectionId":null,"classification":"none","requestedConnectionId":null}
+1775998396804 [checkpoint:db_workbench_live_flow] {"connectionId":null,"connectionName":null,"driver":"mysql","flowId":"connect","note":"No saved connection matched the requested live verification target.","status":"failed"}
+1775998396805 [checkpoint:db_workbench_live_completed] {"connectionId":null,"connectionName":null,"database":null,"driver":"mysql","note":"Live verification stopped before connection because no matching saved connection was found.","status":"failed"}

@@ -1,0 +1,9 @@
+{
+  "profile": "balanced",
+  "spent_usd": 0,
+  "capped": false,
+  "cap_reason": null,
+  "soft_ceiling_usd": 10,
+  "hard_ceiling_usd": 15,
+  "updated_at": "2026-04-15T13:59:47.410Z"
+}

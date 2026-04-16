@@ -1,0 +1,7 @@
+1775998587917 [checkpoint:tauri_setup_ready] {"productName":"DBSchemaExcel2DDL"}
+1775998587943 [checkpoint:browser_window_loaded]
+1775998591511 [checkpoint:browser_window_loaded]
+1775998591678 [checkpoint:dashboard_ready] {"activeSurface":"extension"}
+1775998591680 [checkpoint:dashboard_ready] {"activeSurface":"workspace"}
+1775998592216 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1775998592584 [checkpoint:db_workbench_recovery_classified] {"activeConnectionId":null,"classification":"none","requestedConnectionId":null}

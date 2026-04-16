@@ -1,0 +1,36 @@
+{
+  "unit_id": "28-execute",
+  "phase": "28",
+  "unit": "execute",
+  "status": "running",
+  "next_command": "/gsd:execute-phase 28",
+  "updated_at": "2026-04-15T13:58:29.037Z",
+  "started_at": "2026-04-12T07:27:04.890Z",
+  "completed_at": null,
+  "failed_at": null,
+  "interrupted_at": null,
+  "attempts": 1,
+  "transitions": [
+    {
+      "event": "unit_started",
+      "status": "running",
+      "at": "2026-04-12T07:27:04.890Z"
+    },
+    {
+      "event": "unit_updated",
+      "status": "running",
+      "at": "2026-04-12T07:27:22.022Z"
+    },
+    {
+      "event": "unit_updated",
+      "status": "running",
+      "at": "2026-04-15T13:58:14.950Z"
+    },
+    {
+      "event": "unit_updated",
+      "status": "running",
+      "at": "2026-04-15T13:58:29.037Z"
+    }
+  ],
+  "notes": null
+}

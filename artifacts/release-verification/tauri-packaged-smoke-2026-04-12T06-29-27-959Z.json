@@ -1,0 +1,82 @@
+{
+  "artifactVersion": "v2",
+  "runId": "tauri-packaged-smoke-2026-04-12T06-29-27-959Z",
+  "generatedAt": "2026-04-12T06:29:27.959Z",
+  "appVersion": "unknown",
+  "environment": "packaged-tauri",
+  "runMode": "packaged-tauri",
+  "logPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\tauri-packaged-smoke-2026-04-12T06-29-27-959Z.log",
+  "executablePath": "E:\\work\\Db-Schema-Ddl\\src-tauri\\target\\release\\DBSchemaExcel2DDL.exe",
+  "screenshotPaths": [],
+  "observedCheckpoints": [],
+  "blockerFindings": [
+    {
+      "code": "PACKAGED_SMOKE_FAILED",
+      "blocker": true,
+      "severity": "critical",
+      "message": "Packaged executable not found at E:\\work\\Db-Schema-Ddl\\src-tauri\\target\\release\\DBSchemaExcel2DDL.exe"
+    },
+    {
+      "code": "TAURI_STARTUP_CHECKPOINT_MISSING",
+      "blocker": true,
+      "severity": "critical",
+      "message": "Release verification did not observe both tauri_setup_ready and browser_window_loaded."
+    },
+    {
+      "code": "DASHBOARD_READY_CHECKPOINT_MISSING",
+      "blocker": true,
+      "severity": "critical",
+      "message": "The release-verification run never reached dashboard_ready."
+    },
+    {
+      "code": "DB_WORKBENCH_ENTRY_CHECKPOINT_MISSING",
+      "blocker": true,
+      "severity": "critical",
+      "message": "The release-verification run never reached the DB workbench surface."
+    },
+    {
+      "code": "DB_WORKBENCH_RECOVERY_CHECKPOINT_MISSING",
+      "blocker": true,
+      "severity": "critical",
+      "message": "The release-verification run never classified connection recovery."
+    }
+  ],
+  "diagnostics": [],
+  "steps": [
+    {
+      "id": "startup",
+      "title": "Tauri startup",
+      "status": "failed",
+      "detail": "Missing Tauri setup or browser window readiness checkpoint.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "dashboard-ready",
+      "title": "Dashboard ready",
+      "status": "failed",
+      "detail": "Missing dashboard_ready checkpoint from the live Tauri shell.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "db-workbench-entry",
+      "title": "DB workbench surface",
+      "status": "failed",
+      "detail": "Missing db_workbench_surface_ready from the real DB workbench surface.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "recovery-classification",
+      "title": "Connection recovery classification",
+      "status": "failed",
+      "detail": "Missing db_workbench_recovery_classified checkpoint.",
+      "diagnosticIds": []
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 4,
+    "warningCount": 0,
+    "skippedCount": 0,
+    "overallStatus": "failed"
+  }
+}

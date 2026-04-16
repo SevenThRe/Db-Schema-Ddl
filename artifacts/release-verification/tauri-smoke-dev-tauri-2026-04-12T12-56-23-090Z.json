@@ -1,0 +1,93 @@
+{
+  "artifactVersion": "v2",
+  "runId": "tauri-smoke-dev-tauri-2026-04-12T12-56-23-090Z",
+  "generatedAt": "2026-04-12T12:56:23.090Z",
+  "appVersion": "1.1.4",
+  "environment": "dev-tauri",
+  "runMode": "dev-tauri",
+  "logPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\tauri-smoke-dev-tauri-2026-04-12T12-56-23-090Z.log",
+  "screenshotPaths": [],
+  "observedCheckpoints": [
+    {
+      "name": "tauri_setup_ready",
+      "metadata": {
+        "productName": "DBSchemaExcel2DDL"
+      }
+    },
+    {
+      "name": "browser_window_loaded",
+      "metadata": {}
+    },
+    {
+      "name": "browser_window_loaded",
+      "metadata": {}
+    },
+    {
+      "name": "dashboard_ready",
+      "metadata": {
+        "activeSurface": "extension"
+      }
+    },
+    {
+      "name": "dashboard_ready",
+      "metadata": {
+        "activeSurface": "workspace"
+      }
+    },
+    {
+      "name": "db_workbench_surface_ready",
+      "metadata": {
+        "activeTabValue": "connections",
+        "selectedConnectionId": null
+      }
+    },
+    {
+      "name": "db_workbench_recovery_classified",
+      "metadata": {
+        "activeConnectionId": null,
+        "classification": "none",
+        "requestedConnectionId": null
+      }
+    }
+  ],
+  "recoveryClassification": "none",
+  "blockerFindings": [],
+  "diagnostics": [],
+  "steps": [
+    {
+      "id": "startup",
+      "title": "Tauri startup",
+      "status": "passed",
+      "detail": "Observed Tauri setup and browser window readiness checkpoints.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "dashboard-ready",
+      "title": "Dashboard ready",
+      "status": "passed",
+      "detail": "Observed dashboard_ready from the live Tauri shell.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "db-workbench-entry",
+      "title": "DB workbench surface",
+      "status": "passed",
+      "detail": "Observed db_workbench_surface_ready from the real DB workbench surface.",
+      "diagnosticIds": []
+    },
+    {
+      "id": "recovery-classification",
+      "title": "Connection recovery classification",
+      "status": "passed",
+      "detail": "No remembered connection was available for recovery in this run.",
+      "diagnosticIds": []
+    }
+  ],
+  "summary": {
+    "passedCount": 4,
+    "failedCount": 0,
+    "warningCount": 0,
+    "skippedCount": 0,
+    "overallStatus": "passed"
+  }
+}
