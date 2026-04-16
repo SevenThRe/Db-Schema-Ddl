@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { DDL_SETTINGS_COMPAT_COLUMNS } from "../server/constants/db-init";
+import { pathToFileURL } from "node:url";
 
-const REQUIRED_DESKTOP_EXTERNALS = ["electron", "better-sqlite3"] as const;
-const REQUIRED_PACKAGE_SCRIPTS = ["start:electron", "build:electron", "release"] as const;
-const FRIENDLY_CATALOG_FALLBACK = "官方扩展暂未发布，当前还没有可下载的安装包。";
-const PACKAGED_SMOKE_SCRIPT = "smoke:packaged";
+const REQUIRED_VERIFICATION_SCRIPTS = [
+  "verify:desktop:preflight",
+  "verify:desktop:smoke",
+  "verify:desktop:smoke:packaged",
+  "verify:desktop:live",
+  "verify:desktop:ship-gate",
+] as const;
 
 export interface DesktopPreflightCheck {
   id: string;
@@ -20,102 +22,81 @@ export interface DesktopPreflightResult {
   checks: DesktopPreflightCheck[];
 }
 
-export function scriptContainsRequiredElectronExternals(buildScriptSource: string): boolean {
-  return REQUIRED_DESKTOP_EXTERNALS.every((name) =>
-    buildScriptSource.includes(`"${name}"`) || buildScriptSource.includes(`'${name}'`),
-  );
-}
-
-export function findMissingDdlCompatColumns(columnNames: string[]): string[] {
-  const declared = new Set(DDL_SETTINGS_COMPAT_COLUMNS.map((column) => column.name));
-  return columnNames.filter((name) => !declared.has(name));
-}
-
-export function packageScriptRunsDesktopPreflight(scriptValue: string | undefined): boolean {
-  return typeof scriptValue === "string" && scriptValue.includes("preflight:desktop");
-}
-
-export function packageScriptRunsNodeNativeRebuild(scriptValue: string | undefined): boolean {
-  return typeof scriptValue === "string" && scriptValue.includes("rebuild:native:node");
-}
-
-export function packageScriptRunsElectronNativeBuild(scriptValue: string | undefined): boolean {
-  return (
-    typeof scriptValue === "string" &&
-    (scriptValue.includes("build:electron") || scriptValue.includes("rebuild:native:electron"))
-  );
-}
-
-export function packagedSmokeScriptPreservesElectronNativeAbi(scriptValue: string | undefined): boolean {
-  return packageScriptRunsElectronNativeBuild(scriptValue) && !packageScriptRunsNodeNativeRebuild(scriptValue);
-}
-
-export function githubReleaseHasFriendlyCatalogFallback(source: string): boolean {
-  return source.includes(FRIENDLY_CATALOG_FALLBACK);
+function readJson<T>(filePath: string): T {
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
 }
 
 export function runDesktopPreflight(cwd = process.cwd()): DesktopPreflightResult {
   const packageJsonPath = path.join(cwd, "package.json");
-  const buildScriptPath = path.join(cwd, "script", "build.ts");
-  const githubReleasePath = path.join(cwd, "electron", "github-release.ts");
+  const tauriConfigPath = path.join(cwd, "src-tauri", "tauri.conf.json");
+  const tauriLibPath = path.join(cwd, "src-tauri", "src", "lib.rs");
+  const commandsPath = path.join(cwd, "src-tauri", "src", "commands.rs");
+  const dashboardPath = path.join(cwd, "client", "src", "pages", "Dashboard.tsx");
+  const workspacePath = path.join(
+    cwd,
+    "client",
+    "src",
+    "components",
+    "extensions",
+    "DbConnectorWorkspace.tsx",
+  );
 
-  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
-    scripts?: Record<string, string>;
-  };
-  const buildScriptSource = fs.readFileSync(buildScriptPath, "utf8");
-  const githubReleaseSource = fs.readFileSync(githubReleasePath, "utf8");
+  const pkg = readJson<{ scripts?: Record<string, string> }>(packageJsonPath);
+  const tauriConfig = readJson<{
+    productName?: string;
+    bundle?: { active?: boolean; targets?: string | string[] };
+  }>(tauriConfigPath);
+  const libSource = fs.readFileSync(tauriLibPath, "utf8");
+  const commandSource = fs.readFileSync(commandsPath, "utf8");
+  const dashboardSource = fs.readFileSync(dashboardPath, "utf8");
+  const workspaceSource = fs.readFileSync(workspacePath, "utf8");
 
   const checks: DesktopPreflightCheck[] = [];
 
-  checks.push({
-    id: "electron-bundle-externals",
-    ok: scriptContainsRequiredElectronExternals(buildScriptSource),
-    message: "Electron build must keep native desktop modules external.",
-    detail: `Required externals: ${REQUIRED_DESKTOP_EXTERNALS.join(", ")}`,
-  });
-
-  const missingCompatColumns = findMissingDdlCompatColumns(["ddl_import_template_preference"]);
-  checks.push({
-    id: "ddl-settings-compat-columns",
-    ok: missingCompatColumns.length === 0,
-    message: "SQLite compatibility migration must include required ddl_settings columns.",
-    detail: missingCompatColumns.length > 0 ? `Missing: ${missingCompatColumns.join(", ")}` : undefined,
-  });
-
-  const scriptFailures = REQUIRED_PACKAGE_SCRIPTS.filter(
-    (scriptName) => !packageScriptRunsDesktopPreflight(pkg.scripts?.[scriptName]),
+  const missingScripts = REQUIRED_VERIFICATION_SCRIPTS.filter(
+    (name) => typeof pkg.scripts?.[name] !== "string",
   );
   checks.push({
-    id: "desktop-preflight-hooked-into-scripts",
-    ok: scriptFailures.length === 0,
-    message: "Desktop preflight must run from release-critical npm scripts.",
-    detail: scriptFailures.length > 0 ? `Missing preflight hook in: ${scriptFailures.join(", ")}` : undefined,
-  });
-
-  checks.push({
-    id: "node-native-rebuild-hooked-into-tests",
-    ok: packageScriptRunsNodeNativeRebuild(pkg.scripts?.test),
-    message: "Node-side test runs must restore better-sqlite3 to the active Node ABI.",
-    detail: packageScriptRunsNodeNativeRebuild(pkg.scripts?.test)
-      ? undefined
-      : "Add rebuild:native:node to the npm test pipeline.",
-  });
-
-  const packagedSmokeScript = pkg.scripts?.[PACKAGED_SMOKE_SCRIPT];
-  checks.push({
-    id: "packaged-smoke-keeps-electron-native-abi",
-    ok: packagedSmokeScriptPreservesElectronNativeAbi(packagedSmokeScript),
-    message: "Packaged smoke must reuse the Electron-native build path and avoid the Node ABI rebuild path.",
+    id: "tauri-verification-scripts",
+    ok: missingScripts.length === 0,
+    message: "Package scripts must expose the canonical Tauri release-verification commands.",
     detail:
-      typeof packagedSmokeScript === "string"
-        ? `Current script must include build:electron or rebuild:native:electron and must not include rebuild:native:node.`
-        : `Add ${PACKAGED_SMOKE_SCRIPT} and route it through build:electron or rebuild:native:electron.`,
+      missingScripts.length > 0
+        ? `Missing scripts: ${missingScripts.join(", ")}`
+        : undefined,
+  });
+
+  const bundleTargets = Array.isArray(tauriConfig.bundle?.targets)
+    ? tauriConfig.bundle?.targets
+    : [tauriConfig.bundle?.targets].filter(Boolean);
+  checks.push({
+    id: "tauri-bundle-config",
+    ok:
+      tauriConfig.bundle?.active === true &&
+      bundleTargets.some((target) => target === "nsis") &&
+      typeof tauriConfig.productName === "string" &&
+      tauriConfig.productName.trim().length > 0,
+    message: "Tauri bundle config must remain active with an NSIS target and a stable product name.",
+    detail: `productName=${tauriConfig.productName ?? "missing"}, targets=${bundleTargets.join(", ") || "missing"}`,
   });
 
   checks.push({
-    id: "friendly-catalog-fallback",
-    ok: githubReleaseHasFriendlyCatalogFallback(githubReleaseSource),
-    message: "Official extension catalog fallback should stay user-friendly.",
+    id: "smoke-checkpoint-command",
+    ok:
+      commandSource.includes("pub fn emit_smoke_checkpoint") &&
+      commandSource.includes("pub fn core_smoke_checkpoint") &&
+      libSource.includes("commands::core_smoke_checkpoint"),
+    message: "The runtime must expose a canonical smoke checkpoint command for release verification.",
+  });
+
+  checks.push({
+    id: "frontend-smoke-entry",
+    ok:
+      dashboardSource.includes("readReleaseVerificationConfig") &&
+      dashboardSource.includes('extensionId: "db-connector"') &&
+      workspaceSource.includes("db_workbench_surface_ready") &&
+      workspaceSource.includes("db_workbench_recovery_classified"),
+    message: "Dashboard and DB workspace must emit real Tauri smoke checkpoints for workspace entry and recovery.",
   });
 
   return {

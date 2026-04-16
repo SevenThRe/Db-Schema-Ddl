@@ -1,6 +1,15 @@
-use std::{fmt::Display, path::Path};
+use std::{
+  env,
+  fmt::Display,
+  fs::OpenOptions,
+  io::Write,
+  path::{Path, PathBuf},
+  time::{SystemTime, UNIX_EPOCH},
+};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::Serialize;
+use serde_json::{Map, Value};
 use sysinfo::{Pid, System};
 use tauri::Manager;
 
@@ -30,6 +39,106 @@ const RELEASES_PAGE_URL: &str = "https://github.com/SevenThRe/Db-Schema-Ddl/rele
 
 fn command_error(action: &str, error: impl Display) -> String {
   format!("Failed to {action}: {error}")
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseVerificationLiveConfig {
+  pub enabled: bool,
+  pub driver: Option<String>,
+  pub connection_id: Option<String>,
+  pub connection_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseVerificationWindowConfig {
+  pub enabled: bool,
+  pub log_path: Option<String>,
+  pub auto_open_db_workbench: bool,
+  pub live: Option<ReleaseVerificationLiveConfig>,
+}
+
+fn smoke_log_path_from_env() -> Option<PathBuf> {
+  env::var("DBSCHEMA_SMOKE_LOG_PATH")
+    .ok()
+    .map(|path| path.trim().to_string())
+    .filter(|path| !path.is_empty())
+    .map(PathBuf::from)
+}
+
+pub fn read_release_verification_window_config() -> ReleaseVerificationWindowConfig {
+  let live_driver = env::var("DBSCHEMA_LIVE_VERIFY_DRIVER")
+    .ok()
+    .map(|value| value.trim().to_ascii_lowercase())
+    .filter(|value| matches!(value.as_str(), "mysql" | "postgres"));
+  let live_connection_id = env::var("DBSCHEMA_LIVE_VERIFY_CONNECTION_ID")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+  let live_connection_name = env::var("DBSCHEMA_LIVE_VERIFY_CONNECTION_NAME")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+  let live_enabled = env::var("DBSCHEMA_LIVE_VERIFY_ENABLED")
+    .ok()
+    .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+    .unwrap_or(false)
+    || live_driver.is_some()
+    || live_connection_id.is_some()
+    || live_connection_name.is_some();
+
+  ReleaseVerificationWindowConfig {
+    enabled: smoke_log_path_from_env().is_some(),
+    log_path: smoke_log_path_from_env().map(|path| path.display().to_string()),
+    auto_open_db_workbench: env::var("DBSCHEMA_SMOKE_AUTO_OPEN_DB_WORKBENCH")
+      .ok()
+      .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+      .unwrap_or(false)
+      || live_enabled,
+    live: if live_enabled {
+      Some(ReleaseVerificationLiveConfig {
+        enabled: true,
+        driver: live_driver,
+        connection_id: live_connection_id,
+        connection_name: live_connection_name,
+      })
+    } else {
+      None
+    },
+  }
+}
+
+pub fn emit_smoke_checkpoint(
+  checkpoint: &str,
+  metadata: Option<Map<String, Value>>,
+) -> Result<(), String> {
+  let Some(log_path) = smoke_log_path_from_env() else {
+    return Ok(());
+  };
+
+  if let Some(parent) = log_path.parent() {
+    std::fs::create_dir_all(parent)
+      .map_err(|error| command_error("create smoke log directory", error))?;
+  }
+
+  let mut file = OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(&log_path)
+    .map_err(|error| command_error("open smoke log file", error))?;
+  let timestamp_ms = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_millis();
+  let payload = metadata
+    .filter(|map| !map.is_empty())
+    .map(Value::Object)
+    .map(|value| format!(" {value}"))
+    .unwrap_or_default();
+  writeln!(file, "{timestamp_ms} [checkpoint:{checkpoint}]{payload}")
+    .map_err(|error| command_error("append smoke checkpoint", error))?;
+  Ok(())
 }
 
 fn strip_version_prefix(version: &str) -> &str {
@@ -182,6 +291,14 @@ pub fn core_get_process_metrics() -> Result<ProcessMetrics, String> {
     memory_bytes: process.memory(),
     virtual_memory_bytes: process.virtual_memory(),
   })
+}
+
+#[tauri::command]
+pub fn core_smoke_checkpoint(
+  checkpoint: String,
+  metadata: Option<Map<String, Value>>,
+) -> Result<(), String> {
+  emit_smoke_checkpoint(&checkpoint, metadata)
 }
 
 #[tauri::command]

@@ -483,6 +483,64 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
     )
     .map_err(|error| storage_error("initialize app database schema", error))?;
 
+  ensure_table_column(
+    connection,
+    "db_data_apply_jobs",
+    "sql_preview_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  )?;
+  ensure_table_column(
+    connection,
+    "db_data_apply_jobs",
+    "preview_truncated",
+    "INTEGER NOT NULL DEFAULT 0",
+  )?;
+  ensure_table_column(
+    connection,
+    "db_data_apply_jobs",
+    "statement_count",
+    "INTEGER NOT NULL DEFAULT 0",
+  )?;
+
+  Ok(())
+}
+
+fn has_table_column(connection: &Connection, table_name: &str, column_name: &str) -> Result<bool, String> {
+  let pragma_sql = format!("PRAGMA table_info({table_name})");
+  let mut stmt = connection
+    .prepare(&pragma_sql)
+    .map_err(|error| storage_error("prepare table_info pragma", error))?;
+  let rows = stmt
+    .query_map([], |row| row.get::<_, String>(1))
+    .map_err(|error| storage_error("query table_info pragma", error))?;
+
+  for row in rows {
+    let existing_name = decode_row(row, "decode table_info row")?;
+    if existing_name == column_name {
+      return Ok(true);
+    }
+  }
+
+  Ok(false)
+}
+
+fn ensure_table_column(
+  connection: &Connection,
+  table_name: &str,
+  column_name: &str,
+  definition: &str,
+) -> Result<(), String> {
+  if has_table_column(connection, table_name, column_name)? {
+    return Ok(());
+  }
+
+  connection
+    .execute(
+      &format!("ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"),
+      [],
+    )
+    .map_err(|error| storage_error("alter table add column", error))?;
+
   Ok(())
 }
 
@@ -1374,8 +1432,11 @@ mod tests {
       clear_stored_password: false,
       environment: None,
       readonly: false,
+      favorite: false,
+      group_name: None,
       color_tag: None,
       default_schema: None,
+      notes: None,
     }
   }
 
@@ -1798,6 +1859,44 @@ pub fn list_db_data_compare_rows(
   Ok(out)
 }
 
+pub fn get_db_data_compare_row(
+  app: &AppHandle,
+  compare_id: &str,
+  table_name: &str,
+  row_key_json: &str,
+) -> Result<Option<DbDataCompareRowRecord>, String> {
+  let (conn, _) = open_connection(app)?;
+  conn
+    .query_row(
+      "
+      SELECT
+        compare_id,
+        table_name,
+        row_key_json,
+        status,
+        source_row_json,
+        target_row_json,
+        field_diffs_json
+      FROM db_data_compare_rows
+      WHERE compare_id = ?1 AND table_name = ?2 AND row_key_json = ?3
+      ",
+      params![compare_id, table_name, row_key_json],
+      |row| {
+        Ok(DbDataCompareRowRecord {
+          compare_id: row.get("compare_id")?,
+          table_name: row.get("table_name")?,
+          row_key_json: row.get("row_key_json")?,
+          status: row.get("status")?,
+          source_row_json: row.get("source_row_json")?,
+          target_row_json: row.get("target_row_json")?,
+          field_diffs_json: row.get("field_diffs_json")?,
+        })
+      },
+    )
+    .optional()
+    .map_err(|error| storage_error("load compare row", error))
+}
+
 #[derive(Debug, Clone)]
 pub struct DbDataApplyJobRecord {
   pub job_id: String,
@@ -1809,6 +1908,9 @@ pub struct DbDataApplyJobRecord {
   pub target_snapshot_hash: String,
   pub current_target_snapshot_hash: Option<String>,
   pub blockers_json: String,
+  pub sql_preview_json: String,
+  pub preview_truncated: bool,
+  pub statement_count: i64,
   pub created_at: String,
   pub started_at: Option<String>,
   pub finished_at: Option<String>,
@@ -1848,10 +1950,13 @@ pub fn save_db_data_apply_job(
         target_snapshot_hash,
         current_target_snapshot_hash,
         blockers_json,
+        sql_preview_json,
+        preview_truncated,
+        statement_count,
         created_at,
         started_at,
         finished_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
       ON CONFLICT(job_id) DO UPDATE SET
         compare_id = excluded.compare_id,
         source_connection_id = excluded.source_connection_id,
@@ -1861,6 +1966,9 @@ pub fn save_db_data_apply_job(
         target_snapshot_hash = excluded.target_snapshot_hash,
         current_target_snapshot_hash = excluded.current_target_snapshot_hash,
         blockers_json = excluded.blockers_json,
+        sql_preview_json = excluded.sql_preview_json,
+        preview_truncated = excluded.preview_truncated,
+        statement_count = excluded.statement_count,
         created_at = excluded.created_at,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at
@@ -1875,6 +1983,9 @@ pub fn save_db_data_apply_job(
         job.target_snapshot_hash,
         job.current_target_snapshot_hash,
         job.blockers_json,
+        job.sql_preview_json,
+        job.preview_truncated,
+        job.statement_count,
         job.created_at,
         job.started_at,
         job.finished_at,
@@ -1945,6 +2056,9 @@ pub fn get_db_data_apply_job(
         target_snapshot_hash,
         current_target_snapshot_hash,
         blockers_json,
+        sql_preview_json,
+        preview_truncated,
+        statement_count,
         created_at,
         started_at,
         finished_at
@@ -1963,6 +2077,9 @@ pub fn get_db_data_apply_job(
           target_snapshot_hash: row.get("target_snapshot_hash")?,
           current_target_snapshot_hash: row.get("current_target_snapshot_hash")?,
           blockers_json: row.get("blockers_json")?,
+          sql_preview_json: row.get("sql_preview_json")?,
+          preview_truncated: row.get("preview_truncated")?,
+          statement_count: row.get("statement_count")?,
           created_at: row.get("created_at")?,
           started_at: row.get("started_at")?,
           finished_at: row.get("finished_at")?,
@@ -1976,6 +2093,83 @@ pub fn get_db_data_apply_job(
     return Ok(None);
   };
 
+  let results = load_db_data_apply_results(&conn, job_id)?;
+
+  Ok(Some((job, results)))
+}
+
+pub fn list_db_data_apply_jobs(
+  app: &AppHandle,
+  limit: usize,
+) -> Result<Vec<(DbDataApplyJobRecord, Vec<DbDataApplyResultRecord>)>, String> {
+  let (conn, _) = open_connection(app)?;
+  let effective_limit = limit.clamp(1, 100) as i64;
+
+  let mut stmt = conn
+    .prepare(
+      "
+      SELECT
+        job_id,
+        compare_id,
+        source_connection_id,
+        target_connection_id,
+        status,
+        action_counts_json,
+        target_snapshot_hash,
+        current_target_snapshot_hash,
+        blockers_json,
+        sql_preview_json,
+        preview_truncated,
+        statement_count,
+        created_at,
+        started_at,
+        finished_at
+      FROM db_data_apply_jobs
+      ORDER BY
+        COALESCE(started_at, created_at) DESC,
+        created_at DESC,
+        job_id DESC
+      LIMIT ?1
+      ",
+    )
+    .map_err(|error| storage_error("prepare apply job list", error))?;
+
+  let rows = stmt
+    .query_map(params![effective_limit], |row| {
+      Ok(DbDataApplyJobRecord {
+        job_id: row.get("job_id")?,
+        compare_id: row.get("compare_id")?,
+        source_connection_id: row.get("source_connection_id")?,
+        target_connection_id: row.get("target_connection_id")?,
+        status: row.get("status")?,
+        action_counts_json: row.get("action_counts_json")?,
+        target_snapshot_hash: row.get("target_snapshot_hash")?,
+        current_target_snapshot_hash: row.get("current_target_snapshot_hash")?,
+        blockers_json: row.get("blockers_json")?,
+        sql_preview_json: row.get("sql_preview_json")?,
+        preview_truncated: row.get("preview_truncated")?,
+        statement_count: row.get("statement_count")?,
+        created_at: row.get("created_at")?,
+        started_at: row.get("started_at")?,
+        finished_at: row.get("finished_at")?,
+      })
+    })
+    .map_err(|error| storage_error("query apply job list", error))?;
+
+  let mut jobs = Vec::new();
+  for row in rows {
+    let job = decode_row(row, "decode apply job list row")?;
+    let results = load_db_data_apply_results(&conn, &job.job_id)?;
+    jobs.push((job, results));
+  }
+
+  Ok(jobs)
+}
+
+fn load_db_data_apply_results(
+  conn: &Connection,
+  job_id: &str,
+) -> Result<Vec<DbDataApplyResultRecord>, String> {
   let mut stmt = conn
     .prepare(
       "
@@ -2013,5 +2207,5 @@ pub fn get_db_data_apply_job(
     results.push(decode_row(row, "decode apply result row")?);
   }
 
-  Ok(Some((job, results)))
+  Ok(results)
 }

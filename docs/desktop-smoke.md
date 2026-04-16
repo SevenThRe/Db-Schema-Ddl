@@ -1,79 +1,49 @@
-# Desktop Smoke Checklist
+# Tauri Desktop Smoke
 
-`v1.3 / Phase 1` introduces a repeatable desktop smoke seam focused on the runtime paths that recently regressed.
+Phase 26 replaces the old Electron smoke seam with a Tauri-native one.
 
-## Goals
+## Goal
 
-- Prove Electron startup is stable
-- Prove Electron shutdown is calm and logged
-- Prove SQLite init/migration runs without compatibility failures
-- Prove extension entry/catalog behavior is understandable
-- Prove at least one real MySQL DB-management read path works
+Capture one structured artifact proving that the current Tauri app can:
 
-## Required Steps
+- reach `tauri_setup_ready`
+- load the browser window
+- render the dashboard
+- mount the real DB workbench surface
+- classify remembered-connection recovery as `restored`, `missing-fallback`, or `none`
 
-1. **应用启动**
-   - Run the Electron desktop app
-   - Confirm the main window opens
-   - Confirm there is no raw startup JavaScript error dialog
+## Commands
 
-2. **SQLite 初始化与迁移**
-   - Confirm local SQLite init succeeds
-   - Confirm compatibility columns and migrations apply cleanly
-   - Check the runtime log for startup checkpoint lines
-
-3. **扩展入口检查**
-   - Open the DB 管理 entry
-   - Confirm catalog lookup behavior is understandable
-   - If official extension assets are unavailable, confirm the UI shows the translated friendly fallback
-
-4. **MySQL 读取链路**
-   - Use one reachable real MySQL environment
-   - Confirm connection, database selection, and one schema/introspection read path succeeds
-
-5. **应用关闭**
-   - Exit the application
-   - Confirm no multi-dialog raw JS error spam appears during close
-   - Confirm shutdown checkpoint lines exist in the runtime log
-
-## Evidence Format
-
-Produce both:
-
-- JSON artifact
-- Markdown summary
-
-Use:
+Run preflight first:
 
 ```powershell
-npm run smoke:desktop
+npm run verify:desktop:preflight
 ```
 
-This command writes a structured smoke template under:
+Then generate or classify a smoke artifact:
+
+```powershell
+npm run verify:desktop:smoke -- --mode=dev-tauri --log=artifacts/release-verification/manual-smoke.log --app-version=1.1.4
+```
+
+Artifacts are written under:
 
 ```text
-artifacts/desktop-smoke/
+artifacts/release-verification/
 ```
 
-Fill the generated artifact with the actual run details, especially:
+## Required Checkpoints
 
-- app version
-- actual log path
-- step statuses
-- notable diagnostics
+The smoke log is expected to contain these checkpoints from the live Tauri app:
 
-## Expected Log Evidence
-
-The runtime log should include checkpoint-style entries such as:
-
-- `server_bootstrap_started`
-- `server_bootstrap_ready`
-- `browser_window_creating`
+- `tauri_setup_ready`
 - `browser_window_loaded`
-- `shutdown_requested`
-- `server_shutdown_complete`
+- `dashboard_ready`
+- `db_workbench_surface_ready`
+- `db_workbench_recovery_classified`
 
-## Notes
+## Evidence Rules
 
-- This smoke seam is intentionally lightweight and Windows-first.
-- It is acceptable for the first version to be manual or semi-manual as long as the evidence is structured and reusable.
+- Missing startup, dashboard, workbench-entry, or recovery checkpoints is a blocker.
+- `missing-fallback` recovery is allowed but must remain explicit in the artifact.
+- The smoke artifact is current only when it comes from the Tauri app, not from old Electron scripts.

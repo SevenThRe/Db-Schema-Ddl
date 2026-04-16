@@ -11,7 +11,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { List, type ListProps } from "react-window";
-import { Copy, Search, X, XCircle } from "lucide-react";
+import { Copy, RotateCcw, Search, Trash2, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -25,12 +25,30 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type {
+  PendingDeleteRowSummary,
+  PendingEditRowSummary,
+} from "./grid-edit-summary";
+import { formatGridCellValue } from "./grid-edit-summary";
+import type {
+  DbGridDeleteRowDraft,
   DbQueryBatchResult,
   DbQueryColumn,
   DbQueryRow,
   DbGridEditEligibility,
   DbGridEditPatchCell,
 } from "@shared/schema";
+
+type GridCellValue = string | number | boolean | null;
+
+interface GridRowView {
+  row: DbQueryRow;
+  sourceIndex: number;
+  rowPrimaryKey: Record<string, GridCellValue> | null;
+  rowPkTuple: string | null;
+  displayValues: GridCellValue[];
+  dirtyColumnNames: Set<string>;
+  isPendingDelete: boolean;
+}
 
 // ──────────────────────────────────────────────
 // 型定義
@@ -52,8 +70,17 @@ export interface ResultGridPaneProps {
   onStopOnErrorChange: (value: boolean) => void;
   editEligibility?: DbGridEditEligibility;
   primaryKeyColumns?: string[];
+  pendingEditCells: Record<string, DbGridEditPatchCell>;
+  pendingEditRows: PendingEditRowSummary[];
+  pendingDeleteRows: Record<string, DbGridDeleteRowDraft>;
+  pendingDeletedRows: PendingDeleteRowSummary[];
   pendingEditCount: number;
+  pendingDeleteCount: number;
   onEditCell: (patch: DbGridEditPatchCell) => void;
+  onRevertCell: (rowPkTuple: string, columnName: string) => void;
+  onRevertRow: (rowPkTuple: string) => void;
+  onStageDeleteRow: (row: DbGridDeleteRowDraft) => void;
+  onRevertDeleteRow: (rowPkTuple: string) => void;
   onPrepareCommit: () => void;
   onDiscardEdits: () => void;
 }
@@ -69,33 +96,31 @@ function calcDefaultColumnWidth(col: DbQueryColumn): number {
   return Math.min(300, Math.max(60, estimated));
 }
 
-function formatCellValue(value: string | number | boolean | null): string {
-  if (value === null) return "null";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return String(value);
+function formatCellValue(value: GridCellValue): string {
+  return formatGridCellValue(value);
 }
 
-function rowToObject(
-  row: DbQueryRow,
+function valuesToObject(
+  values: GridCellValue[],
   columns: DbQueryColumn[],
-): Record<string, string | number | boolean | null> {
+): Record<string, GridCellValue> {
   return Object.fromEntries(
-    columns.map((column, index) => [column.name, row.values[index] ?? null]),
+    columns.map((column, index) => [column.name, values[index] ?? null]),
   );
 }
 
-function rowToTsv(row: DbQueryRow, columns: DbQueryColumn[]): string {
+function valuesToTsv(values: GridCellValue[], columns: DbQueryColumn[]): string {
   const header = columns.map((column) => column.name).join("\t");
-  const values = row.values.map((value) => formatCellValue(value)).join("\t");
-  return `${header}\n${values}`;
+  const rowValues = values.map((value) => formatCellValue(value)).join("\t");
+  return `${header}\n${rowValues}`;
 }
 
 function buildRowPrimaryKey(
   row: DbQueryRow,
   columns: DbQueryColumn[],
   primaryKeyColumns: string[],
-): Record<string, string | number | boolean | null> | null {
-  const rowPrimaryKey: Record<string, string | number | boolean | null> = {};
+): Record<string, GridCellValue> | null {
+  const rowPrimaryKey: Record<string, GridCellValue> = {};
   for (const primaryKeyColumn of primaryKeyColumns) {
     const columnIndex = columns.findIndex((column) => column.name === primaryKeyColumn);
     if (columnIndex < 0) {
@@ -107,7 +132,7 @@ function buildRowPrimaryKey(
 }
 
 function buildRowPkTuple(
-  rowPrimaryKey: Record<string, string | number | boolean | null>,
+  rowPrimaryKey: Record<string, GridCellValue>,
   primaryKeyColumns: string[],
 ): string {
   return primaryKeyColumns
@@ -116,9 +141,9 @@ function buildRowPkTuple(
 }
 
 function parseEditedValue(
-  originalValue: string | number | boolean | null,
+  originalValue: GridCellValue,
   editedRawValue: string,
-): string | number | boolean | null {
+): GridCellValue {
   if (originalValue === null) {
     return editedRawValue === "" ? null : editedRawValue;
   }
@@ -148,6 +173,58 @@ async function writeClipboardText(text: string): Promise<void> {
   fallback.select();
   document.execCommand("copy");
   document.body.removeChild(fallback);
+}
+
+function buildPendingEditLookup(
+  pendingEditCells: Record<string, DbGridEditPatchCell>,
+): Map<string, Map<string, DbGridEditPatchCell>> {
+  const byRow = new Map<string, Map<string, DbGridEditPatchCell>>();
+  for (const patch of Object.values(pendingEditCells)) {
+    let rowMap = byRow.get(patch.rowPkTuple);
+    if (!rowMap) {
+      rowMap = new Map<string, DbGridEditPatchCell>();
+      byRow.set(patch.rowPkTuple, rowMap);
+    }
+    rowMap.set(patch.columnName, patch);
+  }
+  return byRow;
+}
+
+function buildPendingDeleteLookup(
+  pendingDeleteRows: Record<string, DbGridDeleteRowDraft>,
+): Map<string, DbGridDeleteRowDraft> {
+  return new Map(
+    Object.values(pendingDeleteRows).map((row) => [row.rowPkTuple, row]),
+  );
+}
+
+function buildGridRowView(
+  row: DbQueryRow,
+  sourceIndex: number,
+  columns: DbQueryColumn[],
+  primaryKeyColumns: string[],
+  pendingEditLookup: Map<string, Map<string, DbGridEditPatchCell>>,
+  pendingDeleteLookup: Map<string, DbGridDeleteRowDraft>,
+): GridRowView {
+  const rowPrimaryKey = buildRowPrimaryKey(row, columns, primaryKeyColumns);
+  const rowPkTuple =
+    rowPrimaryKey && primaryKeyColumns.length > 0
+      ? buildRowPkTuple(rowPrimaryKey, primaryKeyColumns)
+      : null;
+  const pendingRowCells = rowPkTuple ? pendingEditLookup.get(rowPkTuple) : undefined;
+  const displayValues = columns.map(
+    (column, index) => pendingRowCells?.get(column.name)?.nextValue ?? row.values[index] ?? null,
+  );
+
+  return {
+    row,
+    sourceIndex,
+    rowPrimaryKey,
+    rowPkTuple,
+    displayValues,
+    dirtyColumnNames: new Set(pendingRowCells?.keys() ?? []),
+    isPendingDelete: rowPkTuple ? pendingDeleteLookup.has(rowPkTuple) : false,
+  };
 }
 
 // ──────────────────────────────────────────────
@@ -197,25 +274,102 @@ function BatchTabs({
   );
 }
 
+function ScriptRunSummary({
+  batches,
+  activeIndex,
+  onSelect,
+}: {
+  batches: DbQueryBatchResult[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  if (batches.length <= 1) return null;
+
+  const failedIndexes = batches
+    .map((batch, index) => (batch.error ? index : -1))
+    .filter((index) => index >= 0);
+  const successCount = batches.length - failedIndexes.length;
+  const firstFailedIndex = failedIndexes[0];
+  const firstFailedBatch =
+    typeof firstFailedIndex === "number" ? batches[firstFailedIndex] : null;
+
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3 py-2">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold text-foreground">
+            Script summary
+          </span>
+          <span className="text-muted-foreground">
+            {batches.length} statements
+          </span>
+          <span className="text-emerald-700 dark:text-emerald-300">
+            {successCount} succeeded
+          </span>
+          {failedIndexes.length > 0 ? (
+            <span className="text-destructive">
+              {failedIndexes.length} failed
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {firstFailedBatch
+            ? `First failure: statement ${firstFailedIndex + 1} · ${firstFailedBatch.error}`
+            : "All statements completed without statement-level failures."}
+        </p>
+      </div>
+      {firstFailedBatch ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-[10px]"
+          onClick={() => onSelect(firstFailedIndex)}
+          disabled={activeIndex === firstFailedIndex}
+        >
+          Jump to failed statement
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 // ──────────────────────────────────────────────
 // 選択行インスペクター
 // ──────────────────────────────────────────────
 
 function SelectedRowInspector({
-  row,
+  rowValues,
+  rowPkTuple,
+  dirtyColumnNames,
+  isPendingDelete = false,
   columns,
   rowIndex,
+  canStageDelete,
   onCopyRowJson,
   onCopyRowTsv,
   onCopyCell,
+  onRevertCell,
+  onRevertRow,
+  onStageDeleteRow,
+  onRevertDeleteRow,
 }: {
-  row: DbQueryRow | null;
+  rowValues: GridCellValue[] | null;
+  rowPkTuple: string | null;
+  dirtyColumnNames?: Set<string>;
+  isPendingDelete?: boolean;
   columns: DbQueryColumn[];
   rowIndex: number | null;
+  canStageDelete: boolean;
   onCopyRowJson: () => void;
   onCopyRowTsv: () => void;
-  onCopyCell: (column: DbQueryColumn, value: string | number | boolean | null) => void;
+  onCopyCell: (column: DbQueryColumn, value: GridCellValue) => void;
+  onRevertCell: (columnName: string) => void;
+  onRevertRow: () => void;
+  onStageDeleteRow: () => void;
+  onRevertDeleteRow: () => void;
 }) {
+  const dirtyFieldCount = dirtyColumnNames?.size ?? 0;
+
   return (
     <div className="shrink-0 border-t border-border bg-background/95">
       <div className="flex items-center justify-between gap-2 px-3 py-2">
@@ -224,18 +378,38 @@ function SelectedRowInspector({
             Row Inspector
           </p>
           <p className="mt-0.5 text-xs text-foreground">
-            {row && rowIndex !== null
-              ? `Loaded row ${rowIndex.toLocaleString()} · inspect and copy field values`
+            {rowValues && rowIndex !== null
+              ? `Loaded row ${rowIndex.toLocaleString()} · inspect and copy field values${dirtyFieldCount > 0 ? ` · ${dirtyFieldCount} pending field${dirtyFieldCount > 1 ? "s" : ""}` : ""}${isPendingDelete ? " · pending delete" : ""}`
               : "Select a row to inspect fields, verify values, and continue from the result set."}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={onRevertRow}
+            disabled={!rowPkTuple || dirtyFieldCount === 0}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            Revert row
+          </Button>
+          <Button
+            variant={isPendingDelete ? "outline" : "destructive"}
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={isPendingDelete ? onRevertDeleteRow : onStageDeleteRow}
+            disabled={!rowPkTuple || !canStageDelete}
+          >
+            <Trash2 className="mr-1 h-3 w-3" />
+            {isPendingDelete ? "Revert delete" : "Stage delete"}
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             className="h-6 px-2 text-xs"
             onClick={onCopyRowJson}
-            disabled={!row}
+            disabled={!rowValues}
           >
             <Copy className="mr-1 h-3 w-3" />
             Copy JSON
@@ -245,7 +419,7 @@ function SelectedRowInspector({
             size="sm"
             className="h-6 px-2 text-xs"
             onClick={onCopyRowTsv}
-            disabled={!row}
+            disabled={!rowValues}
           >
             <Copy className="mr-1 h-3 w-3" />
             Copy TSV
@@ -253,11 +427,12 @@ function SelectedRowInspector({
         </div>
       </div>
 
-      {row ? (
+      {rowValues ? (
         <div className="max-h-44 overflow-auto border-t border-border">
           {columns.map((column, index) => {
-            const value = row.values[index] ?? null;
+            const value = rowValues[index] ?? null;
             const displayValue = formatCellValue(value);
+            const isDirty = dirtyColumnNames?.has(column.name) ?? false;
             return (
               <div
                 key={`${column.name}:${index}`}
@@ -274,22 +449,51 @@ function SelectedRowInspector({
                 <div className="min-w-0">
                   <div
                     className={cn(
-                      "break-all rounded-sm border border-border bg-muted/20 px-2 py-1 font-mono text-[11px]",
+                      "break-all rounded-sm border px-2 py-1 font-mono text-[11px]",
+                      isPendingDelete
+                        ? "border-destructive/40 bg-destructive/5"
+                        : isDirty
+                        ? "border-amber-500/40 bg-amber-500/10"
+                        : "border-border bg-muted/20",
                       value === null ? "italic text-muted-foreground" : "text-foreground",
+                      isPendingDelete ? "line-through opacity-70" : undefined,
                     )}
                   >
                     {displayValue}
                   </div>
+                  {isPendingDelete ? (
+                    <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-destructive">
+                      pending delete
+                    </p>
+                  ) : null}
+                  {isDirty ? (
+                    <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
+                      pending
+                    </p>
+                  ) : null}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-[10px]"
-                  onClick={() => onCopyCell(column, value)}
-                >
-                  <Copy className="mr-1 h-3 w-3" />
-                  Copy
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() => onCopyCell(column, value)}
+                  >
+                    <Copy className="mr-1 h-3 w-3" />
+                    Copy
+                  </Button>
+                  {isDirty && !isPendingDelete ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] text-amber-700 hover:text-amber-800 dark:text-amber-300"
+                      onClick={() => onRevertCell(column.name)}
+                    >
+                      <RotateCcw className="mr-1 h-3 w-3" />
+                      Revert
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             );
           })}
@@ -309,8 +513,17 @@ function SingleBatchGrid({
   onLoadMore,
   editEligibility,
   primaryKeyColumns,
+  pendingEditCells,
+  pendingEditRows,
+  pendingDeleteRows,
+  pendingDeletedRows,
   pendingEditCount,
+  pendingDeleteCount,
   onEditCell,
+  onRevertCell,
+  onRevertRow,
+  onStageDeleteRow,
+  onRevertDeleteRow,
   onPrepareCommit,
   onDiscardEdits,
 }: {
@@ -319,8 +532,17 @@ function SingleBatchGrid({
   onLoadMore: (batchIndex: number) => void;
   editEligibility?: DbGridEditEligibility;
   primaryKeyColumns?: string[];
+  pendingEditCells: Record<string, DbGridEditPatchCell>;
+  pendingEditRows: PendingEditRowSummary[];
+  pendingDeleteRows: Record<string, DbGridDeleteRowDraft>;
+  pendingDeletedRows: PendingDeleteRowSummary[];
   pendingEditCount: number;
+  pendingDeleteCount: number;
   onEditCell: (patch: DbGridEditPatchCell) => void;
+  onRevertCell: (rowPkTuple: string, columnName: string) => void;
+  onRevertRow: (rowPkTuple: string) => void;
+  onStageDeleteRow: (row: DbGridDeleteRowDraft) => void;
+  onRevertDeleteRow: (rowPkTuple: string) => void;
   onPrepareCommit: () => void;
   onDiscardEdits: () => void;
 }) {
@@ -344,12 +566,20 @@ function SingleBatchGrid({
     startX: number;
     startWidth: number;
   } | null>(null);
-  const primaryKeyList = primaryKeyColumns ?? [];
+  const primaryKeyList = useMemo(() => primaryKeyColumns ?? [], [primaryKeyColumns]);
   const primaryKeySet = useMemo(
     () => new Set(primaryKeyList),
     [primaryKeyList],
   );
   const isEditEnabled = editEligibility?.eligible === true;
+  const pendingEditLookup = useMemo(
+    () => buildPendingEditLookup(pendingEditCells),
+    [pendingEditCells],
+  );
+  const pendingDeleteLookup = useMemo(
+    () => buildPendingDeleteLookup(pendingDeleteRows),
+    [pendingDeleteRows],
+  );
 
   useEffect(() => {
     const element = containerRef.current;
@@ -416,14 +646,28 @@ function SingleBatchGrid({
   }, [batch.sql]);
 
   const normalizedFilter = filterText.trim().toLowerCase();
+  const rowViews = useMemo(
+    () =>
+      batch.rows.map((row, sourceIndex) =>
+        buildGridRowView(
+          row,
+          (batch.loadedRowOffset ?? 0) + sourceIndex,
+          batch.columns,
+          primaryKeyList,
+          pendingEditLookup,
+          pendingDeleteLookup,
+        ),
+      ),
+    [batch.columns, batch.loadedRowOffset, batch.rows, pendingDeleteLookup, pendingEditLookup, primaryKeyList],
+  );
   const filteredRows = useMemo(() => {
-    if (!normalizedFilter) return batch.rows;
-    return batch.rows.filter((row) =>
-      row.values.some((value) =>
+    if (!normalizedFilter) return rowViews;
+    return rowViews.filter((rowView) =>
+      rowView.displayValues.some((value) =>
         formatCellValue(value).toLowerCase().includes(normalizedFilter),
       ),
     );
-  }, [batch.rows, normalizedFilter]);
+  }, [normalizedFilter, rowViews]);
 
   useEffect(() => {
     if (selectedRow === null) return;
@@ -455,10 +699,15 @@ function SingleBatchGrid({
 
   const selectedRowData = selectedRow === null ? null : filteredRows[selectedRow] ?? null;
   const selectedLoadedIndex =
-    selectedRowData === null ? null : batch.rows.indexOf(selectedRowData) + 1;
+    selectedRowData === null ? null : selectedRowData.sourceIndex + 1;
 
   const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
-  const loadedCount = Math.max(batch.rows.length, batch.returnedRows || 0);
+  const loadedCount =
+    typeof batch.loadedRowCount === "number"
+      ? Math.max(batch.rows.length, Math.trunc(batch.loadedRowCount))
+      : Math.max(batch.rows.length, batch.returnedRows || 0);
+  const retainedCount = batch.rows.length;
+  const isRowWindowTruncated = batch.rowWindowTruncated === true;
   const totalRows = typeof batch.totalRows === "number" ? batch.totalRows : null;
   const totalLabel = totalRows === null ? "Unknown total" : `${totalRows.toLocaleString()} total`;
   const hasMore = batch.hasMore;
@@ -471,7 +720,12 @@ function SingleBatchGrid({
   const isPagingUnsupported = pagingMode === "unsupported";
   const unsupportedPagingText = "Load more unavailable for this result.";
   const filteredCount = filteredRows.length;
-  const footerStatusLabel = `${filteredCount.toLocaleString()} shown / ${loadedCount.toLocaleString()} loaded / ${totalLabel}`;
+  const footerStatusLabel = isRowWindowTruncated
+    ? `${filteredCount.toLocaleString()} shown / ${retainedCount.toLocaleString()} retained / ${loadedCount.toLocaleString()} loaded / ${totalLabel}`
+    : `${filteredCount.toLocaleString()} shown / ${loadedCount.toLocaleString()} loaded / ${totalLabel}`;
+  const pendingSummaryRows = pendingEditRows.slice(0, 4);
+  const pendingDeleteSummaryRows = pendingDeletedRows.slice(0, 4);
+  const pendingMutationCount = pendingEditCount + pendingDeleteCount;
 
   const headerHeight = 28;
   const filterBarHeight = 42;
@@ -501,25 +755,59 @@ function SingleBatchGrid({
 
   const handleCopyRowJson = useCallback(() => {
     if (!selectedRowData) return;
-    const json = JSON.stringify(rowToObject(selectedRowData, batch.columns), null, 2);
+    const json = JSON.stringify(
+      valuesToObject(selectedRowData.displayValues, batch.columns),
+      null,
+      2,
+    );
     void copyText(json, "已复制当前行 JSON");
   }, [batch.columns, copyText, selectedRowData]);
 
   const handleCopyRowTsv = useCallback(() => {
     if (!selectedRowData) return;
-    void copyText(rowToTsv(selectedRowData, batch.columns), "已复制当前行 TSV");
+    void copyText(valuesToTsv(selectedRowData.displayValues, batch.columns), "已复制当前行 TSV");
   }, [batch.columns, copyText, selectedRowData]);
 
   const handleCopyCell = useCallback(
-    (column: DbQueryColumn, value: string | number | boolean | null) => {
+    (column: DbQueryColumn, value: GridCellValue) => {
       void copyText(formatCellValue(value), `已复制 ${column.name}`);
     },
     [copyText],
   );
+  const handleRevertSelectedCell = useCallback(
+    (columnName: string) => {
+      if (!selectedRowData?.rowPkTuple) return;
+      setEditingCell(null);
+      setEditingValue("");
+      onRevertCell(selectedRowData.rowPkTuple, columnName);
+    },
+    [onRevertCell, selectedRowData],
+  );
+  const handleRevertSelectedRow = useCallback(() => {
+    if (!selectedRowData?.rowPkTuple) return;
+    setEditingCell(null);
+    setEditingValue("");
+    onRevertRow(selectedRowData.rowPkTuple);
+  }, [onRevertRow, selectedRowData]);
+  const handleStageDeleteSelectedRow = useCallback(() => {
+    if (!selectedRowData?.rowPkTuple || !selectedRowData.rowPrimaryKey) return;
+    setEditingCell(null);
+    setEditingValue("");
+    onStageDeleteRow({
+      rowPkTuple: selectedRowData.rowPkTuple,
+      rowPrimaryKey: selectedRowData.rowPrimaryKey,
+    });
+  }, [onStageDeleteRow, selectedRowData]);
+  const handleRevertSelectedDelete = useCallback(() => {
+    if (!selectedRowData?.rowPkTuple) return;
+    setEditingCell(null);
+    setEditingValue("");
+    onRevertDeleteRow(selectedRowData.rowPkTuple);
+  }, [onRevertDeleteRow, selectedRowData]);
 
   const commitEdit = useCallback(
     (
-      row: DbQueryRow,
+      rowView: GridRowView,
       rowIndex: number,
       column: DbQueryColumn,
       columnIndex: number,
@@ -530,14 +818,18 @@ function SingleBatchGrid({
         setEditingValue("");
         return;
       }
+      if (rowView.isPendingDelete) {
+        setEditingCell(null);
+        setEditingValue("");
+        return;
+      }
       if (primaryKeySet.has(column.name)) {
         setEditingCell(null);
         setEditingValue("");
         return;
       }
 
-      const rowPrimaryKey = buildRowPrimaryKey(row, batch.columns, primaryKeyList);
-      if (!rowPrimaryKey) {
+      if (!rowView.rowPrimaryKey || !rowView.rowPkTuple) {
         toast({
           title: "Cannot edit row",
           description: "Primary key column mapping is incomplete for this batch.",
@@ -548,12 +840,15 @@ function SingleBatchGrid({
         return;
       }
 
-      const beforeValue = row.values[columnIndex] ?? null;
+      const existingPatch = pendingEditLookup
+        .get(rowView.rowPkTuple)
+        ?.get(column.name);
+      const beforeValue = existingPatch?.beforeValue ?? rowView.row.values[columnIndex] ?? null;
       const nextValue = parseEditedValue(beforeValue, nextRawValue);
 
       onEditCell({
-        rowPrimaryKey,
-        rowPkTuple: buildRowPkTuple(rowPrimaryKey, primaryKeyList),
+        rowPrimaryKey: rowView.rowPrimaryKey,
+        rowPkTuple: rowView.rowPkTuple,
         columnName: column.name,
         beforeValue,
         nextValue,
@@ -563,19 +858,19 @@ function SingleBatchGrid({
       setEditingCell(null);
       setEditingValue("");
     },
-    [batch.columns, isEditEnabled, onEditCell, primaryKeyList, primaryKeySet, toast],
+    [isEditEnabled, onEditCell, pendingEditLookup, primaryKeySet, toast],
   );
 
   const startEdit = useCallback(
-    (row: DbQueryRow, rowIndex: number, column: DbQueryColumn, columnIndex: number) => {
-      if (!isEditEnabled || primaryKeySet.has(column.name)) {
+    (rowView: GridRowView, rowIndex: number, column: DbQueryColumn, columnIndex: number) => {
+      if (!isEditEnabled || primaryKeySet.has(column.name) || rowView.isPendingDelete) {
         return;
       }
       setEditingCell({
         rowIndex,
         columnName: column.name,
       });
-      setEditingValue(formatCellValue(row.values[columnIndex] ?? null));
+      setEditingValue(formatCellValue(rowView.displayValues[columnIndex] ?? null));
     },
     [isEditEnabled, primaryKeySet],
   );
@@ -584,8 +879,10 @@ function SingleBatchGrid({
     index,
     style,
   }) => {
-    const row = filteredRows[index];
+    const rowView = filteredRows[index];
     const isSelected = selectedRow === index;
+    const hasDirtyCells = rowView.dirtyColumnNames.size > 0;
+    const isPendingDelete = rowView.isPendingDelete;
 
     return (
       <div
@@ -594,28 +891,41 @@ function SingleBatchGrid({
         aria-selected={isSelected}
         className={cn(
           "flex cursor-pointer items-center border-b border-border",
-          isSelected ? "bg-primary/10" : "hover:bg-muted/40",
+          isSelected
+            ? isPendingDelete
+              ? "bg-destructive/10"
+              : "bg-primary/10"
+            : isPendingDelete
+              ? "bg-destructive/5 hover:bg-destructive/10"
+              : hasDirtyCells
+              ? "bg-amber-500/5 hover:bg-amber-500/10"
+              : "hover:bg-muted/40",
         )}
         onClick={() => setSelectedRow(index)}
       >
         {batch.columns.map((column, columnIndex) => {
-          const value = row.values[columnIndex] ?? null;
+          const value = rowView.displayValues[columnIndex] ?? null;
           const displayValue = formatCellValue(value);
           const isNull = value === null;
           const isPrimaryKeyColumn = primaryKeySet.has(column.name);
+          const isDirty = rowView.dirtyColumnNames.has(column.name);
           const isCellEditing =
             editingCell?.rowIndex === index &&
             editingCell.columnName === column.name;
-          const canEditCell = isEditEnabled && !isPrimaryKeyColumn;
+          const canEditCell = isEditEnabled && !isPrimaryKeyColumn && !isPendingDelete;
 
           return (
             <TooltipProvider key={`${column.name}:${columnIndex}`} delayDuration={500}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    className="shrink-0 overflow-hidden border-r border-border px-2"
+                    className={cn(
+                      "shrink-0 overflow-hidden border-r border-border px-2",
+                      isPendingDelete && !isCellEditing ? "bg-destructive/5" : undefined,
+                      isDirty && !isCellEditing ? "bg-amber-500/10" : undefined,
+                    )}
                     style={{ width: columnWidths[columnIndex], height: 32 }}
-                    onDoubleClick={() => startEdit(row, index, column, columnIndex)}
+                    onDoubleClick={() => startEdit(rowView, index, column, columnIndex)}
                   >
                     {isCellEditing ? (
                       <input
@@ -623,12 +933,12 @@ function SingleBatchGrid({
                         value={editingValue}
                         onChange={(event) => setEditingValue(event.target.value)}
                         onBlur={() =>
-                          commitEdit(row, index, column, columnIndex, editingValue)
+                          commitEdit(rowView, index, column, columnIndex, editingValue)
                         }
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
                             event.preventDefault();
-                            commitEdit(row, index, column, columnIndex, editingValue);
+                            commitEdit(rowView, index, column, columnIndex, editingValue);
                           } else if (event.key === "Escape") {
                             event.preventDefault();
                             setEditingCell(null);
@@ -644,6 +954,8 @@ function SingleBatchGrid({
                           isNull ? "italic text-muted-foreground" : "text-foreground",
                           canEditCell ? "cursor-text" : undefined,
                           isPrimaryKeyColumn ? "text-muted-foreground" : undefined,
+                          isPendingDelete ? "line-through opacity-70" : undefined,
+                          isDirty ? "font-semibold text-amber-900 dark:text-amber-100" : undefined,
                         )}
                         title={isPrimaryKeyColumn ? "Primary key column (read-only)" : undefined}
                       >
@@ -656,6 +968,16 @@ function SingleBatchGrid({
                   <p className="max-w-xs break-all font-mono text-xs">
                     {displayValue}
                   </p>
+                  {isDirty ? (
+                    <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                      Pending edit
+                    </p>
+                  ) : null}
+                  {isPendingDelete ? (
+                    <p className="mt-1 text-[10px] text-destructive">
+                      Pending delete
+                    </p>
+                  ) : null}
                   {isPrimaryKeyColumn ? (
                     <p className="mt-1 text-[10px] text-muted-foreground">
                       Primary key column (read-only)
@@ -678,7 +1000,7 @@ function SingleBatchGrid({
           <Input
             value={filterText}
             onChange={(event) => setFilterText(event.target.value)}
-            placeholder="Filter loaded rows"
+            placeholder={isRowWindowTruncated ? "Filter retained rows" : "Filter loaded rows"}
             className="h-7 pl-7 pr-7 text-xs"
           />
           {filterText ? (
@@ -695,6 +1017,11 @@ function SingleBatchGrid({
         <div className="flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
           <span>{filteredCount.toLocaleString()} shown</span>
           <span>{loadedCount.toLocaleString()} loaded</span>
+          {isRowWindowTruncated ? (
+            <span className="font-medium text-amber-700 dark:text-amber-300">
+              Retaining latest {retainedCount.toLocaleString()} rows
+            </span>
+          ) : null}
           <span>{totalLabel}</span>
           {selectedLoadedIndex ? (
             <span className="font-medium text-foreground">
@@ -785,22 +1112,125 @@ function SingleBatchGrid({
             {footerStatusLabel}. {unsupportedPagingText}
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground">
-            {filteredCount.toLocaleString()} shown / {loadedCount.toLocaleString()} loaded ({batch.elapsedMs}ms)
-          </span>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              {filteredCount.toLocaleString()} shown / {loadedCount.toLocaleString()} loaded ({batch.elapsedMs}ms)
+            </span>
+            {isRowWindowTruncated ? (
+              <span>Older loaded rows were released to control memory.</span>
+            ) : null}
+          </div>
         )}
       </div>
 
+      {pendingEditRows.length > 0 || pendingDeletedRows.length > 0 ? (
+        <div className="shrink-0 border-t border-border bg-background px-3 py-2">
+          {pendingEditRows.length > 0 ? (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Pending row summary
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {pendingEditRows.length} row{pendingEditRows.length > 1 ? "s" : ""} staged
+                </span>
+              </div>
+              <div className="mt-2 space-y-1">
+                {pendingSummaryRows.map((row) => (
+                  <div
+                    key={`pending-row-${row.rowPkTuple}`}
+                    className="flex items-center justify-between gap-3 rounded-sm border border-amber-500/30 bg-amber-500/5 px-2 py-1.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-[11px] font-medium text-foreground">
+                        {row.rowKeyLabel}
+                      </p>
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        {row.cells.map((cell) => cell.columnName).join(", ")}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => onRevertRow(row.rowPkTuple)}
+                    >
+                      <RotateCcw className="mr-1 h-3 w-3" />
+                      Revert row
+                    </Button>
+                  </div>
+                ))}
+                {pendingEditRows.length > pendingSummaryRows.length ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    +{pendingEditRows.length - pendingSummaryRows.length} more row
+                    {pendingEditRows.length - pendingSummaryRows.length > 1 ? "s" : ""} in commit preview
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {pendingDeletedRows.length > 0 ? (
+            <div className={cn(pendingEditRows.length > 0 ? "mt-3" : undefined)}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-destructive">
+                  Pending row deletes
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {pendingDeletedRows.length} row{pendingDeletedRows.length > 1 ? "s" : ""} staged
+                </span>
+              </div>
+              <div className="mt-2 space-y-1">
+                {pendingDeleteSummaryRows.map((row) => (
+                  <div
+                    key={`pending-delete-${row.rowPkTuple}`}
+                    className="flex items-center justify-between gap-3 rounded-sm border border-destructive/30 bg-destructive/5 px-2 py-1.5"
+                  >
+                    <p className="truncate font-mono text-[11px] font-medium text-foreground">
+                      {row.rowKeyLabel}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] text-destructive"
+                      onClick={() => onRevertDeleteRow(row.rowPkTuple)}
+                    >
+                      <RotateCcw className="mr-1 h-3 w-3" />
+                      Revert delete
+                    </Button>
+                  </div>
+                ))}
+                {pendingDeletedRows.length > pendingDeleteSummaryRows.length ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    +{pendingDeletedRows.length - pendingDeleteSummaryRows.length} more row
+                    {pendingDeletedRows.length - pendingDeleteSummaryRows.length > 1 ? "s" : ""} in commit preview
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex shrink-0 items-center gap-2 border-t border-border bg-background px-3 py-1">
         <span className="text-xs text-muted-foreground">
-          Pending edits: {pendingEditCount}
+          Pending changes: {pendingEditCount} edited cell{pendingEditCount === 1 ? "" : "s"} across {pendingEditRows.length} row{pendingEditRows.length === 1 ? "" : "s"} · {pendingDeleteCount} delete{pendingDeleteCount === 1 ? "" : "s"}
         </span>
+        {pendingEditCount > 0 ? (
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
+            Dirty cells highlighted
+          </span>
+        ) : null}
+        {pendingDeleteCount > 0 ? (
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-destructive">
+            Delete-staged rows highlighted
+          </span>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
           className="h-6 px-2 text-xs"
           onClick={onPrepareCommit}
-          disabled={!isEditEnabled || pendingEditCount === 0}
+          disabled={!isEditEnabled || pendingMutationCount === 0}
         >
           Prepare commit
         </Button>
@@ -809,19 +1239,27 @@ function SingleBatchGrid({
           size="sm"
           className="h-6 px-2 text-xs"
           onClick={onDiscardEdits}
-          disabled={pendingEditCount === 0}
+          disabled={pendingMutationCount === 0}
         >
           Discard edits
         </Button>
       </div>
 
       <SelectedRowInspector
-        row={selectedRowData}
+        rowValues={selectedRowData?.displayValues ?? null}
+        rowPkTuple={selectedRowData?.rowPkTuple ?? null}
+        dirtyColumnNames={selectedRowData?.dirtyColumnNames}
+        isPendingDelete={selectedRowData?.isPendingDelete ?? false}
         columns={batch.columns}
         rowIndex={selectedLoadedIndex}
+        canStageDelete={isEditEnabled}
         onCopyRowJson={handleCopyRowJson}
         onCopyRowTsv={handleCopyRowTsv}
         onCopyCell={handleCopyCell}
+        onRevertCell={handleRevertSelectedCell}
+        onRevertRow={handleRevertSelectedRow}
+        onStageDeleteRow={handleStageDeleteSelectedRow}
+        onRevertDeleteRow={handleRevertSelectedDelete}
       />
     </div>
   );
@@ -846,8 +1284,17 @@ export function ResultGridPane({
   onStopOnErrorChange,
   editEligibility,
   primaryKeyColumns,
+  pendingEditCells,
+  pendingEditRows,
+  pendingDeleteRows,
+  pendingDeletedRows,
   pendingEditCount,
+  pendingDeleteCount,
   onEditCell,
+  onRevertCell,
+  onRevertRow,
+  onStageDeleteRow,
+  onRevertDeleteRow,
   onPrepareCommit,
   onDiscardEdits,
 }: ResultGridPaneProps) {
@@ -878,7 +1325,8 @@ export function ResultGridPane({
               Run a query to see results here.
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Result batches, row inspection, and export actions will stay attached to the active statement.
+              Result batches, row inspection, load more, and export actions stay attached to the
+              active statement in this connection-scoped session.
             </p>
           </div>
         </div>
@@ -900,6 +1348,12 @@ export function ResultGridPane({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <ScriptRunSummary
+        batches={batches}
+        activeIndex={activeIndex}
+        onSelect={onActiveIndexChange}
+      />
+
       <BatchTabs
         batches={batches}
         activeIndex={activeIndex}
@@ -913,8 +1367,17 @@ export function ResultGridPane({
           onLoadMore={onLoadMore}
           editEligibility={editEligibility}
           primaryKeyColumns={primaryKeyColumns}
+          pendingEditCells={pendingEditCells}
+          pendingEditRows={pendingEditRows}
+          pendingDeleteRows={pendingDeleteRows}
+          pendingDeletedRows={pendingDeletedRows}
           pendingEditCount={pendingEditCount}
+          pendingDeleteCount={pendingDeleteCount}
           onEditCell={onEditCell}
+          onRevertCell={onRevertCell}
+          onRevertRow={onRevertRow}
+          onStageDeleteRow={onStageDeleteRow}
+          onRevertDeleteRow={onRevertDeleteRow}
           onPrepareCommit={onPrepareCommit}
           onDiscardEdits={onDiscardEdits}
         />

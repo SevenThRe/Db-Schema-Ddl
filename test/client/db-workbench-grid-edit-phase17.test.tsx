@@ -16,8 +16,8 @@ test("result grid edit controls are fail-closed and lock primary key columns", a
 
   assert.match(resultGrid, /const isEditEnabled = editEligibility\?\.eligible === true;/);
   assert.match(resultGrid, /Primary key column \(read-only\)/);
-  assert.match(resultGrid, /Pending edits:/);
-  assert.match(resultGrid, /disabled={!isEditEnabled \|\| pendingEditCount === 0}/);
+  assert.match(resultGrid, /Pending changes:/);
+  assert.match(resultGrid, /disabled={!isEditEnabled \|\| pendingMutationCount === 0}/);
 });
 
 test("count-mode starter results remain read-only for edits", async () => {
@@ -34,7 +34,10 @@ test("no-op cell changes remove patch entries from pending edit state", async ()
     "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
   );
 
-  assert.match(workbench, /if \(isCellValueEqual\(patch\.beforeValue, patch\.nextValue\)\) {/);
+  assert.match(
+    workbench,
+    /if \(isCellValueEqual\(beforeValue, patch\.nextValue\)\) \{/,
+  );
   assert.match(workbench, /delete next\[patchKey\];/);
   assert.match(workbench, /setPreparedGridPlan\(null\);/);
 });

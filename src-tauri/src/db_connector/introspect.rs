@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use super::{
   DbColumnSchema, DbConnectionConfig, DbDriver, DbForeignKeySchema, DbIndexSchema,
-  DbSchemaSnapshot, DbTableSchema, DbViewSchema,
+  DbRoutineKind, DbRoutineSchema, DbSchemaSnapshot, DbSequenceSchema, DbTableSchema,
+  DbTriggerSchema, DbViewSchema,
 };
 
 const ACQUIRE_TIMEOUT_SECS: u64 = 15;
@@ -85,6 +86,51 @@ const POSTGRES_FOREIGN_KEYS_SQL: &str = "SELECT
      WHERE tc.constraint_type = 'FOREIGN KEY'
        AND tc.table_schema = $1
      ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position";
+const MYSQL_ROUTINES_SQL: &str = "SELECT
+       ROUTINE_NAME,
+       ROUTINE_TYPE,
+       ROUTINE_COMMENT
+     FROM INFORMATION_SCHEMA.ROUTINES
+     WHERE ROUTINE_SCHEMA = ?
+     ORDER BY ROUTINE_TYPE, ROUTINE_NAME";
+const MYSQL_TRIGGERS_SQL: &str = "SELECT
+       TRIGGER_NAME,
+       EVENT_OBJECT_TABLE,
+       ACTION_TIMING,
+       EVENT_MANIPULATION
+     FROM INFORMATION_SCHEMA.TRIGGERS
+     WHERE TRIGGER_SCHEMA = ?
+     ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME";
+const POSTGRES_ROUTINES_SQL: &str = "SELECT
+       p.proname AS routine_name,
+       CASE p.prokind
+         WHEN 'p' THEN 'PROCEDURE'
+         ELSE 'FUNCTION'
+       END AS routine_type,
+       pg_catalog.pg_get_function_identity_arguments(p.oid) AS signature,
+       CASE p.prokind
+         WHEN 'p' THEN NULL
+         ELSE pg_catalog.pg_get_function_result(p.oid)
+       END AS return_type
+     FROM pg_catalog.pg_proc p
+     JOIN pg_catalog.pg_namespace ns
+       ON ns.oid = p.pronamespace
+     WHERE ns.nspname = $1
+       AND p.prokind IN ('f', 'p')
+     ORDER BY routine_type, routine_name, signature";
+const POSTGRES_TRIGGERS_SQL: &str = "SELECT
+       trigger_name,
+       event_object_table,
+       action_timing,
+       event_manipulation
+     FROM information_schema.triggers
+     WHERE trigger_schema = $1
+     ORDER BY event_object_table, trigger_name";
+const POSTGRES_SEQUENCES_SQL: &str = "SELECT
+       sequence_name
+     FROM information_schema.sequences
+     WHERE sequence_schema = $1
+     ORDER BY sequence_name";
 
 // ──────────────────────────────────────────────
 // 接続テスト
@@ -192,6 +238,18 @@ async fn introspect_mysql(config: &DbConnectionConfig) -> Result<DbSchemaSnapsho
   .fetch_all(&pool)
   .await
   .map_err(|e| format!("ビュー一覧取得失敗: {e}"))?;
+
+  let routine_rows = sqlx::query(MYSQL_ROUTINES_SQL)
+    .bind(&config.database)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("ルーチン一覧取得失敗: {e}"))?;
+
+  let trigger_rows = sqlx::query(MYSQL_TRIGGERS_SQL)
+    .bind(&config.database)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("トリガー一覧取得失敗: {e}"))?;
 
   let col_rows = sqlx::query(
     "SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE,
@@ -345,6 +403,35 @@ async fn introspect_mysql(config: &DbConnectionConfig) -> Result<DbSchemaSnapsho
     })
     .collect();
 
+  let routines: Vec<DbRoutineSchema> = routine_rows
+    .iter()
+    .map(|row| {
+      let routine_type = row.try_get::<String, _>("ROUTINE_TYPE").unwrap_or_default();
+      let comment_raw: String = row.try_get("ROUTINE_COMMENT").unwrap_or_default();
+      DbRoutineSchema {
+        name: row.try_get("ROUTINE_NAME").unwrap_or_default(),
+        kind: if routine_type.eq_ignore_ascii_case("PROCEDURE") {
+          DbRoutineKind::Procedure
+        } else {
+          DbRoutineKind::Function
+        },
+        comment: if comment_raw.is_empty() { None } else { Some(comment_raw) },
+        signature: None,
+        return_type: None,
+      }
+    })
+    .collect();
+
+  let triggers: Vec<DbTriggerSchema> = trigger_rows
+    .iter()
+    .map(|row| DbTriggerSchema {
+      name: row.try_get("TRIGGER_NAME").unwrap_or_default(),
+      table_name: row.try_get("EVENT_OBJECT_TABLE").unwrap_or_default(),
+      timing: row.try_get("ACTION_TIMING").ok(),
+      event: row.try_get("EVENT_MANIPULATION").unwrap_or_default(),
+    })
+    .collect();
+
   Ok(DbSchemaSnapshot {
     connection_id: config.id.clone(),
     connection_name: config.name.clone(),
@@ -352,6 +439,9 @@ async fn introspect_mysql(config: &DbConnectionConfig) -> Result<DbSchemaSnapsho
     schema: config.database.clone(),
     tables,
     views,
+    routines,
+    triggers,
+    sequences: vec![],
   })
 }
 
@@ -397,6 +487,24 @@ async fn introspect_postgres(config: &DbConnectionConfig) -> Result<DbSchemaSnap
   .fetch_all(&pool)
   .await
   .map_err(|e| format!("外部キー情報取得失敗: {e}"))?;
+
+  let routine_rows = sqlx::query(POSTGRES_ROUTINES_SQL)
+  .bind(&active_schema)
+  .fetch_all(&pool)
+  .await
+  .map_err(|e| format!("ルーチン一覧取得失敗: {e}"))?;
+
+  let trigger_rows = sqlx::query(POSTGRES_TRIGGERS_SQL)
+  .bind(&active_schema)
+  .fetch_all(&pool)
+  .await
+  .map_err(|e| format!("トリガー一覧取得失敗: {e}"))?;
+
+  let sequence_rows = sqlx::query(POSTGRES_SEQUENCES_SQL)
+  .bind(&active_schema)
+  .fetch_all(&pool)
+  .await
+  .map_err(|e| format!("シーケンス一覧取得失敗: {e}"))?;
 
   pool.close().await;
 
@@ -496,6 +604,49 @@ async fn introspect_postgres(config: &DbConnectionConfig) -> Result<DbSchemaSnap
     })
     .collect();
 
+  let routines: Vec<DbRoutineSchema> = routine_rows
+    .iter()
+    .map(|row| {
+      let routine_type = row.try_get::<String, _>("routine_type").unwrap_or_default();
+      DbRoutineSchema {
+        name: row.try_get("routine_name").unwrap_or_default(),
+        kind: if routine_type.eq_ignore_ascii_case("PROCEDURE") {
+          DbRoutineKind::Procedure
+        } else {
+          DbRoutineKind::Function
+        },
+        comment: None,
+        signature: row
+          .try_get::<String, _>("signature")
+          .ok()
+          .filter(|value| !value.trim().is_empty()),
+        return_type: row
+          .try_get::<Option<String>, _>("return_type")
+          .ok()
+          .flatten()
+          .filter(|value| !value.trim().is_empty()),
+      }
+    })
+    .collect();
+
+  let triggers: Vec<DbTriggerSchema> = trigger_rows
+    .iter()
+    .map(|row| DbTriggerSchema {
+      name: row.try_get("trigger_name").unwrap_or_default(),
+      table_name: row.try_get("event_object_table").unwrap_or_default(),
+      timing: row.try_get("action_timing").ok(),
+      event: row.try_get("event_manipulation").unwrap_or_default(),
+    })
+    .collect();
+
+  let sequences: Vec<DbSequenceSchema> = sequence_rows
+    .iter()
+    .map(|row| DbSequenceSchema {
+      name: row.try_get("sequence_name").unwrap_or_default(),
+      comment: None,
+    })
+    .collect();
+
   Ok(DbSchemaSnapshot {
     connection_id: config.id.clone(),
     connection_name: config.name.clone(),
@@ -503,6 +654,9 @@ async fn introspect_postgres(config: &DbConnectionConfig) -> Result<DbSchemaSnap
     schema: active_schema,
     tables,
     views,
+    routines,
+    triggers,
+    sequences,
   })
 }
 
@@ -538,6 +692,9 @@ mod tests {
       POSTGRES_COLUMNS_SQL,
       POSTGRES_INDEXES_SQL,
       POSTGRES_FOREIGN_KEYS_SQL,
+      POSTGRES_ROUTINES_SQL,
+      POSTGRES_TRIGGERS_SQL,
+      POSTGRES_SEQUENCES_SQL,
     ] {
       assert!(
         sql.contains("$1"),

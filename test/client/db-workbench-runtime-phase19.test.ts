@@ -39,6 +39,7 @@ test("recent query context is captured and restored per connection", async () =>
   assert.match(sessionStore, /const nextRecentQueries = \[trimmedSql, \.\.\.deduped\]\.slice\(0, MAX_RECENT_QUERIES\);/);
   assert.match(workbench, /const restored = hydrateConnectionSession\(connection\.id, loadedSession\);/);
   assert.match(workbench, /setRecentQueries\(restored\.recentQueries\);/);
-  assert.match(workbench, /const updatedSession = appendRecentQuery\(connection\.id, sql\);/);
-  assert.match(workbench, /recentQueries\.map\(\(sql, index\) => \{/);
+  assert.match(workbench, /const updatedSession = recordQueryRun\(/);
+  assert.match(workbench, /setRecentQueries\(updatedSession\.recentQueries\);/);
+  assert.match(workbench, /buildSqlLibraryEntries\(savedSnippets, recentQueries, queryHistory\)/);
 });

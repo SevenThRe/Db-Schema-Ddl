@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { APP_DEFAULTS, DEFAULT_DDL_SETTINGS_VALUES } from "./config";
+export * from "./release-verification";
 
 export type UploadedFile = {
   id: number;
@@ -858,10 +859,37 @@ export interface DbConnectionConfig {
   environment?: DbEnvironment;
   /** 読み取り専用モード — true の場合 DML/DDL 実行を Rust 側でブロック */
   readonly?: boolean;
+  /** 收藏连接，在连接中心优先展示 */
+  favorite?: boolean;
+  /** 连接分组，用于目录化管理 */
+  groupName?: string;
   /** ワークベンチヘッダーに表示する色タグ（CSSカラー文字列） */
   colorTag?: string;
   /** デフォルトスキーマ（接続後に自動的に USE する DB 名） */
   defaultSchema?: string;
+  /** 操作员备注，仅用于连接中心管理 */
+  notes?: string;
+}
+
+export type DbDiscoverySource =
+  | "mysql-handshake"
+  | "postgres-ssl-probe"
+  | "tcp-port-scan";
+
+export type DbDiscoveryConfidence = "high" | "medium" | "low";
+
+export interface DbDiscoveredEndpoint {
+  id: string;
+  driver: DbDriver;
+  host: string;
+  port: number;
+  source: DbDiscoverySource;
+  confidence: DbDiscoveryConfidence;
+  label: string;
+  detail: string;
+  databaseHint?: string;
+  usernameHint?: string;
+  defaultSchemaHint?: string;
 }
 
 export interface DbColumnSchema {
@@ -901,6 +929,28 @@ export interface DbViewSchema {
   columns: DbColumnSchema[];
 }
 
+export type DbRoutineKind = "function" | "procedure";
+
+export interface DbRoutineSchema {
+  name: string;
+  kind: DbRoutineKind;
+  comment?: string;
+  signature?: string;
+  returnType?: string;
+}
+
+export interface DbTriggerSchema {
+  name: string;
+  tableName: string;
+  timing?: string;
+  event: string;
+}
+
+export interface DbSequenceSchema {
+  name: string;
+  comment?: string;
+}
+
 export interface DbSchemaSnapshot {
   connectionId: string;
   connectionName: string;
@@ -908,6 +958,48 @@ export interface DbSchemaSnapshot {
   schema: string;
   tables: DbTableSchema[];
   views: DbViewSchema[];
+  routines: DbRoutineSchema[];
+  triggers: DbTriggerSchema[];
+  sequences: DbSequenceSchema[];
+}
+
+export type DbObjectKind =
+  | "table"
+  | "view"
+  | "index"
+  | "foreign_key"
+  | "sequence"
+  | "function"
+  | "procedure"
+  | "trigger";
+
+export interface DbObjectInspectionRequest {
+  connectionId: string;
+  schema?: string;
+  objectKind: DbObjectKind;
+  objectName: string;
+  signature?: string;
+  parentObjectName?: string;
+}
+
+export interface DbObjectInspectionResponse {
+  connectionId: string;
+  database: string;
+  schema: string;
+  objectKind: DbObjectKind;
+  objectName: string;
+  signature?: string;
+  parentObjectName?: string;
+  displayName: string;
+  supported: boolean;
+  ddl?: string;
+  comment?: string;
+  columns: DbColumnSchema[];
+  indexes: DbIndexSchema[];
+  foreignKeys: DbForeignKeySchema[];
+  definitionSql?: string;
+  unsupportedMessage?: string;
+  coverageNotes: string[];
 }
 
 export interface DbColumnDiff {
@@ -941,8 +1033,10 @@ export type DbDataSyncBlockerCode =
   | "missing_stable_key"
   | "target_snapshot_changed"
   | "unsafe_delete_threshold"
+  | "unsafe_delete_confirmation_required"
   | "readonly_target"
-  | "artifact_expired";
+  | "artifact_expired"
+  | "target_database_confirmation_required";
 
 export interface DbDataSyncBlocker {
   code: DbDataSyncBlockerCode;
@@ -1076,6 +1170,9 @@ export interface DbDataApplyExecuteRequest {
   targetSnapshotHash: string;
   currentTargetSnapshotHash?: string;
   selections: DbDataApplySelection[];
+  deleteWarningThreshold?: number;
+  confirmUnsafeDelete?: boolean;
+  targetDatabaseConfirmation?: string;
 }
 
 export interface DbDataApplyTableResult {
@@ -1093,6 +1190,36 @@ export type DbDataApplyJobStatus =
   | "completed"
   | "failed"
   | "partial";
+
+export type DbBackgroundJobKind = "data-apply";
+
+export interface DbBackgroundJobSummary {
+  jobId: string;
+  jobKind: DbBackgroundJobKind;
+  title: string;
+  sourceConnectionId?: string;
+  targetConnectionId?: string;
+  status: DbDataApplyJobStatus;
+  statusCounts: DbDataDiffActionCounts;
+  blockers: DbDataSyncBlocker[];
+  tableCount: number;
+  primaryTableName?: string;
+  statementCount: number;
+  sqlPreviewLines: string[];
+  previewTruncated: boolean;
+  failureSummary?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface DbBackgroundJobListRequest {
+  limit?: number;
+}
+
+export interface DbBackgroundJobListResponse {
+  jobs: DbBackgroundJobSummary[];
+}
 
 export interface DbDataApplyExecuteResponse {
   jobId: string;
@@ -1120,6 +1247,9 @@ export interface DbDataApplyJobDetailResponse {
   statusCounts: DbDataDiffActionCounts;
   tableResults: DbDataApplyTableResult[];
   blockers: DbDataSyncBlocker[];
+  sqlPreviewLines: string[];
+  previewTruncated: boolean;
+  statementCount: number;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -1150,6 +1280,8 @@ export interface QueryExecutionRequest {
   connectionId: string;
   sql: string;
   requestId: string;
+  /** 选区为空时，指向当前语句的光标偏移。后端据此只执行光标所在语句。 */
+  cursorOffset?: number;
   /** 実行時のスキーマコンテキスト（未指定時は接続既定） */
   schema?: string;
   /** 1回のフェッチで取得する最大行数（デフォルト 1000） */
@@ -1220,6 +1352,11 @@ export interface DbGridEditPatchCell {
   nextValue: string | number | boolean | null;
 }
 
+export interface DbGridDeleteRowDraft {
+  rowPrimaryKey: Record<string, string | number | boolean | null>;
+  rowPkTuple: string;
+}
+
 export interface DbGridPrepareCommitRequest {
   connectionId: string;
   schema?: string;
@@ -1227,12 +1364,15 @@ export interface DbGridPrepareCommitRequest {
   source: DbGridEditSource;
   primaryKeyColumns: string[];
   patchCells: DbGridEditPatchCell[];
+  deletedRows?: DbGridDeleteRowDraft[];
 }
 
 export interface DbGridPrepareCommitResponse {
   planId: string;
   planHash: string;
   affectedRows: number;
+  updatedRows: number;
+  deletedRows: number;
   changedColumnsSummary: string[];
   sqlPreviewLines: string[];
   previewTruncated: boolean;
@@ -1248,6 +1388,8 @@ export interface DbGridCommitResponse {
   planId: string;
   planHash: string;
   committedRows: number;
+  updatedRows: number;
+  deletedRows: number;
   failedSqlIndex?: number;
   failedRowPkTuple?: string;
   message?: string;
@@ -1261,6 +1403,19 @@ export interface DbQueryBatchResult {
   sql: string;
   columns: DbQueryColumn[];
   rows: DbQueryRow[];
+  /**
+   * Zero-based absolute index of the first retained row in `rows`.
+   * When older loaded rows are discarded to control memory, this increases.
+   */
+  loadedRowOffset?: number;
+  /**
+   * Number of rows loaded for the current result session, including rows no longer retained.
+   */
+  loadedRowCount?: number;
+  /**
+   * True when the client has discarded older loaded rows and is retaining only a recent window.
+   */
+  rowWindowTruncated?: boolean;
   /**
    * 総件数が確定しない実行モードでは null。
    * UI は hasMore / pagingMode / pagingReason と併せて表示判断する。
@@ -1327,6 +1482,13 @@ export interface DangerousSqlPreview {
   connectionName: string;
   environment: DbEnvironment;
   database: string;
+}
+
+export interface DangerousSqlPreviewRequest {
+  connectionId: string;
+  sql: string;
+  /** 选区为空时，指向当前语句的光标偏移。 */
+  cursorOffset?: number;
 }
 
 /** 結果行エクスポートリクエスト */

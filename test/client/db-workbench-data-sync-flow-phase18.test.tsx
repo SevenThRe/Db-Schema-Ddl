@@ -39,10 +39,14 @@ test("unsafe_delete_threshold warning is surfaced before execute", () => {
 
 test("prod typed confirmation gate is required before execute call", () => {
   assert.match(workbenchSource, /typed confirmation required for prod target/);
-  assert.match(workbenchSource, /applyProdConfirmation === activeSyncTargetConnection\.database/);
+  assert.match(
+    workbenchSource,
+    /applyProdConfirmation\.trim\(\) === activeSyncTargetConnection\.database/,
+  );
 });
 
 test("execute job detail loader stays reachable after execution", () => {
   assert.match(workbenchSource, /fetchDataApplyJobDetail\(/);
-  assert.match(workbenchSource, /View job detail/);
+  assert.match(workbenchSource, /Open Job Center/);
+  assert.match(workbenchSource, /Review job detail/);
 });

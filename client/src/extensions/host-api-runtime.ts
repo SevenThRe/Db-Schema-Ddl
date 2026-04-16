@@ -41,6 +41,10 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
       try { requireCap(granted, "db.connect"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.listConnections();
     },
+    discoverLocal: () => {
+      try { requireCap(granted, "db.connect"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.discoverLocalConnections();
+    },
     save: (config) => {
       try { requireCap(granted, "db.connect"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.saveConnection(config);
@@ -57,6 +61,10 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
     introspect: (connectionId) => {
       try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.introspect(connectionId);
+    },
+    inspectObject: (request) => {
+      try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.inspectObject(request);
     },
     listSchemas: (connectionId) => {
       try { requireCap(granted, "db.schema.read"); } catch (e) { return Promise.reject(e); }
@@ -75,9 +83,9 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
       try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.cancelQuery(requestId);
     },
-    previewDangerousSql: (connectionId, sql) => {
+    previewDangerousSql: (connectionId, sql, cursorOffset) => {
       try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
-      return desktopBridge.db.previewDangerousSql(connectionId, sql);
+      return desktopBridge.db.previewDangerousSql(connectionId, sql, cursorOffset);
     },
     // db.plan.read 権限が必要
     explainQuery: (request) => {
@@ -121,6 +129,10 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
     fetchDataApplyJobDetail: (request) => {
       try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.fetchDataApplyJobDetail(request);
+    },
+    listBackgroundJobs: (request) => {
+      try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.listBackgroundJobs(request);
     },
   };
 }

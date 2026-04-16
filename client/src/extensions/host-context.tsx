@@ -42,10 +42,12 @@ const noopHostApi: HostApi = {
   notifications: { show: () => {} },
   connections: {
     list: () => Promise.resolve([]),
+    discoverLocal: () => Promise.resolve([]),
     save: () => Promise.reject(new Error("HostApi not available")),
     remove: () => Promise.reject(new Error("HostApi not available")),
     test: () => Promise.reject(new Error("HostApi not available")),
     introspect: () => Promise.reject(new Error("HostApi not available")),
+    inspectObject: () => Promise.reject(new Error("HostApi not available")),
     diff: () => Promise.reject(new Error("HostApi not available")),
     // Phase 1 DB 工作台 — フォールバック実装
     executeQuery: () => Promise.reject(new Error("HostApi not available")),
@@ -61,6 +63,7 @@ const noopHostApi: HostApi = {
     previewDataApply: () => Promise.reject(new Error("HostApi not available")),
     executeDataApply: () => Promise.reject(new Error("HostApi not available")),
     fetchDataApplyJobDetail: () => Promise.reject(new Error("HostApi not available")),
+    listBackgroundJobs: () => Promise.reject(new Error("HostApi not available")),
   },
   statusBar: {
     set: () => () => {},

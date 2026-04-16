@@ -8,6 +8,7 @@ use sqlx::Row;
 use tauri::{AppHandle, State};
 use tokio_util::sync::CancellationToken;
 
+use super::discovery::discover_local_databases;
 use super::query::{
   execute_statement, export_request_key, get_or_create_pool, invalidate_connection_pool,
   load_connection_config, resolve_active_schema, split_sql_statements,
@@ -15,12 +16,14 @@ use super::query::{
 };
 use super::{
   compute_schema_diff, introspect_schema, test_connection, AnyPool, CancellationRegistry,
-  DbConnectionConfig, DbDataApplyExecuteRequest, DbDataApplyExecuteResponse,
+  DbBackgroundJobListRequest, DbBackgroundJobListResponse, DbConnectionConfig,
+  DbDataApplyExecuteRequest, DbDataApplyExecuteResponse,
   DbDataApplyJobDetailRequest, DbDataApplyJobDetailResponse,
   DbDataApplyPreviewRequest, DbDataApplyPreviewResponse, DbDataDiffDetailRequest,
   DbDataDiffDetailResponse, DbDataDiffPreviewRequest, DbDataDiffPreviewResponse, DbDriver,
-  DbPoolRegistry, DbQueryColumn, DbQueryPagingMode, DbQueryRow, DbSchemaDiffResult,
-  DbSchemaListResponse, DbSchemaSnapshot, ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
+  DbDiscoveredEndpoint, DbObjectInspectionRequest, DbObjectInspectionResponse, DbPoolRegistry, DbQueryColumn,
+  DbQueryPagingMode, DbQueryRow, DbSchemaDiffResult, DbSchemaListResponse, DbSchemaSnapshot,
+  ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
 };
 use crate::storage;
 
@@ -70,6 +73,12 @@ pub fn db_conn_delete(
 pub async fn db_conn_test(config: DbConnectionConfig) -> Result<String, String> {
   let hydrated = storage::hydrate_runtime_db_connection(config)?;
   test_connection(&hydrated).await
+}
+
+/// ローカルホスト上の既定 DB エンドポイントを検出して候補一覧を返す
+#[tauri::command]
+pub fn db_discover_local() -> Result<Vec<DbDiscoveredEndpoint>, String> {
+  Ok(discover_local_databases())
 }
 
 // ──────────────────────────────────────────────
@@ -541,17 +550,8 @@ pub async fn db_diff(
   source_connection_id: String,
   target_connection_id: String,
 ) -> Result<DbSchemaDiffResult, String> {
-  let configs = storage::list_db_connections(&app)?;
-  let find = |id: &str| {
-    configs
-      .iter()
-      .find(|c| c.id == id)
-      .cloned()
-      .ok_or_else(|| format!("接続設定が見つかりません: {id}"))
-  };
-
-  let src_config = find(&source_connection_id)?;
-  let tgt_config = find(&target_connection_id)?;
+  let src_config = load_connection_config(&app, &source_connection_id)?;
+  let tgt_config = load_connection_config(&app, &target_connection_id)?;
 
   // 並列でスキーマ取得
   let (src_result, tgt_result) = futures_util::join!(
@@ -566,19 +566,30 @@ pub async fn db_diff(
 }
 
 #[tauri::command]
+pub async fn db_inspect_object(
+  app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
+  request: DbObjectInspectionRequest,
+) -> Result<DbObjectInspectionResponse, String> {
+  super::object_inspect::db_inspect_object(&app, &pool_registry, request).await
+}
+
+#[tauri::command]
 pub async fn db_data_diff_preview(
   app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
   request: DbDataDiffPreviewRequest,
 ) -> Result<DbDataDiffPreviewResponse, String> {
-  super::data_diff::db_data_diff_preview(&app, request).await
+  super::data_diff::db_data_diff_preview(&app, &pool_registry, request).await
 }
 
 #[tauri::command]
 pub async fn db_data_diff_detail(
   app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
   request: DbDataDiffDetailRequest,
 ) -> Result<DbDataDiffDetailResponse, String> {
-  super::data_diff::db_data_diff_detail(&app, request).await
+  super::data_diff::db_data_diff_detail(&app, &pool_registry, request).await
 }
 
 #[tauri::command]
@@ -592,9 +603,10 @@ pub async fn db_data_apply_preview(
 #[tauri::command]
 pub async fn db_data_apply_execute(
   app: AppHandle,
+  pool_registry: State<'_, Arc<DbPoolRegistry>>,
   request: DbDataApplyExecuteRequest,
 ) -> Result<DbDataApplyExecuteResponse, String> {
-  super::data_apply::db_data_apply_execute(&app, request).await
+  super::data_apply::db_data_apply_execute(app, Arc::clone(pool_registry.inner()), request).await
 }
 
 #[tauri::command]
@@ -603,4 +615,12 @@ pub async fn db_data_apply_job_detail(
   request: DbDataApplyJobDetailRequest,
 ) -> Result<DbDataApplyJobDetailResponse, String> {
   super::data_apply::db_data_apply_job_detail(&app, request).await
+}
+
+#[tauri::command]
+pub async fn db_background_job_list(
+  app: AppHandle,
+  request: DbBackgroundJobListRequest,
+) -> Result<DbBackgroundJobListResponse, String> {
+  super::data_apply::db_background_job_list(&app, request).await
 }

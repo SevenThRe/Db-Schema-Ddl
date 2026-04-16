@@ -24,9 +24,14 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
     .on_page_load(|webview, _payload| {
-      let _ = webview.eval(
-        "window.__DB_SCHEMA_DDL_TAURI_BRIDGE_READY__ = true; globalThis.isTauri = true;",
+      let release_verification =
+        serde_json::to_string(&commands::read_release_verification_window_config())
+          .unwrap_or_else(|_| "null".to_string());
+      let script = format!(
+        "window.__DB_SCHEMA_DDL_TAURI_BRIDGE_READY__ = true; globalThis.isTauri = true; window.__DB_SCHEMA_RELEASE_VERIFICATION__ = {release_verification};"
       );
+      let _ = webview.eval(&script);
+      let _ = commands::emit_smoke_checkpoint("browser_window_loaded", None);
     })
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -55,6 +60,13 @@ pub fn run() {
       app.manage(pool_registry);
       app.manage(cancel_registry);
       app.manage(grid_edit_plan_registry);
+      let _ = commands::emit_smoke_checkpoint(
+        "tauri_setup_ready",
+        Some(serde_json::Map::from_iter([(
+          "productName".to_string(),
+          serde_json::Value::String(app.package_info().name.clone()),
+        )])),
+      );
 
       Ok(())
     })
@@ -62,6 +74,7 @@ pub fn run() {
       commands::core_get_app_version,
       commands::core_get_runtime_diagnostics,
       commands::core_get_process_metrics,
+      commands::core_smoke_checkpoint,
       commands::core_write_binary_file,
       commands::files_list,
       commands::files_list_templates,
@@ -108,7 +121,9 @@ pub fn run() {
       db_connector::commands::db_conn_save,
       db_connector::commands::db_conn_delete,
       db_connector::commands::db_conn_test,
+      db_connector::commands::db_discover_local,
       db_connector::commands::db_introspect,
+      db_connector::commands::db_inspect_object,
       db_connector::commands::db_list_schemas,
       db_connector::commands::db_diff,
       db_connector::commands::db_export_rows,
@@ -117,6 +132,7 @@ pub fn run() {
       db_connector::commands::db_data_apply_preview,
       db_connector::commands::db_data_apply_execute,
       db_connector::commands::db_data_apply_job_detail,
+      db_connector::commands::db_background_job_list,
       db_connector::grid_edit::db_grid_prepare_commit,
       db_connector::grid_edit::db_grid_commit,
       db_connector::query::db_query_execute,

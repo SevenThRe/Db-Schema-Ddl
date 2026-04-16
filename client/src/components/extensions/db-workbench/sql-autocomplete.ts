@@ -1,6 +1,12 @@
 import type { DbSchemaSnapshot } from "@shared/schema";
 
-export type SqlCompletionKind = "schema" | "table" | "view" | "column";
+export type SqlCompletionKind =
+  | "schema"
+  | "table"
+  | "view"
+  | "column"
+  | "keyword"
+  | "template";
 
 export interface SqlAutocompleteRelation {
   schema: string;
@@ -21,6 +27,7 @@ export interface SqlAutocompleteContext {
   relations: SqlAutocompleteRelation[];
   columns: SqlAutocompleteColumn[];
   relationLookup: Record<string, SqlAutocompleteRelation>;
+  selectedRelation: string | null;
 }
 
 export interface SqlAutocompleteAliasHint {
@@ -35,6 +42,7 @@ export interface SqlCompletionItem {
   kind: SqlCompletionKind;
   detail: string;
   sortText: string;
+  insertAsSnippet?: boolean;
 }
 
 const IDENTIFIER_TOKEN = String.raw`(?:"[^"]+"|` + "`[^`]+`" + String.raw`|[A-Za-z_][\w$]*)`;
@@ -53,6 +61,58 @@ const QUALIFIED_IDENTIFIER_PATTERN = new RegExp(
   String.raw`^\s*(${IDENTIFIER_TOKEN})(?:\s*\.\s*(${IDENTIFIER_TOKEN}))?\s*$`,
   "i",
 );
+const RELATION_SCOPE_PATTERN =
+  /\b(?:from|join|update|into|table|describe|desc)\s+(?:[A-Za-z_][\w$]*\.)?[A-Za-z_0-9$"`]*$/i;
+const COLUMN_SCOPE_PATTERN =
+  /\b(?:select|where|and|or|on|having|set|group\s+by|order\s+by|returning)\s+[A-Za-z_0-9$"`.,\s]*$/i;
+
+const SQL_KEYWORD_ITEMS: Array<{
+  label: string;
+  insertText: string;
+  detail: string;
+  kind: "keyword" | "template";
+  insertAsSnippet?: boolean;
+}> = [
+  { label: "SELECT", insertText: "SELECT ", detail: "keyword", kind: "keyword" },
+  { label: "FROM", insertText: "FROM ", detail: "keyword", kind: "keyword" },
+  { label: "WHERE", insertText: "WHERE ", detail: "keyword", kind: "keyword" },
+  { label: "JOIN", insertText: "JOIN ", detail: "keyword", kind: "keyword" },
+  { label: "GROUP BY", insertText: "GROUP BY ", detail: "keyword", kind: "keyword" },
+  { label: "ORDER BY", insertText: "ORDER BY ", detail: "keyword", kind: "keyword" },
+  { label: "INSERT", insertText: "INSERT INTO ", detail: "keyword", kind: "keyword" },
+  { label: "UPDATE", insertText: "UPDATE ", detail: "keyword", kind: "keyword" },
+  { label: "DELETE", insertText: "DELETE FROM ", detail: "keyword", kind: "keyword" },
+  {
+    label: "SELECT template",
+    insertText: "SELECT ${1:*}\nFROM ${2:table}\nWHERE ${3:condition};",
+    detail: "template",
+    kind: "template",
+    insertAsSnippet: true,
+  },
+  {
+    label: "INSERT template",
+    insertText: "INSERT INTO ${1:table} (${2:columns})\nVALUES (${3:values});",
+    detail: "template",
+    kind: "template",
+    insertAsSnippet: true,
+  },
+  {
+    label: "UPDATE template",
+    insertText: "UPDATE ${1:table}\nSET ${2:column} = ${3:value}\nWHERE ${4:condition};",
+    detail: "template",
+    kind: "template",
+    insertAsSnippet: true,
+  },
+  {
+    label: "DELETE template",
+    insertText: "DELETE FROM ${1:table}\nWHERE ${2:condition};",
+    detail: "template",
+    kind: "template",
+    insertAsSnippet: true,
+  },
+];
+
+type SqlCompletionScope = "general" | "relation" | "column";
 
 function stripIdentifierQuotes(value: string): string {
   const trimmed = value.trim();
@@ -154,10 +214,15 @@ function buildRelations(
 export function buildAutocompleteContext(
   snapshot: DbSchemaSnapshot | null | undefined,
   activeSchema: string | undefined,
+  selectedRelationName?: string | null,
 ): SqlAutocompleteContext {
   const fallbackSchema =
     activeSchema?.trim() || snapshot?.schema?.trim() || "public";
   const normalizedActiveSchema = normalizeSchema(activeSchema, fallbackSchema);
+  const selectedRelation =
+    typeof selectedRelationName === "string" && selectedRelationName.trim()
+      ? selectedRelationName.trim()
+      : null;
 
   if (!snapshot) {
     return {
@@ -166,6 +231,7 @@ export function buildAutocompleteContext(
       relations: [],
       columns: [],
       relationLookup: {},
+      selectedRelation,
     };
   }
 
@@ -200,6 +266,7 @@ export function buildAutocompleteContext(
     relations,
     columns,
     relationLookup,
+    selectedRelation,
   };
 }
 
@@ -256,9 +323,54 @@ function findRelationForAlias(
   );
 }
 
+function resolveCompletionScope(
+  sqlText: string,
+  cursorOffset: number,
+): SqlCompletionScope {
+  const safeOffset = Math.max(0, Math.min(cursorOffset, sqlText.length));
+  const sqlBeforeCursor = sqlText.slice(0, safeOffset);
+  if (RELATION_SCOPE_PATTERN.test(sqlBeforeCursor)) return "relation";
+  if (COLUMN_SCOPE_PATTERN.test(sqlBeforeCursor)) return "column";
+  return "general";
+}
+
+function isSelectedRelation(
+  context: SqlAutocompleteContext,
+  relationName: string,
+): boolean {
+  if (!context.selectedRelation) return false;
+  return normalizeIdentifier(context.selectedRelation) === normalizeIdentifier(relationName);
+}
+
+function buildKeywordItems(scope: SqlCompletionScope): SqlCompletionItem[] {
+  return SQL_KEYWORD_ITEMS.map((item, index) => {
+    const prefix =
+      scope === "general"
+        ? "050"
+        : scope === "relation"
+          ? item.kind === "template"
+            ? "970"
+            : "960"
+          : item.kind === "template"
+            ? "930"
+            : "920";
+
+    return {
+      label: item.label,
+      insertText: item.insertText,
+      kind: item.kind,
+      detail: item.detail,
+      sortText: `${prefix}-${String(index).padStart(4, "0")}-${item.label.toLowerCase()}`,
+      insertAsSnippet: item.insertAsSnippet,
+    };
+  });
+}
+
 export function buildCompletionItems(
   context: SqlAutocompleteContext,
   aliasHint: SqlAutocompleteAliasHint | null,
+  sqlText = "",
+  cursorOffset = sqlText.length,
 ): SqlCompletionItem[] {
   if (aliasHint) {
     const aliasRelation = findRelationForAlias(context, aliasHint);
@@ -273,8 +385,13 @@ export function buildCompletionItems(
     }
   }
 
+  const scope = resolveCompletionScope(sqlText, cursorOffset);
   const items: SqlCompletionItem[] = [];
   let order = 0;
+
+  for (const keywordItem of buildKeywordItems(scope)) {
+    items.push(keywordItem);
+  }
 
   for (const schemaName of context.schemas) {
     items.push({
@@ -288,26 +405,44 @@ export function buildCompletionItems(
   }
 
   for (const relation of context.relations) {
+    const relationPrefix =
+      scope === "relation"
+        ? isSelectedRelation(context, relation.name)
+          ? "150"
+          : "180"
+        : isSelectedRelation(context, relation.name)
+          ? "210"
+          : "220";
+
     items.push({
       label: relation.name,
       insertText: relation.name,
       kind: relation.kind,
       detail: `${relation.kind} (${relation.schema})`,
-      sortText: `200-${String(order).padStart(4, "0")}-${relation.name.toLowerCase()}`,
+      sortText: `${relationPrefix}-${String(order).padStart(4, "0")}-${relation.name.toLowerCase()}`,
     });
     order += 1;
   }
 
   for (const column of context.columns) {
+    const columnPrefix =
+      scope === "column"
+        ? isSelectedRelation(context, column.relation)
+          ? "250"
+          : "280"
+        : isSelectedRelation(context, column.relation)
+          ? "310"
+          : "320";
+
     items.push({
       label: column.name,
       insertText: column.name,
       kind: "column",
       detail: `${column.relation} (${column.schema})`,
-      sortText: `300-${String(order).padStart(4, "0")}-${column.name.toLowerCase()}`,
+      sortText: `${columnPrefix}-${String(order).padStart(4, "0")}-${column.name.toLowerCase()}`,
     });
     order += 1;
   }
 
-  return items;
+  return items.sort((left, right) => left.sortText.localeCompare(right.sortText));
 }

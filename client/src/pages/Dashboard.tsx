@@ -25,6 +25,10 @@ import type { MainSurface } from "@/extensions/host-api";
 import { StatusBar } from "@/components/StatusBar";
 import { useStatusBarScope } from "@/status-bar/context";
 import { parseUploadedAtMillis } from "@/components/ddl/name-fix-display-utils";
+import {
+  emitReleaseCheckpoint,
+  readReleaseVerificationConfig,
+} from "@/lib/release-verification";
 
 const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
@@ -185,6 +189,7 @@ function formatMemoryLabel(memoryBytes: number): string {
 export default function Dashboard() {
   const desktopCapabilities = desktopBridge.getCapabilities();
   const statusBar = useStatusBarScope("app");
+  const releaseVerification = readReleaseVerificationConfig();
   const [isDdlImportTestMode] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -224,11 +229,34 @@ export default function Dashboard() {
   const [lastSelectedSheetByFile, setLastSelectedSheetByFile] = useState<StoredSheetSelections>(() =>
     readStoredSheetSelections(),
   );
+  const smokeAutoOpenAppliedRef = useRef(false);
 
   const { data: files } = useFiles();
   const { data: settings } = useSettings();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    void emitReleaseCheckpoint("dashboard_ready", {
+      activeSurface: activeSurface.kind,
+    });
+  }, [activeSurface.kind]);
+
+  useEffect(() => {
+    if (
+      smokeAutoOpenAppliedRef.current ||
+      !releaseVerification.enabled ||
+      !releaseVerification.autoOpenDbWorkbench
+    ) {
+      return;
+    }
+    smokeAutoOpenAppliedRef.current = true;
+    setActiveSurface({
+      kind: "extension",
+      extensionId: "db-connector",
+      panelId: "db-connector-workspace",
+    });
+  }, [releaseVerification.autoOpenDbWorkbench, releaseVerification.enabled]);
 
   useEffect(() => {
     if (!desktopCapabilities.features.ddlImport && activeSurface.kind === "ddl-import") {

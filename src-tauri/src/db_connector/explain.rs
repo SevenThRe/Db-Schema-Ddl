@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use sqlx::Acquire;
 use tauri::{AppHandle, State};
 
 use super::{AnyPool, DbDriver, DbExplainPlan, DbPoolRegistry, ExplainRequest, PlanNode};
@@ -225,14 +226,14 @@ pub async fn db_query_explain(
   pool_registry: State<'_, Arc<DbPoolRegistry>>,
   request: ExplainRequest,
 ) -> Result<DbExplainPlan, String> {
-  use super::query::get_or_create_pool;
-  use crate::storage;
+  use super::query::{
+    get_or_create_pool,
+    load_connection_config,
+    resolve_active_schema,
+  };
 
-  let configs = storage::list_db_connections(&app)?;
-  let config = configs
-    .into_iter()
-    .find(|c| c.id == request.connection_id)
-    .ok_or_else(|| format!("接続設定が見つかりません: {}", request.connection_id))?;
+  let config = load_connection_config(&app, &request.connection_id)?;
+  let active_schema = resolve_active_schema(&config, request.schema.as_deref());
 
   let pool = get_or_create_pool(&pool_registry, &config).await?;
 
@@ -243,7 +244,12 @@ pub async fn db_query_explain(
   };
 
   // EXPLAIN を実行して JSON 文字列を取得
-  let raw_json = execute_explain(&pool, &explain_sql, &config.driver).await?;
+  let raw_json = execute_explain(
+    &pool,
+    &explain_sql,
+    &config.driver,
+    active_schema.as_deref(),
+  ).await?;
 
   let json_value: serde_json::Value = serde_json::from_str(&raw_json)
     .map_err(|e| format!("EXPLAIN JSON のパースに失敗: {e}"))?;
@@ -266,6 +272,7 @@ async fn execute_explain(
   pool: &AnyPool,
   explain_sql: &str,
   driver: &DbDriver,
+  active_schema: Option<&str>,
 ) -> Result<String, String> {
   match (pool, driver) {
     (AnyPool::Mysql(p), DbDriver::Mysql) => {
@@ -276,10 +283,17 @@ async fn execute_explain(
       Ok(row.0)
     }
     (AnyPool::Postgres(p), DbDriver::Postgres) => {
+      let mut conn = p
+        .acquire()
+        .await
+        .map_err(|e| format!("PostgreSQL 接続取得失敗: {e}"))?;
+      if let Some(schema) = active_schema {
+        super::query::apply_search_path(&mut conn, schema).await?;
+      }
       // PostgreSQL の EXPLAIN FORMAT JSON は TEXT[] として返ってくる場合がある
       use sqlx::Row;
       let rows = sqlx::query(explain_sql)
-        .fetch_all(p)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| format!("PostgreSQL EXPLAIN エラー: {e}"))?;
 

@@ -2,6 +2,7 @@ import type {
   BinaryCommandResult,
   BuiltinExtensionManifest,
   DbConnectionConfig,
+  DbDiscoveredEndpoint,
   DbSchemaSnapshot,
   DbSchemaDiffResult,
   CreateWorkbookFromTemplateRequest,
@@ -33,6 +34,8 @@ import type {
   QueryExecutionResponse,
   ExplainRequest,
   DbExplainPlan,
+  DbObjectInspectionRequest,
+  DbObjectInspectionResponse,
   DangerousSqlPreview,
   ExportRowsRequest,
   FetchMoreRequest,
@@ -51,6 +54,8 @@ import type {
   DbDataApplyExecuteResponse,
   DbDataApplyJobDetailRequest,
   DbDataApplyJobDetailResponse,
+  DbBackgroundJobListRequest,
+  DbBackgroundJobListResponse,
 } from "@shared/schema";
 import { getDesktopCapabilities } from "@/lib/desktop-capabilities";
 
@@ -395,6 +400,9 @@ export const desktopBridge = {
     async listConnections(): Promise<DbConnectionConfig[]> {
       return await invoke<DbConnectionConfig[]>("db_conn_list");
     },
+    async discoverLocalConnections(): Promise<DbDiscoveredEndpoint[]> {
+      return await invoke<DbDiscoveredEndpoint[]>("db_discover_local");
+    },
     async saveConnection(config: DbConnectionConfig): Promise<DbConnectionConfig> {
       return await invoke<DbConnectionConfig>("db_conn_save", { config });
     },
@@ -406,6 +414,11 @@ export const desktopBridge = {
     },
     async introspect(connectionId: string): Promise<DbSchemaSnapshot> {
       return await invoke<DbSchemaSnapshot>("db_introspect", { connectionId });
+    },
+    async inspectObject(
+      request: DbObjectInspectionRequest,
+    ): Promise<DbObjectInspectionResponse> {
+      return await invoke<DbObjectInspectionResponse>("db_inspect_object", { request });
     },
     async listSchemas(connectionId: string): Promise<string[]> {
       return await invoke<string[]>("db_list_schemas", { connectionId });
@@ -424,9 +437,13 @@ export const desktopBridge = {
     async cancelQuery(requestId: string): Promise<void> {
       await invoke<void>("db_query_cancel", { requestId });
     },
-    async previewDangerousSql(connectionId: string, sql: string): Promise<DangerousSqlPreview> {
+    async previewDangerousSql(
+      connectionId: string,
+      sql: string,
+      cursorOffset?: number,
+    ): Promise<DangerousSqlPreview> {
       return await invoke<DangerousSqlPreview>("db_preview_dangerous_sql", {
-        request: { connectionId, sql },
+        request: { connectionId, sql, cursorOffset },
       });
     },
     async exportRows(request: ExportRowsRequest): Promise<BinaryCommandResult> {
@@ -469,6 +486,11 @@ export const desktopBridge = {
       request: DbDataApplyJobDetailRequest,
     ): Promise<DbDataApplyJobDetailResponse> {
       return await invoke<DbDataApplyJobDetailResponse>("db_data_apply_job_detail", { request });
+    },
+    async listBackgroundJobs(
+      request: DbBackgroundJobListRequest,
+    ): Promise<DbBackgroundJobListResponse> {
+      return await invoke<DbBackgroundJobListResponse>("db_background_job_list", { request });
     },
   },
 

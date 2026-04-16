@@ -64,6 +64,22 @@
 - ER 图与结构关系浏览
 - 安全执行与环境隔离
 
+### 3.3 产品面状态
+
+为避免把迁移期路径和高级能力误读成同一成熟度，产品面必须分级表达：
+
+- `Primary`：日常主工作面，默认对外表述的产品能力
+- `Primary Support`：主产品的支撑面，例如连接中心
+- `Secondary`：迁移期保留或辅助路径，不与主工作台平级
+- `Preview`：真实可达，但仍需更大范围验证和打磨的高级能力
+
+当前建议：
+
+- `Database Workspace`：`Primary`
+- `Connection Center`：`Primary Support`
+- legacy `Schema / Diff`：`Secondary`
+- `Data Sync / Job Center`：`Preview`
+
 ## 4. 信息架构
 
 建议把现有三页式 `连接 / Schema / DIFF` 升级为五区工作台：
@@ -101,6 +117,12 @@
 - `dev` 使用绿色强调条
 - `readonly=true` 时禁用编辑提交、危险 SQL 执行、结构变更
 
+P0 产品承诺边界：
+
+- 当前只承诺 direct `MySQL / PostgreSQL` 连接
+- 可以承诺环境治理、只读保护、默认 schema、收藏/分组/备注等连接治理能力
+- 不能把 `SSH / TLS / 企业认证` 写成已交付产品能力，除非运行时真的完成接线与验证
+
 意义：
 
 - 这是防误操作的第一层，不应该靠用户记忆。
@@ -119,6 +141,24 @@
   - `Ctrl/Cmd + Enter` 执行当前选中 SQL；未选中时执行当前语句块
   - `Shift + Ctrl/Cmd + Enter` 执行整个脚本
   - `Alt + Shift + F` 格式化 SQL
+
+### 5.2.1 SQL 日常主路径
+
+产品表达上，SQL 工作台不能被拆成“编辑器按钮 + 若干弹窗功能”。
+
+P0 应统一成一条连接级日常路径：
+
+1. 在当前连接的 tabs / drafts 中编写或恢复 SQL
+2. 通过 `SQL library` 复用 snippets、run history、recent queries
+3. 单语句执行走 statement path，多语句执行先走 script review
+4. 参数化语句先走 parameter review，再进入危险 SQL 审核
+5. 结果、分页、导出、检查能力始终绑定当前 statement batch
+
+这里的重点不是再加功能，而是让用户始终清楚：
+
+- tabs、drafts、history、snippets 是连接级会话资产
+- script review、parameter review、dangerous SQL review 属于统一执行复核路径
+- explain / load more / export / cancel 都是主路径的运行时能力边界，而不是独立子产品
 
 ### 智能补全
 

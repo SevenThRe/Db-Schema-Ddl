@@ -280,6 +280,10 @@ function mapCompletionKind(
   kind: SqlCompletionKind,
 ): languages.CompletionItemKind {
   switch (kind) {
+    case "keyword":
+      return monacoInstance.languages.CompletionItemKind.Keyword;
+    case "template":
+      return monacoInstance.languages.CompletionItemKind.Snippet;
     case "schema":
       return monacoInstance.languages.CompletionItemKind.Module;
     case "table":
@@ -506,7 +510,7 @@ export function SqlEditorPane({
     completionProviderRef.current?.dispose();
     completionProviderRef.current =
       monacoInstance.languages.registerCompletionItemProvider("sql", {
-        triggerCharacters: ["."],
+        triggerCharacters: [".", " "],
         provideCompletionItems: (model, position) => {
           const word = model.getWordUntilPosition(position);
           const range = {
@@ -516,8 +520,14 @@ export function SqlEditorPane({
             endColumn: word.endColumn,
           };
           const cursorOffset = model.getOffsetAt(position);
+          const sqlText = model.getValue();
           const aliasHint = resolveTableAlias(model.getValue(), cursorOffset);
-          const items = buildCompletionItems(autocompleteContext, aliasHint);
+          const items = buildCompletionItems(
+            autocompleteContext,
+            aliasHint,
+            sqlText,
+            cursorOffset,
+          );
           const suggestions: languages.CompletionItem[] = items.map((item) => ({
             label: item.label,
             insertText: item.insertText,
@@ -525,6 +535,9 @@ export function SqlEditorPane({
             detail: item.detail,
             sortText: item.sortText,
             range,
+            insertTextRules: item.insertAsSnippet
+              ? monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet
+              : undefined,
           }));
 
           return { suggestions };
@@ -623,10 +636,28 @@ export function SqlEditorPane({
               ) : (
                 <Play size={14} />
               )}
-              Run
+              Run statement
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Run (Ctrl+Enter)</TooltipContent>
+          <TooltipContent>Run statement / selection (Ctrl+Enter)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs"
+              disabled={isExecuting}
+              onClick={handleExecuteScript}
+            >
+              <Play size={14} />
+              Run script
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Run script (Shift+Ctrl+Enter) and continue through the execution-review path
+          </TooltipContent>
         </Tooltip>
 
         {/* Explain ボタン */}
@@ -643,7 +674,7 @@ export function SqlEditorPane({
               Explain
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Explain</TooltipContent>
+          <TooltipContent>Explain active statement or selection</TooltipContent>
         </Tooltip>
 
         {/* Format SQL ボタン */}
@@ -682,7 +713,7 @@ export function SqlEditorPane({
                 Stop
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Stop running query</TooltipContent>
+            <TooltipContent>Stop active query or export</TooltipContent>
           </Tooltip>
         )}
       </div>

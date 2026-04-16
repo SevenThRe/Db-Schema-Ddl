@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   appendRecentQuery,
+  deleteSnippet,
   loadSessionForConnection,
   saveSessionForConnection,
   saveSnippet,
@@ -147,4 +148,26 @@ test("saved snippets are stored and retrievable per connection", () => {
   );
   assert.ok(ordersSnippet);
   assert.equal(ordersSnippet.sql, "SELECT * FROM orders LIMIT 20;");
+});
+
+test("deleting a snippet only updates the active connection session", () => {
+  const firstSession = saveSnippet("conn-one", "Orders", "SELECT * FROM orders;");
+  saveSnippet("conn-one", "Users", "SELECT * FROM users;");
+  saveSnippet("conn-two", "Orders", "SELECT * FROM orders;");
+
+  const snippetIdToDelete = firstSession.snippets[0]?.id;
+  assert.ok(snippetIdToDelete);
+
+  deleteSnippet("conn-one", snippetIdToDelete);
+
+  const connOne = loadSessionForConnection("conn-one");
+  const connTwo = loadSessionForConnection("conn-two");
+
+  assert.equal(
+    connOne.snippets.some((snippet) => snippet.id === snippetIdToDelete),
+    false,
+  );
+  assert.equal(connOne.snippets.length, 1);
+  assert.equal(connTwo.snippets.length, 1);
+  assert.equal(connTwo.snippets[0]?.name, "Orders");
 });

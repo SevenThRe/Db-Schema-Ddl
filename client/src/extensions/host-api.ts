@@ -5,6 +5,7 @@
 
 import type {
   DbConnectionConfig,
+  DbDiscoveredEndpoint,
   DbSchemaSnapshot,
   DbSchemaDiffResult,
   QueryExecutionRequest,
@@ -24,12 +25,16 @@ import type {
   DbDataDiffPreviewResponse,
   DbDataDiffDetailRequest,
   DbDataDiffDetailResponse,
+  DbObjectInspectionRequest,
+  DbObjectInspectionResponse,
   DbDataApplyPreviewRequest,
   DbDataApplyPreviewResponse,
   DbDataApplyExecuteRequest,
   DbDataApplyExecuteResponse,
   DbDataApplyJobDetailRequest,
   DbDataApplyJobDetailResponse,
+  DbBackgroundJobListRequest,
+  DbBackgroundJobListResponse,
 } from "@shared/schema";
 import type { StatusBarEntryInput } from "@/status-bar/types";
 
@@ -50,17 +55,23 @@ export type MainSurface =
 /** データベース接続操作 API */
 export interface ConnectionsApi {
   list(): Promise<DbConnectionConfig[]>;
+  discoverLocal(): Promise<DbDiscoveredEndpoint[]>;
   save(config: DbConnectionConfig): Promise<DbConnectionConfig>;
   remove(id: string): Promise<void>;
   test(config: DbConnectionConfig): Promise<string>;
   introspect(connectionId: string): Promise<DbSchemaSnapshot>;
+  inspectObject(request: DbObjectInspectionRequest): Promise<DbObjectInspectionResponse>;
   listSchemas?(connectionId: string): Promise<string[]>;
   diff(sourceId: string, targetId: string): Promise<DbSchemaDiffResult>;
   // Phase 1 DB 工作台 — クエリ実行・エクスポート・EXPLAIN
   executeQuery(request: QueryExecutionRequest): Promise<QueryExecutionResponse>;
   explainQuery(request: ExplainRequest): Promise<DbExplainPlan>;
   cancelQuery(requestId: string): Promise<void>;
-  previewDangerousSql(connectionId: string, sql: string): Promise<DangerousSqlPreview>;
+  previewDangerousSql(
+    connectionId: string,
+    sql: string,
+    cursorOffset?: number,
+  ): Promise<DangerousSqlPreview>;
   exportRows(request: ExportRowsRequest): Promise<BinaryCommandResult>;
   fetchMore(request: FetchMoreRequest): Promise<DbQueryBatchResult>;
   prepareGridCommit(request: DbGridPrepareCommitRequest): Promise<DbGridPrepareCommitResponse>;
@@ -70,6 +81,7 @@ export interface ConnectionsApi {
   previewDataApply(request: DbDataApplyPreviewRequest): Promise<DbDataApplyPreviewResponse>;
   executeDataApply(request: DbDataApplyExecuteRequest): Promise<DbDataApplyExecuteResponse>;
   fetchDataApplyJobDetail(request: DbDataApplyJobDetailRequest): Promise<DbDataApplyJobDetailResponse>;
+  listBackgroundJobs(request: DbBackgroundJobListRequest): Promise<DbBackgroundJobListResponse>;
 }
 
 /** 通知 API */

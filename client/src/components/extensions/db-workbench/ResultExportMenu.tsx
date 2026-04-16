@@ -54,7 +54,7 @@ export function ResultExportMenu({
           Current page
         </DropdownMenuLabel>
         <div className="px-2 py-1 text-[10px] text-muted-foreground">
-          Export rows currently visible in this page.
+          Export rows currently visible for the active statement batch.
         </div>
         <DropdownMenuSeparator />
         {FORMAT_OPTIONS.map((opt) => (
@@ -73,7 +73,7 @@ export function ResultExportMenu({
           Loaded rows
         </DropdownMenuLabel>
         <div className="px-2 py-1 text-[10px] text-muted-foreground">
-          Export {loadedRows} loaded rows from this result tab.
+          Export {loadedRows} rows currently retained in this result tab window.
         </div>
         <DropdownMenuSeparator />
         {FORMAT_OPTIONS.map((opt) => (
@@ -93,7 +93,7 @@ export function ResultExportMenu({
         </DropdownMenuLabel>
         <div className="px-2 py-1 text-[10px] text-muted-foreground">
           {supportsFullResultExport
-            ? "Re-runs query on backend runtime. Large exports can be truncated."
+            ? "Re-runs the active statement on backend runtime. Large exports can be truncated."
             : "Only single pageable SELECT-style results support full result export."}
         </div>
         <DropdownMenuSeparator />

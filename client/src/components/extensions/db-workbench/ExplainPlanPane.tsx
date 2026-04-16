@@ -8,7 +8,7 @@
 //   - 大量行推定ノードをアンバーバッジで表示（LARGE_ROWS_ESTIMATE）
 //   - カスタムノードコンポーネント（planNode タイプ）
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   ReactFlow,
   type Node,
@@ -18,7 +18,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import ELK from "elkjs/lib/elk.bundled.js";
+import { Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { DbExplainPlan, PlanNode } from "@shared/schema";
 
@@ -228,6 +232,8 @@ export function ExplainPlanPane({ plan, isLoading }: ExplainPlanPaneProps) {
   // ELK レイアウト後のノード（非同期で設定）
   const [layoutNodes, setLayoutNodes] = useState<Node<PlanNodeData>[]>([]);
   const [layoutReady, setLayoutReady] = useState(false);
+  const [activeView, setActiveView] = useState<"graph" | "raw">("graph");
+  const { toast } = useToast();
 
   // PlanNode ツリー → xyflow Nodes/Edges 変換（plan.rawJson 変更時のみ再計算）
   const { nodes: rawNodes, edges } = useMemo(() => {
@@ -257,6 +263,24 @@ export function ExplainPlanPane({ plan, isLoading }: ExplainPlanPaneProps) {
       cancelled = true;
     };
   }, [rawNodes, edges]);
+
+  useEffect(() => {
+    setActiveView("graph");
+  }, [plan?.rawJson]);
+
+  const handleCopyRawJson = useCallback(async () => {
+    if (!plan?.rawJson) return;
+    try {
+      await navigator.clipboard.writeText(plan.rawJson);
+      toast({ title: "已复制 EXPLAIN JSON", variant: "success" });
+    } catch (error) {
+      toast({
+        title: "复制失败",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    }
+  }, [plan?.rawJson, toast]);
 
   // ローディング状態
   if (isLoading) {
@@ -292,16 +316,57 @@ export function ExplainPlanPane({ plan, isLoading }: ExplainPlanPaneProps) {
   }
 
   return (
-    <div className="h-full w-full">
-      <ReactFlow
-        nodes={layoutNodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-      </ReactFlow>
+    <div className="flex h-full w-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel-muted/70 px-2 py-1">
+        <Tabs
+          value={activeView}
+          onValueChange={(value) => setActiveView(value as "graph" | "raw")}
+        >
+          <TabsList className="h-7">
+            <TabsTrigger value="graph" className="h-6 text-xs">
+              Graph
+            </TabsTrigger>
+            <TabsTrigger value="raw" className="h-6 text-xs">
+              Raw JSON
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-xs"
+          onClick={() => {
+            void handleCopyRawJson();
+          }}
+        >
+          <Copy className="h-3.5 w-3.5" />
+          Copy JSON
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {activeView === "raw" ? (
+          <div className="h-full overflow-auto bg-background p-3">
+            <pre className="whitespace-pre-wrap break-all rounded-sm border border-border bg-panel-muted/30 p-3 font-mono text-xs text-foreground">
+              {plan.rawJson}
+            </pre>
+          </div>
+        ) : (
+          <div className="h-full w-full">
+            <ReactFlow
+              nodes={layoutNodes}
+              edges={edges}
+              nodeTypes={NODE_TYPES}
+              fitView
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+            </ReactFlow>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

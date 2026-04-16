@@ -21,6 +21,44 @@ export function formatDesktopCheckpoint(
   return `[checkpoint:${checkpoint}]${suffix}`;
 }
 
+export interface ParsedDesktopCheckpoint {
+  name: string;
+  metadata: Record<string, unknown>;
+  rawLine: string;
+}
+
+export function parseDesktopCheckpointLine(line: string): ParsedDesktopCheckpoint | null {
+  const match = line.match(/\[checkpoint:([^\]]+)\](?:\s+(\{.*\}))?/);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  let metadata: Record<string, unknown> = {};
+  if (match[2]) {
+    try {
+      const parsed = JSON.parse(match[2]);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        metadata = parsed as Record<string, unknown>;
+      }
+    } catch {
+      metadata = {};
+    }
+  }
+
+  return {
+    name: match[1],
+    metadata,
+    rawLine: line,
+  };
+}
+
+export function extractDesktopCheckpoints(logContents: string): ParsedDesktopCheckpoint[] {
+  return logContents
+    .split(/\r?\n/)
+    .map((line) => parseDesktopCheckpointLine(line))
+    .filter((checkpoint): checkpoint is ParsedDesktopCheckpoint => checkpoint !== null);
+}
+
 export function normalizeElectronBoundaryErrorMessage(
   error: unknown,
   fallbackMessage: string,

@@ -12,8 +12,8 @@
 // 危険な SQL は事前に previewDangerousSql でチェックし、confirmed=true で再実行する。
 // これにより Rust 層でのサーバーサイド安全性が保証される（SAFE-01 / SAFE-02）。
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { AlertTriangle, GitCompare, Lock } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { AlertTriangle, FileSearch, GitCompare, Lock } from "lucide-react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -21,18 +21,30 @@ import {
 } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import {
+  emitLiveVerificationCompleted,
+  emitLiveVerificationFlow,
+  readReleaseVerificationConfig,
+} from "@/lib/release-verification";
 import type {
   BinaryCommandResult,
   DbConnectionConfig,
+  DbSchemaDiffResult,
+  DbSchemaSnapshot,
+  DbTableSchema,
   QueryExecutionResponse,
   DbExplainPlan,
   DangerousSqlPreview,
   DbGridEditPatchCell,
+  DbGridDeleteRowDraft,
   DbGridEditSource,
   DbGridEditEligibility,
   DbGridPrepareCommitResponse,
+  DbObjectInspectionResponse,
+  DbObjectKind,
   DbQueryBatchResult,
   DbQueryRow,
   DbDataDiffPreviewResponse,
@@ -40,6 +52,7 @@ import type {
   DbDataApplyPreviewResponse,
   DbDataApplyExecuteResponse,
   DbDataApplyJobDetailResponse,
+  DbBackgroundJobSummary,
   DbDataSyncBlockerCode,
   DbDataApplySelection,
 } from "@shared/schema";
@@ -48,10 +61,15 @@ import { ConnectionSidebar } from "./ConnectionSidebar";
 import { QueryTabs, loadTabsForConnection, defaultTab } from "./QueryTabs";
 import type { QueryTab } from "./QueryTabs";
 import {
-  appendRecentQuery,
+  deleteSnippet,
   loadSessionForConnection,
+  recordQueryRun,
   saveSessionForConnection,
   saveSnippet,
+  type QueryRunHistoryEntry,
+  type QueryRunMode,
+  type WorkbenchInspectionTarget,
+  type WorkbenchResultTab,
   type SavedSqlSnippet,
   type WorkbenchSessionState,
 } from "./workbench-session";
@@ -63,11 +81,55 @@ import { ExplainPlanPane } from "./ExplainPlanPane";
 import { DangerousSqlDialog } from "./DangerousSqlDialog";
 import { GridEditCommitDialog } from "./GridEditCommitDialog";
 import { DataSyncRowDiffPane } from "./DataSyncRowDiffPane";
+import { JobCenterPane } from "./JobCenterPane";
+import { ObjectInspectionPane } from "./ObjectInspectionPane";
+import { SaveSnippetDialog } from "./SaveSnippetDialog";
+import { SqlLibraryDialog } from "./SqlLibraryDialog";
+import { SqlParametersDialog } from "./SqlParametersDialog";
+import { SqlScriptReviewDialog } from "./SqlScriptReviewDialog";
+import {
+  buildPendingDeleteRowSummaries,
+  buildPendingEditRowSummaries,
+} from "./grid-edit-summary";
 import type { DataSyncRowDiffEntry } from "./data-sync-row-diff";
 import { buildAutocompleteContext } from "./sql-autocomplete";
+import {
+  buildSqlLibraryEntries,
+  filterSqlLibraryEntries,
+} from "./sql-library";
+import {
+  detectSqlParameters,
+  renderSqlParameters,
+  type SqlParameterDefinition,
+  type SqlParameterInputValue,
+} from "./sql-parameters";
+import {
+  splitSqlStatements,
+  type SqlStatementSegment,
+} from "./sql-statements";
+import { WorkbenchSchemaDiffPane } from "./SchemaDiffPane";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 type StarterQueryMode = "select" | "count" | "columns";
+
+const DATA_SYNC_APPLY_READY_MESSAGE =
+  "Apply executes real insert, update, and delete statements against the target connection. Review blockers and SQL preview before running it.";
+const DATA_SYNC_DELETE_WARNING_THRESHOLD = 500;
+const QUERY_RESULT_WINDOW_LIMIT = 5000;
+
+type SyncTableConfigDraft = {
+  keyColumnsText: string;
+  compareColumnsText: string;
+  whereClause: string;
+};
+
+type SyncTableRuntimeMetadata = {
+  availableColumns: string[];
+  defaultKeyColumns: string[];
+  defaultCompareColumns: string[];
+  sourceExists: boolean;
+  targetExists: boolean;
+};
 
 function formatWorkbenchError(error: unknown, fallback: string): string {
   const raw =
@@ -172,6 +234,164 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
   return Array.from(map.values());
 }
 
+function normalizeIdentifierList(input: string): string[] {
+  const seen = new Set<string>();
+  const identifiers: string[] = [];
+  for (const value of input.split(",")) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    identifiers.push(normalized);
+  }
+  return identifiers;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function collectPrimaryKeyColumns(table: DbTableSchema | null): string[] {
+  if (!table) {
+    return [];
+  }
+  return table.columns
+    .filter((column) => column.primaryKey)
+    .map((column) => column.name);
+}
+
+function collectUniqueKeyColumns(table: DbTableSchema | null): string[] {
+  if (!table) {
+    return [];
+  }
+  const uniqueIndex = (table.indexes ?? []).find(
+    (index) => index.unique && index.columns.length > 0,
+  );
+  return uniqueIndex?.columns ?? [];
+}
+
+function collectUnionColumnNames(
+  sourceTable: DbTableSchema | null,
+  targetTable: DbTableSchema | null,
+): string[] {
+  return uniqueStrings([
+    ...(sourceTable?.columns.map((column) => column.name) ?? []),
+    ...(targetTable?.columns.map((column) => column.name) ?? []),
+  ]);
+}
+
+function resolveRuntimeSyncMetadata(
+  sourceTable: DbTableSchema | null,
+  targetTable: DbTableSchema | null,
+): SyncTableRuntimeMetadata {
+  const availableColumns = collectUnionColumnNames(sourceTable, targetTable);
+  const primaryKeyColumns = uniqueStrings([
+    ...collectPrimaryKeyColumns(sourceTable),
+    ...collectPrimaryKeyColumns(targetTable),
+  ]);
+  const defaultKeyColumns =
+    primaryKeyColumns.length > 0
+      ? primaryKeyColumns
+      : uniqueStrings([
+          ...collectUniqueKeyColumns(sourceTable),
+          ...collectUniqueKeyColumns(targetTable),
+        ]);
+  const keyColumnSet = new Set(defaultKeyColumns);
+  const defaultCompareColumns = availableColumns.filter(
+    (column) => !keyColumnSet.has(column),
+  );
+
+  return {
+    availableColumns,
+    defaultKeyColumns,
+    defaultCompareColumns,
+    sourceExists: !!sourceTable,
+    targetExists: !!targetTable,
+  };
+}
+
+function formatColumnPreview(
+  columns: string[],
+  fallback: string,
+  limit = 6,
+): string {
+  if (columns.length === 0) {
+    return fallback;
+  }
+  if (columns.length <= limit) {
+    return columns.join(", ");
+  }
+  return `${columns.slice(0, limit).join(", ")} +${columns.length - limit} more`;
+}
+
+function getLoadedRowOffset(batch: DbQueryBatchResult): number {
+  const offset = batch.loadedRowOffset;
+  if (typeof offset !== "number" || Number.isNaN(offset)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(offset));
+}
+
+function getLoadedRowCount(batch: DbQueryBatchResult): number {
+  const explicit = batch.loadedRowCount;
+  if (typeof explicit === "number" && Number.isFinite(explicit)) {
+    return Math.max(0, Math.trunc(explicit));
+  }
+  return Math.max(batch.rows.length, Math.trunc(batch.returnedRows || 0));
+}
+
+function trimRowsForMemory(
+  batch: DbQueryBatchResult,
+  rows: DbQueryRow[],
+  protectedRowPkTuples: Set<string>,
+): { rows: DbQueryRow[]; droppedRows: number } {
+  const overflow = rows.length - QUERY_RESULT_WINDOW_LIMIT;
+  if (overflow <= 0) {
+    return { rows, droppedRows: 0 };
+  }
+
+  const primaryKeyColumns = batch.primaryKeyColumns ?? [];
+  if (primaryKeyColumns.length === 0 || protectedRowPkTuples.size === 0) {
+    return {
+      rows: rows.slice(overflow),
+      droppedRows: overflow,
+    };
+  }
+
+  let droppedRows = 0;
+  const retainedRows: DbQueryRow[] = [];
+
+  for (const row of rows) {
+    if (droppedRows < overflow) {
+      const rowPrimaryKey = buildRowPrimaryKey(row, batch, primaryKeyColumns);
+      const rowPkTuple = rowPrimaryKey
+        ? buildRowPkTuple(rowPrimaryKey, primaryKeyColumns)
+        : null;
+      if (!rowPkTuple || !protectedRowPkTuples.has(rowPkTuple)) {
+        droppedRows += 1;
+        continue;
+      }
+    }
+
+    retainedRows.push(row);
+  }
+
+  return {
+    rows: retainedRows,
+    droppedRows,
+  };
+}
+
 function getCurrentPageRows(batch: DbQueryBatchResult): DbQueryRow[] {
   if (batch.rows.length === 0) {
     return [];
@@ -192,7 +412,9 @@ function hasBlockingDataSyncBlocker(
     blocker.code === "target_snapshot_changed" ||
     blocker.code === "artifact_expired" ||
     blocker.code === "readonly_target" ||
-    blocker.code === "missing_stable_key"
+    blocker.code === "missing_stable_key" ||
+    blocker.code === "unsafe_delete_confirmation_required" ||
+    blocker.code === "target_database_confirmation_required"
   );
 }
 
@@ -206,8 +428,14 @@ function describeDataSyncBlocker(code: DbDataSyncBlockerCode): string {
   if (code === "unsafe_delete_threshold") {
     return "Delete volume crossed unsafe_delete_threshold. Operator confirmation required.";
   }
+  if (code === "unsafe_delete_confirmation_required") {
+    return "Explicit unsafe delete confirmation is required before execute.";
+  }
   if (code === "readonly_target") {
     return "Target connection is read-only and cannot apply changes.";
+  }
+  if (code === "target_database_confirmation_required") {
+    return "Typed target database confirmation is required before execute.";
   }
   return "Missing stable key prevents deterministic row matching.";
 }
@@ -219,6 +447,54 @@ function formatDataSyncCounts(counts: {
   unchanged: number;
 }): string {
   return `I:${counts.insert} U:${counts.update} D:${counts.delete} =:${counts.unchanged}`;
+}
+
+function isBackgroundJobActive(
+  status: DbBackgroundJobSummary["status"] | DbDataApplyJobDetailResponse["status"] | null | undefined,
+): boolean {
+  return status === "running" || status === "pending";
+}
+
+function backgroundJobSortValue(job: { startedAt?: string; createdAt: string }): number {
+  return Date.parse(job.startedAt ?? job.createdAt) || 0;
+}
+
+function mergeBackgroundJobs(
+  current: DbBackgroundJobSummary[],
+  incoming: DbBackgroundJobSummary[],
+): DbBackgroundJobSummary[] {
+  const map = new Map(current.map((job) => [job.jobId, job]));
+  for (const job of incoming) {
+    map.set(job.jobId, {
+      ...(map.get(job.jobId) ?? {}),
+      ...job,
+    });
+  }
+  return Array.from(map.values()).sort(
+    (left, right) => backgroundJobSortValue(right) - backgroundJobSortValue(left),
+  );
+}
+
+function toBackgroundJobSummary(detail: DbDataApplyJobDetailResponse): DbBackgroundJobSummary {
+  return {
+    jobId: detail.jobId,
+    jobKind: "data-apply",
+    title: "Data Sync Apply",
+    sourceConnectionId: detail.sourceConnectionId,
+    targetConnectionId: detail.targetConnectionId,
+    status: detail.status,
+    statusCounts: detail.statusCounts,
+    blockers: detail.blockers,
+    tableCount: uniqueBy(detail.tableResults, (result) => result.tableName).length,
+    primaryTableName: detail.tableResults[0]?.tableName,
+    statementCount: detail.statementCount,
+    sqlPreviewLines: detail.sqlPreviewLines,
+    previewTruncated: detail.previewTruncated,
+    failureSummary: detail.tableResults.find((result) => result.error)?.error,
+    createdAt: detail.createdAt,
+    startedAt: detail.startedAt,
+    finishedAt: detail.finishedAt,
+  };
 }
 
 function toDataSyncRowDiffEntry(
@@ -255,8 +531,16 @@ interface HydratedConnectionSession {
   tabs: QueryTab[];
   activeTabId: string;
   recentQueries: string[];
+  queryHistory: QueryRunHistoryEntry[];
   snippets: SavedSqlSnippet[];
   selectedTableName: string | null;
+  activeSchema: string | null;
+  lastResultTab: WorkbenchResultTab;
+  inspectionTarget: WorkbenchInspectionTarget | null;
+  schemaDiffTargetConnectionId: string | null;
+  syncSourceConnectionId: string | null;
+  syncTargetConnectionId: string | null;
+  selectedJobId: string | null;
 }
 
 function hydrateConnectionSession(
@@ -286,8 +570,16 @@ function hydrateConnectionSession(
     tabs,
     activeTabId,
     recentQueries: loadedSession.recentQueries,
+    queryHistory: loadedSession.queryHistory,
     snippets: loadedSession.snippets,
     selectedTableName: loadedSession.selectedTableName,
+    activeSchema: loadedSession.activeSchema,
+    lastResultTab: loadedSession.lastResultTab,
+    inspectionTarget: loadedSession.inspectionTarget,
+    schemaDiffTargetConnectionId: loadedSession.schemaDiffTargetConnectionId,
+    syncSourceConnectionId: loadedSession.syncSourceConnectionId,
+    syncTargetConnectionId: loadedSession.syncTargetConnectionId,
+    selectedJobId: loadedSession.selectedJobId,
   };
 }
 
@@ -300,10 +592,59 @@ export interface WorkbenchLayoutProps {
   connection: DbConnectionConfig;
   /** ホスト API（クエリ実行・キャンセル等で使用） */
   hostApi: HostApi;
-  /** レガシービューへ切り替えるコールバック */
-  onSwitchToLegacy: () => void;
+  /** 打开连接管理面板 */
+  onManageConnections: () => void;
   /** 工作台内で接続を切り替えるコールバック */
   onSwitchConnection: (connectionId: string) => void;
+}
+
+interface PendingSqlParameterReview {
+  sql: string;
+  source: DbGridEditSource | null;
+  cursorOffset?: number;
+  parameters: SqlParameterDefinition[];
+  mode: QueryRunMode;
+}
+
+interface PendingSqlScriptReview {
+  sql: string;
+  statements: SqlStatementSegment[];
+}
+
+function isCancelledQueryMessage(message: string): boolean {
+  return /cancel|cancelled|canceled|キャンセル/i.test(message);
+}
+
+function buildQueryRunEntryFromResponse(
+  sql: string,
+  mode: QueryRunMode,
+  response: QueryExecutionResponse,
+) {
+  const failedIndexes = response.batches.flatMap((batch, index) =>
+    batch.error ? [index] : [],
+  );
+  const status =
+    failedIndexes.length === 0
+      ? "success"
+      : failedIndexes.length === response.batches.length
+        ? "failed"
+        : "partial";
+
+  return {
+    sql,
+    mode,
+    status,
+    statementCount: Math.max(1, response.batches.length),
+    returnedRows: response.batches.reduce((sum, batch) => sum + batch.returnedRows, 0),
+    affectedRows: response.batches.reduce(
+      (sum, batch) => sum + (typeof batch.affectedRows === "number" ? batch.affectedRows : 0),
+      0,
+    ),
+    elapsedMs: response.batches.reduce((sum, batch) => sum + batch.elapsedMs, 0),
+    failedStatementIndex: failedIndexes[0] ?? null,
+    errorMessage:
+      failedIndexes.length > 0 ? response.batches[failedIndexes[0]]?.error ?? null : null,
+  } as const;
 }
 
 // ──────────────────────────────────────────────
@@ -378,9 +719,10 @@ function EnvironmentBand({
 export function WorkbenchLayout({
   connection,
   hostApi,
-  onSwitchToLegacy,
+  onManageConnections,
   onSwitchConnection,
 }: WorkbenchLayoutProps) {
+  const releaseVerification = readReleaseVerificationConfig();
   // ──────────────────────────────────────────────
   // タブ状態管理（localStorage から初期化）
   // ──────────────────────────────────────────────
@@ -397,14 +739,20 @@ export function WorkbenchLayout({
   const [recentQueries, setRecentQueries] = useState<string[]>(
     initialSession.recentQueries,
   );
+  const [queryHistory, setQueryHistory] = useState<QueryRunHistoryEntry[]>(
+    initialSession.queryHistory,
+  );
   const [savedSnippets, setSavedSnippets] = useState<SavedSqlSnippet[]>(
     initialSession.snippets,
   );
   const [selectedTableName, setSelectedTableName] = useState<string | null>(
     initialSession.selectedTableName,
   );
-  const [selectedRecentSql, setSelectedRecentSql] = useState("");
-  const [selectedSnippetId, setSelectedSnippetId] = useState("");
+  const [saveSnippetDialogOpen, setSaveSnippetDialogOpen] = useState(false);
+  const [pendingSnippetName, setPendingSnippetName] = useState("");
+  const [sqlLibraryOpen, setSqlLibraryOpen] = useState(false);
+  const [sqlLibrarySearch, setSqlLibrarySearch] = useState("");
+  const [selectedSqlLibraryEntryId, setSelectedSqlLibraryEntryId] = useState("");
 
   // ──────────────────────────────────────────────
   // クエリ実行・結果状態
@@ -414,6 +762,7 @@ export function WorkbenchLayout({
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const [results, setResults] = useState<QueryExecutionResponse | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const trimmedBatchAlertsRef = useRef<Set<number>>(new Set());
 
   // EXPLAIN 状態
   const [explainPlan, setExplainPlan] = useState<DbExplainPlan | null>(null);
@@ -425,19 +774,46 @@ export function WorkbenchLayout({
     useState<DangerousSqlPreview | null>(null);
   const [showDangerDialog, setShowDangerDialog] = useState(false);
   const [pendingSql, setPendingSql] = useState<string | null>(null);
+  const [pendingCursorOffset, setPendingCursorOffset] = useState<number | undefined>(undefined);
   const [pendingQuerySource, setPendingQuerySource] = useState<DbGridEditSource | null>(null);
+  const [pendingQueryMode, setPendingQueryMode] = useState<QueryRunMode>("statement");
+  const [pendingParameterReview, setPendingParameterReview] =
+    useState<PendingSqlParameterReview | null>(null);
+  const [parameterValues, setParameterValues] = useState<Record<string, SqlParameterInputValue>>(
+    {},
+  );
+  const [pendingScriptReview, setPendingScriptReview] =
+    useState<PendingSqlScriptReview | null>(null);
 
   // Stop on error 状態（D-05: デフォルト ON）
   const [stopOnError, setStopOnError] = useState(true);
 
   // 結果エリアのアクティブタブ（Results / Explain）
-  const [resultTab, setResultTab] = useState<"results" | "explain" | "sync">("results");
+  const [resultTab, setResultTab] = useState<WorkbenchResultTab>(
+    initialSession.lastResultTab,
+  );
+  const [backgroundJobs, setBackgroundJobs] = useState<DbBackgroundJobSummary[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(initialSession.selectedJobId);
+  const [isRefreshingJobs, setIsRefreshingJobs] = useState(false);
+  const [jobCenterIssue, setJobCenterIssue] = useState<string | null>(null);
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [currentExportRequestId, setCurrentExportRequestId] = useState<string | null>(null);
+  const [objectInspection, setObjectInspection] = useState<DbObjectInspectionResponse | null>(null);
+  const [isInspectingObject, setIsInspectingObject] = useState(false);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [schemaDiffTargetConnectionId, setSchemaDiffTargetConnectionId] = useState(connection.id);
+  const [schemaDiffSourceSnapshot, setSchemaDiffSourceSnapshot] = useState<DbSchemaSnapshot | null>(null);
+  const [schemaDiffTargetSnapshot, setSchemaDiffTargetSnapshot] = useState<DbSchemaSnapshot | null>(null);
+  const [schemaDiffResult, setSchemaDiffResult] = useState<DbSchemaDiffResult | null>(null);
+  const [schemaDiffIssue, setSchemaDiffIssue] = useState<string | null>(null);
+  const [isSchemaDiffing, setIsSchemaDiffing] = useState(false);
   const [syncSourceConnectionId, setSyncSourceConnectionId] = useState(connection.id);
   const [syncTargetConnectionId, setSyncTargetConnectionId] = useState(connection.id);
   const [syncSelectedTables, setSyncSelectedTables] = useState<string[]>([]);
+  const [syncTableConfigs, setSyncTableConfigs] = useState<Record<string, SyncTableConfigDraft>>(
+    {},
+  );
   const [diffPreview, setDiffPreview] = useState<DbDataDiffPreviewResponse | null>(null);
   const [diffDetail, setDiffDetail] = useState<DbDataDiffDetailResponse | null>(null);
   const [diffRows, setDiffRows] = useState<DataSyncRowDiffEntry[]>([]);
@@ -447,37 +823,91 @@ export function WorkbenchLayout({
   const [applyExecute, setApplyExecute] = useState<DbDataApplyExecuteResponse | null>(null);
   const [applyJobDetail, setApplyJobDetail] = useState<DbDataApplyJobDetailResponse | null>(null);
   const [applyProdConfirmation, setApplyProdConfirmation] = useState("");
+  const [applyUnsafeDeleteConfirmed, setApplyUnsafeDeleteConfirmed] = useState(false);
   const [syncIssue, setSyncIssue] = useState<string | null>(null);
   const [isDiffPreviewing, setIsDiffPreviewing] = useState(false);
   const [isApplyPreviewing, setIsApplyPreviewing] = useState(false);
-  const [isApplyExecuting, setIsApplyExecuting] = useState(false);
+  const [isExecutingApply, setIsExecutingApply] = useState(false);
   const [pendingEditCells, setPendingEditCells] = useState<Record<string, DbGridEditPatchCell>>({});
+  const [pendingDeleteRows, setPendingDeleteRows] = useState<Record<string, DbGridDeleteRowDraft>>({});
   const [preparedGridPlan, setPreparedGridPlan] = useState<DbGridPrepareCommitResponse | null>(null);
   const [isPreparingGridCommit, setIsPreparingGridCommit] = useState(false);
   const [isCommittingGridEdit, setIsCommittingGridEdit] = useState(false);
   const [activeSchema, setActiveSchema] = useState<string>(() =>
     connection.driver === "postgres"
-      ? connection.defaultSchema?.trim() || "public"
+      ? (initialSession.activeSchema ?? connection.defaultSchema?.trim() ?? "public")
       : "public",
   );
+  const [restoredInspectionTarget, setRestoredInspectionTarget] =
+    useState<WorkbenchInspectionTarget | null>(initialSession.inspectionTarget);
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (connection.driver !== "postgres") {
-      setActiveSchema("public");
-      return;
-    }
-    setActiveSchema(connection.defaultSchema?.trim() || "public");
-  }, [connection.driver, connection.defaultSchema, connection.id]);
 
   const runtimeSchema = connection.driver === "postgres" ? activeSchema : undefined;
   const [lastGridEditSource, setLastGridEditSource] = useState<DbGridEditSource | null>(null);
+  const activeQueryRequestIdRef = useRef<string | null>(null);
+  const activeExportRequestIdRef = useRef<string | null>(null);
+  const liveVerificationRunKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    trimmedBatchAlertsRef.current.clear();
+  }, [connection.id, results?.requestId]);
+
+  useEffect(() => {
+    setObjectInspection(null);
+    setInspectError(null);
+  }, [connection.id, runtimeSchema]);
 
   // 接続リスト（切替ドロップダウン用）
   const { data: connections = [] } = useQuery({
     queryKey: ["connections"],
     queryFn: () => hostApi.connections.list(),
   });
+
+  useEffect(() => {
+    const compareTargets = connections.filter((item) => item.id !== connection.id);
+    const fallbackTargetId = compareTargets[0]?.id ?? "";
+    if (connections.length === 0) {
+      return;
+    }
+    setSchemaDiffTargetConnectionId((current) => {
+      if (current && compareTargets.some((item) => item.id === current)) {
+        return current;
+      }
+      return fallbackTargetId;
+    });
+  }, [connection.id, connections]);
+
+  useEffect(() => {
+    setSchemaDiffSourceSnapshot(null);
+    setSchemaDiffTargetSnapshot(null);
+    setSchemaDiffResult(null);
+    setSchemaDiffIssue(null);
+    setIsSchemaDiffing(false);
+  }, [connection.id]);
+
+  useEffect(() => {
+    setSchemaDiffSourceSnapshot(null);
+    setSchemaDiffTargetSnapshot(null);
+    setSchemaDiffResult(null);
+    setSchemaDiffIssue(null);
+  }, [schemaDiffTargetConnectionId]);
+
+  useEffect(() => {
+    if (connections.length === 0) {
+      return;
+    }
+
+    setSyncSourceConnectionId((current) =>
+      current && connections.some((item) => item.id === current)
+        ? current
+        : connection.id,
+    );
+    setSyncTargetConnectionId((current) =>
+      current && connections.some((item) => item.id === current)
+        ? current
+        : connection.id,
+    );
+  }, [connection.id, connections]);
 
   const {
     data: schemaSnapshot,
@@ -489,6 +919,28 @@ export function WorkbenchLayout({
     queryFn: () => hostApi.connections.introspect(connection.id),
     staleTime: 30_000,
     retry: false,
+  });
+  const {
+    data: syncSourceSnapshotData,
+    isFetching: isSyncSourceSnapshotLoading,
+    error: syncSourceSnapshotError,
+  } = useQuery({
+    queryKey: ["db-workbench-sync-schema", syncSourceConnectionId],
+    queryFn: () => hostApi.connections.introspect(syncSourceConnectionId),
+    staleTime: 30_000,
+    retry: false,
+    enabled: syncSourceConnectionId !== connection.id,
+  });
+  const {
+    data: syncTargetSnapshotData,
+    isFetching: isSyncTargetSnapshotLoading,
+    error: syncTargetSnapshotError,
+  } = useQuery({
+    queryKey: ["db-workbench-sync-schema", syncTargetConnectionId],
+    queryFn: () => hostApi.connections.introspect(syncTargetConnectionId),
+    staleTime: 30_000,
+    retry: false,
+    enabled: syncTargetConnectionId !== connection.id,
   });
 
   const {
@@ -506,6 +958,78 @@ export function WorkbenchLayout({
     staleTime: 30_000,
     retry: false,
   });
+  const syncSourceSnapshot =
+    syncSourceConnectionId === connection.id
+      ? schemaSnapshot ?? null
+      : syncSourceSnapshotData ?? null;
+  const syncTargetSnapshot =
+    syncTargetConnectionId === connection.id
+      ? schemaSnapshot ?? null
+      : syncTargetSnapshotData ?? null;
+  const syncTableMetadataByName = useMemo(() => {
+    const sourceTables = new Map<string, DbTableSchema>(
+      (syncSourceSnapshot?.tables ?? []).map((table) => [table.name, table]),
+    );
+    const targetTables = new Map<string, DbTableSchema>(
+      (syncTargetSnapshot?.tables ?? []).map((table) => [table.name, table]),
+    );
+    const tableNames = uniqueStrings([
+      ...Array.from(sourceTables.keys()),
+      ...Array.from(targetTables.keys()),
+    ]).sort((left, right) => left.localeCompare(right));
+
+    return {
+      tableNames,
+      metadataByName: tableNames.reduce<Record<string, SyncTableRuntimeMetadata>>(
+        (accumulator, tableName) => {
+          accumulator[tableName] = resolveRuntimeSyncMetadata(
+            sourceTables.get(tableName) ?? null,
+            targetTables.get(tableName) ?? null,
+          );
+          return accumulator;
+        },
+        {},
+      ),
+    };
+  }, [syncSourceSnapshot, syncTargetSnapshot]);
+  const syncAvailableTableNames = syncTableMetadataByName.tableNames;
+  const syncSchemaIssueMessage = useMemo(() => {
+    if (syncSourceConnectionId === connection.id && schemaQueryError) {
+      return formatWorkbenchError(
+        schemaQueryError,
+        "Failed to load source connection schema for sync compare.",
+      );
+    }
+    if (syncTargetConnectionId === connection.id && schemaQueryError) {
+      return formatWorkbenchError(
+        schemaQueryError,
+        "Failed to load target connection schema for sync compare.",
+      );
+    }
+    if (syncSourceSnapshotError) {
+      return formatWorkbenchError(
+        syncSourceSnapshotError,
+        "Failed to load source connection schema for sync compare.",
+      );
+    }
+    if (syncTargetSnapshotError) {
+      return formatWorkbenchError(
+        syncTargetSnapshotError,
+        "Failed to load target connection schema for sync compare.",
+      );
+    }
+    return null;
+  }, [
+    connection.id,
+    schemaQueryError,
+    syncSourceConnectionId,
+    syncSourceSnapshotError,
+    syncTargetConnectionId,
+    syncTargetSnapshotError,
+  ]);
+  const isSyncSchemaLoading =
+    (syncSourceConnectionId !== connection.id && isSyncSourceSnapshotLoading)
+    || (syncTargetConnectionId !== connection.id && isSyncTargetSnapshotLoading);
 
   const schemaOptions = useMemo(() => {
     if (connection.driver !== "postgres") return [];
@@ -526,8 +1050,8 @@ export function WorkbenchLayout({
   }, [activeSchema, connection.defaultSchema, connection.driver, schemaOptionsRaw]);
 
   const autocompleteContext = useMemo(
-    () => buildAutocompleteContext(schemaSnapshot, runtimeSchema),
-    [runtimeSchema, schemaSnapshot],
+    () => buildAutocompleteContext(schemaSnapshot, runtimeSchema, selectedTableName),
+    [runtimeSchema, schemaSnapshot, selectedTableName],
   );
 
   const schemaErrorMessage = useMemo(() => {
@@ -575,27 +1099,72 @@ export function WorkbenchLayout({
   }, [schemaSnapshot]);
 
   useEffect(() => {
-    const tableNames = [...(schemaSnapshot?.tables ?? [])].map((table) => table.name);
-    if (tableNames.length === 0) {
+    if (syncAvailableTableNames.length === 0) {
       setSyncSelectedTables([]);
       return;
     }
 
     setSyncSelectedTables((current) => {
-      const filtered = current.filter((name) => tableNames.includes(name));
+      const filtered = current.filter((name) => syncAvailableTableNames.includes(name));
       if (filtered.length > 0) return filtered;
-      if (selectedTableName && tableNames.includes(selectedTableName)) {
+      if (selectedTableName && syncAvailableTableNames.includes(selectedTableName)) {
         return [selectedTableName];
       }
-      return [tableNames[0]];
+      return [syncAvailableTableNames[0]];
     });
-  }, [schemaSnapshot, selectedTableName]);
+  }, [selectedTableName, syncAvailableTableNames]);
+
+  useEffect(() => {
+    setSyncTableConfigs((current) => {
+      const nextEntries = Object.entries(current).filter(([tableName]) =>
+        syncAvailableTableNames.includes(tableName)
+      );
+      if (nextEntries.length === Object.keys(current).length) {
+        return current;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+  }, [syncAvailableTableNames]);
+
+  useEffect(() => {
+    setDiffPreview(null);
+    setDiffDetail(null);
+    setDiffRows([]);
+    setSelectedDiffRowIndex(0);
+    setApplyPreview(null);
+    setApplyExecute(null);
+  }, [syncSourceConnectionId, syncTargetConnectionId]);
 
   // ──────────────────────────────────────────────
   // アクティブタブ
   // ──────────────────────────────────────────────
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+  const sqlLibraryEntries = useMemo(
+    () => buildSqlLibraryEntries(savedSnippets, recentQueries, queryHistory),
+    [queryHistory, recentQueries, savedSnippets],
+  );
+  const filteredSqlLibraryEntries = useMemo(
+    () => filterSqlLibraryEntries(sqlLibraryEntries, sqlLibrarySearch),
+    [sqlLibraryEntries, sqlLibrarySearch],
+  );
+  const selectedSqlLibraryEntry = useMemo(
+    () =>
+      filteredSqlLibraryEntries.find((entry) => entry.id === selectedSqlLibraryEntryId) ??
+      filteredSqlLibraryEntries[0] ??
+      null,
+    [filteredSqlLibraryEntries, selectedSqlLibraryEntryId],
+  );
+  const renderedParameterReview = useMemo(() => {
+    if (!pendingParameterReview) {
+      return null;
+    }
+    return renderSqlParameters(
+      pendingParameterReview.sql,
+      parameterValues,
+      pendingParameterReview.cursorOffset,
+    );
+  }, [parameterValues, pendingParameterReview]);
 
   useEffect(() => {
     const loadedSession = loadSessionForConnection(connection.id);
@@ -603,15 +1172,31 @@ export function WorkbenchLayout({
     setTabs(restored.tabs);
     setActiveTabId(restored.activeTabId);
     setRecentQueries(restored.recentQueries);
+    setQueryHistory(restored.queryHistory);
     setSavedSnippets(restored.snippets);
     setSelectedTableName(restored.selectedTableName);
-    setSelectedRecentSql("");
-    setSelectedSnippetId("");
+    setActiveSchema(
+      connection.driver === "postgres"
+        ? (restored.activeSchema ?? connection.defaultSchema?.trim() ?? "public")
+        : "public",
+    );
+    setResultTab(restored.lastResultTab);
+    setRestoredInspectionTarget(restored.inspectionTarget);
+    setSqlLibraryOpen(false);
+    setSqlLibrarySearch("");
+    setSelectedSqlLibraryEntryId("");
+    setPendingParameterReview(null);
+    setParameterValues({});
+    setPendingScriptReview(null);
     setPendingEditCells({});
+    setPendingDeleteRows({});
     setPreparedGridPlan(null);
     setLastGridEditSource(null);
-    setSyncSourceConnectionId(connection.id);
-    setSyncTargetConnectionId(connection.id);
+    setObjectInspection(null);
+    setSchemaDiffTargetConnectionId(restored.schemaDiffTargetConnectionId ?? "");
+    setSyncSourceConnectionId(restored.syncSourceConnectionId ?? connection.id);
+    setSyncTargetConnectionId(restored.syncTargetConnectionId ?? connection.id);
+    setSelectedJobId(restored.selectedJobId);
     setSyncSelectedTables([]);
     setDiffPreview(null);
     setDiffDetail(null);
@@ -622,8 +1207,27 @@ export function WorkbenchLayout({
     setApplyExecute(null);
     setApplyJobDetail(null);
     setApplyProdConfirmation("");
+    setApplyUnsafeDeleteConfirmed(false);
     setSyncIssue(null);
-  }, [connection.id]);
+  }, [connection.defaultSchema, connection.driver, connection.id]);
+
+  useEffect(() => {
+    if (!sqlLibraryOpen) return;
+
+    if (filteredSqlLibraryEntries.length === 0) {
+      if (selectedSqlLibraryEntryId) {
+        setSelectedSqlLibraryEntryId("");
+      }
+      return;
+    }
+
+    const hasSelection = filteredSqlLibraryEntries.some(
+      (entry) => entry.id === selectedSqlLibraryEntryId,
+    );
+    if (!hasSelection) {
+      setSelectedSqlLibraryEntryId(filteredSqlLibraryEntries[0]?.id ?? "");
+    }
+  }, [filteredSqlLibraryEntries, selectedSqlLibraryEntryId, sqlLibraryOpen]);
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -641,10 +1245,42 @@ export function WorkbenchLayout({
       tabs: tabs.map((tab) => ({ ...tab, connectionId: connection.id })),
       activeTabId,
       recentQueries,
+      queryHistory,
       snippets: savedSnippets,
       selectedTableName,
+      activeSchema: connection.driver === "postgres" ? activeSchema : null,
+      lastResultTab: resultTab,
+      inspectionTarget: objectInspection
+        ? {
+            objectKind: objectInspection.objectKind,
+            objectName: objectInspection.objectName,
+            signature: objectInspection.signature ?? null,
+            parentObjectName: objectInspection.parentObjectName ?? null,
+          }
+        : restoredInspectionTarget,
+      schemaDiffTargetConnectionId,
+      syncSourceConnectionId,
+      syncTargetConnectionId,
+      selectedJobId,
     });
-  }, [activeTabId, connection.id, recentQueries, savedSnippets, selectedTableName, tabs]);
+  }, [
+    activeSchema,
+    activeTabId,
+    connection.driver,
+    connection.id,
+    queryHistory,
+    objectInspection,
+    recentQueries,
+    resultTab,
+    restoredInspectionTarget,
+    savedSnippets,
+    schemaDiffTargetConnectionId,
+    selectedJobId,
+    selectedTableName,
+    syncSourceConnectionId,
+    syncTargetConnectionId,
+    tabs,
+  ]);
 
   // ──────────────────────────────────────────────
   // タブ操作ハンドラー
@@ -739,6 +1375,33 @@ export function WorkbenchLayout({
     [activeTabId],
   );
 
+  const openSqlInNewTab = useCallback(
+    (sql: string, label: string) => {
+      const trimmedSql = sql.trim();
+      if (!trimmedSql) return;
+
+      setTabs((prev) => {
+        const nextIndex = prev.length + 1;
+        const normalizedLabel = label.trim();
+        const newTab: QueryTab = {
+          id: crypto.randomUUID(),
+          label: normalizedLabel || `Query ${nextIndex}`,
+          sql: trimmedSql,
+          connectionId: connection.id,
+        };
+        setActiveTabId(newTab.id);
+        return [...prev, newTab];
+      });
+    },
+    [connection.id],
+  );
+
+  const handleOpenSqlLibrary = useCallback(() => {
+    setSqlLibrarySearch("");
+    setSelectedSqlLibraryEntryId(sqlLibraryEntries[0]?.id ?? "");
+    setSqlLibraryOpen(true);
+  }, [sqlLibraryEntries]);
+
   const handleSaveSnippet = useCallback(() => {
     const sqlToSave = activeTab?.sql ?? "";
     if (!sqlToSave.trim()) {
@@ -751,10 +1414,29 @@ export function WorkbenchLayout({
     }
 
     const defaultName = activeTab?.label?.trim() || "Snippet";
-    const promptValue = window.prompt("Save snippet", defaultName);
-    if (promptValue === null) return;
+    setPendingSnippetName(defaultName);
+    setSaveSnippetDialogOpen(true);
+  }, [activeTab?.label, activeTab?.sql, hostApi.notifications]);
 
-    const snippetName = promptValue.trim();
+  const handleCancelSaveSnippet = useCallback(() => {
+    setSaveSnippetDialogOpen(false);
+    setPendingSnippetName("");
+  }, []);
+
+  const handleConfirmSaveSnippet = useCallback(() => {
+    const sqlToSave = activeTab?.sql ?? "";
+    const snippetName = pendingSnippetName.trim();
+    if (!sqlToSave.trim()) {
+      hostApi.notifications.show({
+        title: "Nothing to save",
+        description: "Write SQL in the active tab before saving a snippet.",
+        variant: "default",
+      });
+      setSaveSnippetDialogOpen(false);
+      setPendingSnippetName("");
+      return;
+    }
+
     if (!snippetName) {
       hostApi.notifications.show({
         title: "Snippet name required",
@@ -766,35 +1448,45 @@ export function WorkbenchLayout({
 
     const updatedSession = saveSnippet(connection.id, snippetName, sqlToSave);
     setSavedSnippets(updatedSession.snippets);
-    setSelectedSnippetId("");
+    setSaveSnippetDialogOpen(false);
+    setPendingSnippetName("");
     hostApi.notifications.show({
       title: "Snippet saved",
       description: `${snippetName} is available for this connection.`,
       variant: "success",
     });
-  }, [activeTab?.label, activeTab?.sql, connection.id, hostApi.notifications]);
+  }, [activeTab?.sql, connection.id, hostApi.notifications, pendingSnippetName]);
 
-  const handleInsertSnippet = useCallback(
-    (snippetId: string) => {
-      const snippet = savedSnippets.find((item) => item.id === snippetId);
-      if (!snippet) return;
-      insertSqlIntoActiveTab(snippet.sql);
-      setSelectedSnippetId("");
-    },
-    [insertSqlIntoActiveTab, savedSnippets],
-  );
+  const handleReplaceSqlFromLibrary = useCallback(() => {
+    if (!selectedSqlLibraryEntry) return;
+    insertSqlIntoActiveTab(selectedSqlLibraryEntry.sql);
+    setSqlLibraryOpen(false);
+  }, [insertSqlIntoActiveTab, selectedSqlLibraryEntry]);
 
-  const handleInsertRecentSql = useCallback(
-    (indexValue: string) => {
-      const index = Number(indexValue);
-      if (!Number.isInteger(index) || index < 0 || index >= recentQueries.length) return;
-      const sql = recentQueries[index];
-      if (!sql) return;
-      insertSqlIntoActiveTab(sql);
-      setSelectedRecentSql("");
-    },
-    [insertSqlIntoActiveTab, recentQueries],
-  );
+  const handleOpenSqlFromLibraryInNewTab = useCallback(() => {
+    if (!selectedSqlLibraryEntry) return;
+    const tabLabel =
+      selectedSqlLibraryEntry.kind === "snippet"
+        ? selectedSqlLibraryEntry.title
+        : selectedSqlLibraryEntry.summary;
+    openSqlInNewTab(selectedSqlLibraryEntry.sql, tabLabel);
+    setSqlLibraryOpen(false);
+  }, [openSqlInNewTab, selectedSqlLibraryEntry]);
+
+  const handleDeleteSnippetFromLibrary = useCallback(() => {
+    if (!selectedSqlLibraryEntry || selectedSqlLibraryEntry.kind !== "snippet") return;
+
+    const nextSession = deleteSnippet(
+      connection.id,
+      selectedSqlLibraryEntry.snippetId ?? "",
+    );
+    setSavedSnippets(nextSession.snippets);
+    hostApi.notifications.show({
+      title: "Snippet deleted",
+      description: `${selectedSqlLibraryEntry.title} was removed from this connection library.`,
+      variant: "success",
+    });
+  }, [connection.id, hostApi.notifications, selectedSqlLibraryEntry]);
 
   const deriveBatchEditMetadata = useCallback(
     (
@@ -1044,6 +1736,9 @@ export function WorkbenchLayout({
         const metadata = deriveBatchEditMetadata(batch, source);
         return {
           ...batch,
+          loadedRowOffset: getLoadedRowOffset(batch),
+          loadedRowCount: getLoadedRowCount(batch),
+          rowWindowTruncated: batch.rowWindowTruncated === true ? true : undefined,
           columns: metadata.columns,
           editEligibility: metadata.eligibility,
           editSource: metadata.normalizedSource,
@@ -1071,8 +1766,11 @@ export function WorkbenchLayout({
       sql: string,
       confirmed: boolean,
       source: DbGridEditSource | null,
-    ) => {
+      mode: QueryRunMode,
+      cursorOffset?: number,
+    ): Promise<QueryExecutionResponse | null> => {
       const requestId = crypto.randomUUID();
+      activeQueryRequestIdRef.current = requestId;
       setCurrentRequestId(requestId);
       setIsExecuting(true);
       setResults(null);
@@ -1083,20 +1781,33 @@ export function WorkbenchLayout({
           connectionId: connection.id,
           sql,
           requestId,
+          cursorOffset,
           schema: runtimeSchema,
           continueOnError: !stopOnError,
           // confirmed=true は Rust 層への危険 SQL バイパスシグナル（SAFE-01）
           confirmed: confirmed ? true : undefined,
         });
+        if (activeQueryRequestIdRef.current !== requestId) {
+          return null;
+        }
         setResults(decorateResultsForEdit(response, source));
         setLastGridEditSource(source);
         setPendingEditCells({});
+        setPendingDeleteRows({});
         setPreparedGridPlan(null);
         setActiveBatchIndex(0);
         setResultTab("results");
-        const updatedSession = appendRecentQuery(connection.id, sql);
+        const updatedSession = recordQueryRun(
+          connection.id,
+          buildQueryRunEntryFromResponse(sql, mode, response),
+        );
         setRecentQueries(updatedSession.recentQueries);
+        setQueryHistory(updatedSession.queryHistory);
+        return response;
       } catch (error) {
+        if (activeQueryRequestIdRef.current !== requestId) {
+          return null;
+        }
         const message = formatWorkbenchError(
           error,
           "Unable to execute query on the current connection.",
@@ -1108,9 +1819,25 @@ export function WorkbenchLayout({
           description: message,
           variant: "destructive",
         });
+        if (!isCancelledQueryMessage(message)) {
+          const updatedSession = recordQueryRun(connection.id, {
+            sql,
+            mode,
+            status: "failed",
+            statementCount:
+              mode === "script" ? Math.max(1, splitSqlStatements(sql).length) : 1,
+            errorMessage: message,
+          });
+          setRecentQueries(updatedSession.recentQueries);
+          setQueryHistory(updatedSession.queryHistory);
+        }
+        return null;
       } finally {
-        setIsExecuting(false);
-        setCurrentRequestId(null);
+        if (activeQueryRequestIdRef.current === requestId) {
+          activeQueryRequestIdRef.current = null;
+          setIsExecuting(false);
+          setCurrentRequestId(null);
+        }
       }
     },
     [
@@ -1120,10 +1847,92 @@ export function WorkbenchLayout({
       hostApi.notifications,
       setLastGridEditSource,
       setPendingEditCells,
+      setQueryHistory,
       runtimeSchema,
       stopOnError,
     ],
   );
+
+  const previewAndExecuteSql = useCallback(
+    async (
+      sql: string,
+      source: DbGridEditSource | null = null,
+      mode: QueryRunMode = "statement",
+      cursorOffset?: number,
+    ) => {
+      if (!sql.trim() || isExecuting || isExporting) return;
+
+      setPendingSql(sql);
+      setPendingCursorOffset(cursorOffset);
+      setPendingQuerySource(source);
+      setPendingQueryMode(mode);
+      setQueryError(null);
+
+      try {
+        const preview = await hostApi.connections.previewDangerousSql(
+          connection.id,
+          sql,
+          cursorOffset,
+        );
+
+        if (preview.dangers.length > 0) {
+          setDangerPreview(preview);
+          setShowDangerDialog(true);
+        } else {
+          await executeImmediate(sql, false, source, mode, cursorOffset);
+          setPendingSql(null);
+          setPendingCursorOffset(undefined);
+          setPendingQuerySource(null);
+          setPendingQueryMode("statement");
+        }
+      } catch {
+        await executeImmediate(sql, false, source, mode, cursorOffset);
+        setPendingSql(null);
+        setPendingCursorOffset(undefined);
+        setPendingQuerySource(null);
+        setPendingQueryMode("statement");
+      }
+    },
+    [
+      connection.id,
+      executeImmediate,
+      hostApi.connections,
+      isExecuting,
+      isExporting,
+      setPendingQueryMode,
+    ],
+  );
+
+  const handleParameterValueChange = useCallback((name: string, rawValue: string) => {
+    setParameterValues((prev) => ({
+      ...prev,
+      [name]: { rawValue },
+    }));
+  }, []);
+
+  const handleCancelParameterReview = useCallback(() => {
+    setPendingParameterReview(null);
+    setParameterValues({});
+  }, []);
+
+  const handleConfirmParameterReview = useCallback(async () => {
+    if (!pendingParameterReview) return;
+
+    const rendered = renderSqlParameters(
+      pendingParameterReview.sql,
+      parameterValues,
+      pendingParameterReview.cursorOffset,
+    );
+
+    setPendingParameterReview(null);
+    setParameterValues({});
+    await previewAndExecuteSql(
+      rendered.sql,
+      pendingParameterReview.source,
+      pendingParameterReview.mode,
+      rendered.cursorOffset,
+    );
+  }, [parameterValues, pendingParameterReview, previewAndExecuteSql]);
 
   /**
    * 実行前に危険 SQL チェックを行う。
@@ -1131,39 +1940,37 @@ export function WorkbenchLayout({
    * 危険がない場合は即座に実行する。
    */
   const handleExecute = useCallback(
-    async (sql: string, source: DbGridEditSource | null = null) => {
+    async (
+      sql: string,
+      source: DbGridEditSource | null = null,
+      mode: QueryRunMode = "statement",
+      cursorOffset?: number,
+    ) => {
       if (!sql.trim() || isExecuting || isExporting) return;
 
-      setPendingSql(sql);
-      setPendingQuerySource(source);
-      setQueryError(null);
-
-      try {
-        const preview = await hostApi.connections.previewDangerousSql(
-          connection.id,
+      const parameters = detectSqlParameters(sql);
+      if (parameters.length > 0) {
+        setPendingParameterReview({
           sql,
+          source,
+          cursorOffset,
+          parameters,
+          mode,
+        });
+        setParameterValues(
+          Object.fromEntries(
+            parameters.map((parameter) => [
+              parameter.name,
+              { rawValue: "" satisfies SqlParameterInputValue["rawValue"] },
+            ]),
+          ),
         );
-
-        if (preview.dangers.length > 0) {
-          // 危険 SQL: ダイアログを表示して確認を待つ
-          setDangerPreview(preview);
-          setShowDangerDialog(true);
-        } else {
-          // 安全な SQL: 即座に実行（confirmed 不要）
-          await executeImmediate(sql, false, source);
-        }
-      } catch {
-        // previewDangerousSql のエラーは無視して実行を試みる
-        await executeImmediate(sql, false, source);
+        return;
       }
+
+      await previewAndExecuteSql(sql, source, mode, cursorOffset);
     },
-    [
-      connection.id,
-      hostApi.connections,
-      isExecuting,
-      isExporting,
-      executeImmediate,
-    ],
+    [isExecuting, isExporting, previewAndExecuteSql],
   );
 
   /**
@@ -1175,19 +1982,46 @@ export function WorkbenchLayout({
     setDangerPreview(null);
 
     if (pendingSql) {
-      await executeImmediate(pendingSql, true, pendingQuerySource);
+      await executeImmediate(
+        pendingSql,
+        true,
+        pendingQuerySource,
+        pendingQueryMode,
+        pendingCursorOffset,
+      );
       setPendingSql(null);
+      setPendingCursorOffset(undefined);
       setPendingQuerySource(null);
+      setPendingQueryMode("statement");
     }
-  }, [pendingQuerySource, pendingSql, executeImmediate]);
+  }, [
+    pendingCursorOffset,
+    pendingQueryMode,
+    pendingQuerySource,
+    pendingSql,
+    executeImmediate,
+  ]);
 
   /** ダイアログキャンセル */
   const handleDangerCancel = useCallback(() => {
     setShowDangerDialog(false);
     setDangerPreview(null);
     setPendingSql(null);
+    setPendingCursorOffset(undefined);
     setPendingQuerySource(null);
+    setPendingQueryMode("statement");
   }, []);
+
+  const handleCancelScriptReview = useCallback(() => {
+    setPendingScriptReview(null);
+  }, []);
+
+  const handleConfirmScriptReview = useCallback(async () => {
+    if (!pendingScriptReview) return;
+    const sql = pendingScriptReview.sql;
+    setPendingScriptReview(null);
+    await handleExecute(sql, null, "script", undefined);
+  }, [handleExecute, pendingScriptReview]);
 
   // ──────────────────────────────────────────────
   // エディターショートカットハンドラー
@@ -1200,8 +2034,7 @@ export function WorkbenchLayout({
   const handleExecuteSelection = useCallback(
     async (sql: string, cursorOffset?: number) => {
       if (!sql.trim() || isExecuting) return;
-      void cursorOffset; // バックエンドが cursorOffset でターゲットを解決する
-      await handleExecute(sql);
+      await handleExecute(sql, null, "statement", cursorOffset);
     },
     [isExecuting, handleExecute],
   );
@@ -1212,7 +2045,15 @@ export function WorkbenchLayout({
   const handleExecuteScript = useCallback(
     async (sql: string) => {
       if (!sql.trim() || isExecuting) return;
-      await handleExecute(sql);
+      const statements = splitSqlStatements(sql);
+      if (statements.length > 1) {
+        setPendingScriptReview({
+          sql,
+          statements,
+        });
+        return;
+      }
+      await handleExecute(sql, null, "script", undefined);
     },
     [isExecuting, handleExecute],
   );
@@ -1264,20 +2105,26 @@ export function WorkbenchLayout({
 
   /** クエリ/エクスポートキャンセル */
   const handleCancel = useCallback(async () => {
-    const requestId = currentRequestId ?? currentExportRequestId;
+    const queryRequestId = currentRequestId;
+    const exportRequestId = currentExportRequestId;
+    const requestId = queryRequestId ?? exportRequestId;
     if (!requestId) return;
+
+    if (requestId === queryRequestId) {
+      activeQueryRequestIdRef.current = null;
+      setIsExecuting(false);
+      setCurrentRequestId(null);
+    }
+    if (requestId === exportRequestId) {
+      activeExportRequestIdRef.current = null;
+      setIsExporting(false);
+      setCurrentExportRequestId(null);
+    }
 
     try {
       await hostApi.connections.cancelQuery(requestId);
-    } finally {
-      if (requestId === currentRequestId) {
-        setIsExecuting(false);
-        setCurrentRequestId(null);
-      }
-      if (requestId === currentExportRequestId) {
-        setIsExporting(false);
-        setCurrentExportRequestId(null);
-      }
+    } catch {
+      // Ignore cancellation transport failures after the UI has already moved on.
     }
   }, [currentExportRequestId, currentRequestId, hostApi.connections]);
 
@@ -1317,6 +2164,7 @@ export function WorkbenchLayout({
         setActiveBatchIndex(0);
         setResultTab("results");
         setPendingEditCells({});
+        setPendingDeleteRows({});
         setPreparedGridPlan(null);
         setLastGridEditSource(null);
       } catch (error) {
@@ -1431,6 +2279,118 @@ export function WorkbenchLayout({
     [handleRunStarterQuery],
   );
 
+  const handleInspectObject = useCallback(
+    async (
+      objectKind: DbObjectKind,
+      objectName: string,
+      options?: {
+        signature?: string | null;
+        parentObjectName?: string | null;
+      },
+    ): Promise<DbObjectInspectionResponse | null> => {
+      setResultTab("inspect");
+      setIsInspectingObject(true);
+      setInspectError(null);
+
+      try {
+        const inspection = await hostApi.connections.inspectObject({
+          connectionId: connection.id,
+          schema: runtimeSchema,
+          objectKind,
+          objectName,
+          signature: options?.signature ?? undefined,
+          parentObjectName: options?.parentObjectName ?? undefined,
+        });
+
+        setObjectInspection(inspection);
+        if (objectKind === "table") {
+          setSelectedTableName(objectName);
+        }
+        return inspection;
+      } catch (error) {
+        const message = formatWorkbenchError(
+          error,
+          "Failed to inspect database object.",
+        );
+        setObjectInspection(null);
+        setInspectError(message);
+        hostApi.notifications.show({
+          title: "Object inspection failed",
+          description: message,
+          variant: "destructive",
+        });
+        return null;
+      } finally {
+        setIsInspectingObject(false);
+      }
+    },
+    [
+      connection.id,
+      hostApi.connections,
+      hostApi.notifications,
+      runtimeSchema,
+    ],
+  );
+
+  useEffect(() => {
+    if (!restoredInspectionTarget) {
+      return;
+    }
+
+    void handleInspectObject(
+      restoredInspectionTarget.objectKind,
+      restoredInspectionTarget.objectName,
+      {
+        signature: restoredInspectionTarget.signature,
+        parentObjectName: restoredInspectionTarget.parentObjectName,
+      },
+    );
+    setRestoredInspectionTarget(null);
+  }, [handleInspectObject, restoredInspectionTarget]);
+
+  const handlePreviewSchemaDiff = useCallback(async () => {
+    if (!schemaDiffTargetConnectionId) {
+      setSchemaDiffIssue("Select a target connection before compare.");
+      return;
+    }
+
+    setIsSchemaDiffing(true);
+    setSchemaDiffIssue(null);
+    setSchemaDiffSourceSnapshot(null);
+    setSchemaDiffTargetSnapshot(null);
+    setSchemaDiffResult(null);
+    setResultTab("schema-diff");
+
+    try {
+      const [sourceSnapshot, targetSnapshot, result] = await Promise.all([
+        hostApi.connections.introspect(connection.id),
+        hostApi.connections.introspect(schemaDiffTargetConnectionId),
+        hostApi.connections.diff(connection.id, schemaDiffTargetConnectionId),
+      ]);
+      setSchemaDiffSourceSnapshot(sourceSnapshot);
+      setSchemaDiffTargetSnapshot(targetSnapshot);
+      setSchemaDiffResult(result);
+    } catch (error) {
+      const message = formatWorkbenchError(
+        error,
+        "Failed to compare schema between active and target connections.",
+      );
+      setSchemaDiffIssue(message);
+      hostApi.notifications.show({
+        title: "Schema compare failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSchemaDiffing(false);
+    }
+  }, [
+    connection.id,
+    hostApi.connections,
+    hostApi.notifications,
+    schemaDiffTargetConnectionId,
+  ]);
+
   const buildDataApplySelections = useCallback((): DbDataApplySelection[] => {
     return diffRows
       .filter((row) => row.suggestedAction && row.suggestedAction !== "ignore")
@@ -1472,7 +2432,35 @@ export function WorkbenchLayout({
     [diffPreview?.compareId, hostApi.connections, syncIncludeUnchanged],
   );
 
+  const handleSyncTableConfigChange = useCallback(
+    (
+      tableName: string,
+      field: keyof SyncTableConfigDraft,
+      value: string,
+    ) => {
+      setSyncTableConfigs((current) => ({
+        ...current,
+        [tableName]: {
+          keyColumnsText: current[tableName]?.keyColumnsText ?? "",
+          compareColumnsText: current[tableName]?.compareColumnsText ?? "",
+          whereClause: current[tableName]?.whereClause ?? "",
+          [field]: value,
+        },
+      }));
+    },
+    [],
+  );
+
   const handlePreviewDataDiff = useCallback(async () => {
+    if (isSyncSchemaLoading) {
+      setSyncIssue("Wait for source/target schema metadata to finish loading before compare.");
+      return;
+    }
+    if (syncSchemaIssueMessage) {
+      setSyncIssue(syncSchemaIssueMessage);
+      return;
+    }
+
     const tables = syncSelectedTables.length > 0
       ? syncSelectedTables
       : selectedTableName
@@ -1491,16 +2479,26 @@ export function WorkbenchLayout({
     setSelectedDiffRowIndex(0);
     setApplyPreview(null);
     setApplyExecute(null);
-    setApplyJobDetail(null);
     try {
       const preview = await hostApi.connections.previewDataDiff({
         sourceConnectionId: syncSourceConnectionId,
         targetConnectionId: syncTargetConnectionId,
-        tables: tables.map((tableName) => ({
-          tableName,
-          keyColumns: [],
-          compareColumns: [],
-        })),
+        tables: tables.map((tableName) => {
+          const config = syncTableConfigs[tableName];
+          const keyColumns = normalizeIdentifierList(config?.keyColumnsText ?? "");
+          const compareColumns = normalizeIdentifierList(
+            config?.compareColumnsText ?? "",
+          );
+          const whereClause = config?.whereClause.trim();
+
+          return {
+            tableName,
+            keyColumns: keyColumns.length > 0 ? keyColumns : undefined,
+            compareColumns:
+              compareColumns.length > 0 ? compareColumns : undefined,
+            whereClause: whereClause ? whereClause : undefined,
+          };
+        }),
       });
       setDiffPreview(preview);
       const firstTable = preview.tableSummaries[0]?.tableName;
@@ -1521,7 +2519,10 @@ export function WorkbenchLayout({
     handleLoadDataDiffDetail,
     hostApi.connections,
     selectedTableName,
+    isSyncSchemaLoading,
+    syncSchemaIssueMessage,
     syncSelectedTables,
+    syncTableConfigs,
     syncSourceConnectionId,
     syncTargetConnectionId,
     syncIncludeUnchanged,
@@ -1540,6 +2541,7 @@ export function WorkbenchLayout({
     }
     setIsApplyPreviewing(true);
     setSyncIssue(null);
+    setApplyUnsafeDeleteConfirmed(false);
     setResultTab("sync");
     try {
       const preview = await hostApi.connections.previewDataApply({
@@ -1549,7 +2551,7 @@ export function WorkbenchLayout({
         targetSnapshotHash: diffPreview.targetSnapshotHash,
         currentTargetSnapshotHash: diffDetail?.currentTargetSnapshotHash,
         selections,
-        deleteWarningThreshold: 500,
+        deleteWarningThreshold: DATA_SYNC_DELETE_WARNING_THRESHOLD,
       });
       setApplyPreview(preview);
     } catch (error) {
@@ -1575,49 +2577,190 @@ export function WorkbenchLayout({
     async (jobId: string) => {
       const detail = await hostApi.connections.fetchDataApplyJobDetail({ jobId });
       setApplyJobDetail(detail);
+      setSelectedJobId(detail.jobId);
+      setBackgroundJobs((current) => mergeBackgroundJobs(current, [toBackgroundJobSummary(detail)]));
+      setApplyExecute((current) =>
+        current && current.jobId === detail.jobId
+          ? {
+              ...current,
+              currentTargetSnapshotHash:
+                detail.currentTargetSnapshotHash ?? current.currentTargetSnapshotHash,
+              status: detail.status,
+              statusCounts: detail.statusCounts,
+              tableResults: detail.tableResults,
+              blockers: detail.blockers,
+            }
+          : current,
+      );
       return detail;
     },
     [hostApi.connections],
   );
 
+  const refreshBackgroundJobs = useCallback(
+    async (preserveIssue = false) => {
+      setIsRefreshingJobs(true);
+      if (!preserveIssue) {
+        setJobCenterIssue(null);
+      }
+      try {
+        const response = await hostApi.connections.listBackgroundJobs({ limit: 30 });
+        let mergedJobs: DbBackgroundJobSummary[] = [];
+        setBackgroundJobs((current) => {
+          mergedJobs = mergeBackgroundJobs(current, response.jobs);
+          return mergedJobs;
+        });
+        setSelectedJobId((current) =>
+          current && mergedJobs.some((job) => job.jobId === current)
+            ? current
+            : mergedJobs[0]?.jobId ?? null,
+        );
+      } catch (error) {
+        setJobCenterIssue(
+          formatWorkbenchError(error, "Failed to refresh recent background jobs."),
+        );
+      } finally {
+        setIsRefreshingJobs(false);
+      }
+    },
+    [hostApi.connections],
+  );
+
+  useEffect(() => {
+    void refreshBackgroundJobs();
+  }, [connection.id, refreshBackgroundJobs]);
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      return;
+    }
+    if (applyJobDetail?.jobId === selectedJobId) {
+      return;
+    }
+    void handleLoadDataApplyJobDetail(selectedJobId).catch((error) => {
+      setJobCenterIssue(
+        formatWorkbenchError(error, "Failed to load selected background job detail."),
+      );
+    });
+  }, [applyJobDetail?.jobId, handleLoadDataApplyJobDetail, selectedJobId]);
+
+  const selectedBackgroundJob =
+    backgroundJobs.find((job) => job.jobId === selectedJobId) ?? null;
+  const activeBackgroundJob =
+    backgroundJobs.find((job) => isBackgroundJobActive(job.status)) ?? null;
+  const activeApplyJobId =
+    applyExecute?.jobId ?? activeBackgroundJob?.jobId ?? applyJobDetail?.jobId ?? null;
+  const activeApplyJobStatus =
+    (applyJobDetail && applyJobDetail.jobId === activeApplyJobId
+      ? applyJobDetail.status
+      : null) ??
+    (applyExecute && applyExecute.jobId === activeApplyJobId ? applyExecute.status : null) ??
+    activeBackgroundJob?.status ??
+    null;
+
+  const handleOpenJobCenterForJob = useCallback(
+    async (jobId: string) => {
+      setSelectedJobId(jobId);
+      setResultTab("jobs");
+      setJobCenterIssue(null);
+      try {
+        await handleLoadDataApplyJobDetail(jobId);
+      } catch (error) {
+        setJobCenterIssue(
+          formatWorkbenchError(error, "Failed to open background job detail."),
+        );
+      }
+    },
+    [handleLoadDataApplyJobDetail],
+  );
+
+  const handleReopenSyncContext = useCallback(
+    async (jobId: string) => {
+      try {
+        const detail =
+          applyJobDetail?.jobId === jobId
+            ? applyJobDetail
+            : await handleLoadDataApplyJobDetail(jobId);
+        setSyncSourceConnectionId(detail.sourceConnectionId);
+        setSyncTargetConnectionId(detail.targetConnectionId);
+        setSelectedJobId(jobId);
+        setResultTab("sync");
+      } catch (error) {
+        setSyncIssue(
+          formatWorkbenchError(error, "Failed to restore sync context from job history."),
+        );
+      }
+    },
+    [applyJobDetail, handleLoadDataApplyJobDetail],
+  );
+
   const handleExecuteDataApply = useCallback(async () => {
     if (!diffPreview || !applyPreview) {
-      setSyncIssue("Run apply preview before execute.");
-      return;
-    }
-    if (hasBlockingDataSyncBlocker(applyPreview.blockers)) {
-      const codes = applyPreview.blockers.map((blocker) => blocker.code).join(", ");
-      setSyncIssue(
-        `Execution blocked by sync guards: ${codes}. Re-run compare when target_snapshot_changed or artifact_expired is present.`,
-      );
-      return;
-    }
-    if (!applyPreview.executable) {
-      setSyncIssue("Apply preview is not executable yet. Resolve warnings before execute.");
+      setSyncIssue("Run compare preview and apply preview before execute.");
       return;
     }
 
-    const targetConnection = connections.find((item) => item.id === syncTargetConnectionId);
-    const requiresProdConfirmation = targetConnection?.environment === "prod";
-    if (requiresProdConfirmation && applyProdConfirmation !== targetConnection.database) {
-      setSyncIssue("Execution requires typed confirmation for prod target database.");
+    const selections = buildDataApplySelections();
+    if (selections.length === 0) {
+      setSyncIssue("No row actions are selected for apply execution.");
       return;
     }
 
-    setIsApplyExecuting(true);
+    setIsExecutingApply(true);
     setSyncIssue(null);
-    setResultTab("sync");
     try {
-      const executeResult = await hostApi.connections.executeDataApply({
+      const result = await hostApi.connections.executeDataApply({
         compareId: diffPreview.compareId,
         sourceConnectionId: syncSourceConnectionId,
         targetConnectionId: syncTargetConnectionId,
-        targetSnapshotHash: applyPreview.targetSnapshotHash,
+        targetSnapshotHash: diffPreview.targetSnapshotHash,
         currentTargetSnapshotHash: applyPreview.currentTargetSnapshotHash,
-        selections: buildDataApplySelections(),
+        selections,
+        deleteWarningThreshold: DATA_SYNC_DELETE_WARNING_THRESHOLD,
+        confirmUnsafeDelete: applyUnsafeDeleteConfirmed,
+        targetDatabaseConfirmation: applyProdConfirmation.trim() || undefined,
       });
-      setApplyExecute(executeResult);
-      await handleLoadDataApplyJobDetail(executeResult.jobId);
+      setApplyExecute(result);
+      setSelectedJobId(result.jobId);
+      const detail = await handleLoadDataApplyJobDetail(result.jobId);
+      await refreshBackgroundJobs(true);
+      hostApi.notifications.show({
+        title:
+          result.status === "running"
+            ? "Data Sync apply started"
+            : result.status === "completed"
+              ? "Data Sync apply completed"
+              : result.status === "partial"
+                ? "Data Sync apply finished with partial failures"
+              : "Data Sync apply finished with failure",
+        description:
+          result.status === "running"
+            ? "The apply job is running in the background. Job detail will refresh automatically."
+            : result.status === "completed"
+              ? `${result.statusCounts.insert + result.statusCounts.update + result.statusCounts.delete} row actions executed. Re-run compare to refresh deltas.`
+              : result.status === "partial"
+                ? "The apply job completed with some failed row actions. Open Job Center for the persisted audit trail."
+              : "The apply transaction did not fully commit. Review job detail for failure context.",
+        variant:
+          result.status === "running"
+            ? "default"
+            : result.status === "completed"
+              ? "success"
+              : "destructive",
+      });
+      if (detail.status !== result.status) {
+        setApplyExecute((current) =>
+          current && current.jobId === detail.jobId
+            ? {
+                ...current,
+                status: detail.status,
+                statusCounts: detail.statusCounts,
+                tableResults: detail.tableResults,
+                blockers: detail.blockers,
+              }
+            : current,
+        );
+      }
     } catch (error) {
       setSyncIssue(
         formatWorkbenchError(
@@ -1626,18 +2769,95 @@ export function WorkbenchLayout({
         ),
       );
     } finally {
-      setIsApplyExecuting(false);
+      setIsExecutingApply(false);
     }
   }, [
     applyPreview,
     applyProdConfirmation,
+    applyUnsafeDeleteConfirmed,
     buildDataApplySelections,
-    connections,
     diffPreview,
     handleLoadDataApplyJobDetail,
     hostApi.connections,
+    hostApi.notifications,
+    refreshBackgroundJobs,
     syncSourceConnectionId,
     syncTargetConnectionId,
+  ]);
+
+  useEffect(() => {
+    if (!activeApplyJobId || !isBackgroundJobActive(activeApplyJobStatus)) {
+      return;
+    }
+
+    let cancelled = false;
+    let timerId: number | null = null;
+
+    const poll = async () => {
+      try {
+        const detail = await hostApi.connections.fetchDataApplyJobDetail({ jobId: activeApplyJobId });
+        if (cancelled) return;
+
+        setApplyJobDetail(detail);
+        setBackgroundJobs((current) => mergeBackgroundJobs(current, [toBackgroundJobSummary(detail)]));
+        setApplyExecute((current) =>
+          current && current.jobId === detail.jobId
+            ? {
+                ...current,
+                currentTargetSnapshotHash:
+                  detail.currentTargetSnapshotHash ?? current.currentTargetSnapshotHash,
+                status: detail.status,
+                statusCounts: detail.statusCounts,
+                tableResults: detail.tableResults,
+              blockers: detail.blockers,
+              }
+            : current,
+        );
+
+        await refreshBackgroundJobs(true);
+
+        if (isBackgroundJobActive(detail.status)) {
+          timerId = window.setTimeout(poll, 1500);
+          return;
+        }
+
+        hostApi.notifications.show({
+          title:
+            detail.status === "completed"
+              ? "Data Sync apply completed"
+              : detail.status === "partial"
+                ? "Data Sync apply finished with partial failures"
+              : "Data Sync apply finished with failure",
+          description:
+            detail.status === "completed"
+              ? `${detail.statusCounts.insert + detail.statusCounts.update + detail.statusCounts.delete} row actions executed. Re-run compare to refresh deltas.`
+              : detail.status === "partial"
+                ? "The apply job completed with partial failures. Open Job Center for the persisted audit trail."
+              : "The apply transaction did not fully commit. Review job detail for failure context.",
+          variant: detail.status === "completed" ? "success" : "destructive",
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setSyncIssue(
+          formatWorkbenchError(error, "Failed to refresh apply job detail."),
+        );
+        timerId = window.setTimeout(poll, 3000);
+      }
+    };
+
+    timerId = window.setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [
+    activeApplyJobId,
+    activeApplyJobStatus,
+    hostApi.connections,
+    hostApi.notifications,
+    refreshBackgroundJobs,
   ]);
 
   const handleToggleSyncTable = useCallback((tableName: string) => {
@@ -1659,7 +2879,6 @@ export function WorkbenchLayout({
       );
       setApplyPreview(null);
       setApplyExecute(null);
-      setApplyJobDetail(null);
     },
     [],
   );
@@ -1676,13 +2895,24 @@ export function WorkbenchLayout({
 
   const handleEditCell = useCallback((patch: DbGridEditPatchCell) => {
     const patchKey = `${patch.rowPkTuple}::${patch.columnName}`;
+    setPendingDeleteRows((previous) => {
+      if (!previous[patch.rowPkTuple]) return previous;
+      const next = { ...previous };
+      delete next[patch.rowPkTuple];
+      return next;
+    });
     setPendingEditCells((previous) => {
       const next = { ...previous };
-      if (isCellValueEqual(patch.beforeValue, patch.nextValue)) {
+      const existingPatch = previous[patchKey];
+      const beforeValue = existingPatch?.beforeValue ?? patch.beforeValue;
+      if (isCellValueEqual(beforeValue, patch.nextValue)) {
         delete next[patchKey];
         return next;
       }
-      next[patchKey] = patch;
+      next[patchKey] = {
+        ...patch,
+        beforeValue,
+      };
       return next;
     });
     setPreparedGridPlan(null);
@@ -1690,13 +2920,70 @@ export function WorkbenchLayout({
 
   const handleDiscardGridEdits = useCallback(() => {
     setPendingEditCells({});
+    setPendingDeleteRows({});
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleRevertGridCell = useCallback((rowPkTuple: string, columnName: string) => {
+    const patchKey = `${rowPkTuple}::${columnName}`;
+    setPendingEditCells((previous) => {
+      if (!previous[patchKey]) return previous;
+      const next = { ...previous };
+      delete next[patchKey];
+      return next;
+    });
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleRevertGridRow = useCallback((rowPkTuple: string) => {
+    setPendingEditCells((previous) => {
+      const nextEntries = Object.entries(previous).filter(
+        ([key]) => !key.startsWith(`${rowPkTuple}::`),
+      );
+      if (nextEntries.length === Object.keys(previous).length) {
+        return previous;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+    setPendingDeleteRows((previous) => {
+      if (!previous[rowPkTuple]) return previous;
+      const next = { ...previous };
+      delete next[rowPkTuple];
+      return next;
+    });
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleStageDeleteGridRow = useCallback((row: DbGridDeleteRowDraft) => {
+    setPendingEditCells((previous) => {
+      const nextEntries = Object.entries(previous).filter(
+        ([key]) => !key.startsWith(`${row.rowPkTuple}::`),
+      );
+      return nextEntries.length === Object.keys(previous).length
+        ? previous
+        : Object.fromEntries(nextEntries);
+    });
+    setPendingDeleteRows((previous) => ({
+      ...previous,
+      [row.rowPkTuple]: row,
+    }));
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleRevertGridDelete = useCallback((rowPkTuple: string) => {
+    setPendingDeleteRows((previous) => {
+      if (!previous[rowPkTuple]) return previous;
+      const next = { ...previous };
+      delete next[rowPkTuple];
+      return next;
+    });
     setPreparedGridPlan(null);
   }, []);
 
   const handlePrepareGridCommit = useCallback(async () => {
-    if (!results) return;
+    if (!results) return null;
     const activeBatch = results.batches[activeBatchIndex];
-    if (!activeBatch) return;
+    if (!activeBatch) return null;
 
     if (activeBatch.editEligibility?.eligible !== true) {
       const reason =
@@ -1707,7 +2994,7 @@ export function WorkbenchLayout({
         description: reason,
         variant: "destructive",
       });
-      return;
+      return null;
     }
 
     const source = activeBatch.editSource ?? lastGridEditSource;
@@ -1718,7 +3005,7 @@ export function WorkbenchLayout({
         description: "Editable source table context is missing.",
         variant: "destructive",
       });
-      return;
+      return null;
     }
 
     const primaryKeyColumns = activeBatch.primaryKeyColumns ?? [];
@@ -1728,20 +3015,24 @@ export function WorkbenchLayout({
         description: "Primary key columns are missing for this editable batch.",
         variant: "destructive",
       });
-      return;
+      return null;
     }
 
     const patchCells = uniqueBy(
       Object.values(pendingEditCells),
       (patch) => `${patch.rowPkTuple}::${patch.columnName}`,
     );
-    if (patchCells.length === 0) {
+    const deletedRows = uniqueBy(
+      Object.values(pendingDeleteRows),
+      (row) => row.rowPkTuple,
+    );
+    if (patchCells.length === 0 && deletedRows.length === 0) {
       hostApi.notifications.show({
-        title: "No pending edits",
-        description: "Edit at least one non-primary-key cell before preparing commit.",
+        title: "No pending changes",
+        description: "Stage at least one row edit or delete before preparing commit.",
         variant: "default",
       });
-      return;
+      return null;
     }
 
     setIsPreparingGridCommit(true);
@@ -1753,13 +3044,15 @@ export function WorkbenchLayout({
         source,
         primaryKeyColumns,
         patchCells,
+        deletedRows,
       });
       setPreparedGridPlan(prepared);
       hostApi.notifications.show({
         title: "Commit plan prepared",
-        description: `${prepared.affectedRows} rows ready for review.`,
+        description: `${prepared.updatedRows} updates and ${prepared.deletedRows} deletes ready for review.`,
         variant: "success",
       });
+      return prepared;
     } catch (error) {
       hostApi.notifications.show({
         title: "Prepare commit failed",
@@ -1769,6 +3062,7 @@ export function WorkbenchLayout({
         ),
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsPreparingGridCommit(false);
     }
@@ -1778,6 +3072,7 @@ export function WorkbenchLayout({
     hostApi.connections,
     hostApi.notifications,
     lastGridEditSource,
+    pendingDeleteRows,
     pendingEditCells,
     results,
     runtimeSchema,
@@ -1807,6 +3102,7 @@ export function WorkbenchLayout({
       }
 
       setPendingEditCells({});
+      setPendingDeleteRows({});
       setPreparedGridPlan(null);
 
       if (selectedTableName) {
@@ -1815,7 +3111,7 @@ export function WorkbenchLayout({
 
       hostApi.notifications.show({
         title: "Commit applied",
-        description: `${result.committedRows} row updates committed.`,
+        description: `${result.updatedRows} updates and ${result.deletedRows} deletes committed.`,
         variant: "success",
       });
     } catch (error) {
@@ -1836,6 +3132,7 @@ export function WorkbenchLayout({
     hostApi.connections,
     hostApi.notifications,
     isCommittingGridEdit,
+    setPendingDeleteRows,
     preparedGridPlan,
     selectedTableName,
   ]);
@@ -1849,11 +3146,11 @@ export function WorkbenchLayout({
    * 既存バッチに行を追記する。
    */
   const handleLoadMore = useCallback(
-    async (batchIndex: number) => {
-      if (!results) return;
+    async (batchIndex: number): Promise<DbQueryBatchResult | null> => {
+      if (!results) return null;
 
       const batch = results.batches[batchIndex];
-      if (!batch) return;
+      if (!batch) return null;
       if (batch.pagingMode !== "offset" || !batch.hasMore) {
         if (batch.pagingMode === "unsupported") {
           hostApi.notifications.show({
@@ -1863,7 +3160,7 @@ export function WorkbenchLayout({
             variant: "destructive",
           });
         }
-        return;
+        return null;
       }
       if (typeof batch.nextOffset !== "number") {
         hostApi.notifications.show({
@@ -1871,7 +3168,7 @@ export function WorkbenchLayout({
           description: "Next page offset was not provided by the runtime.",
           variant: "destructive",
         });
-        return;
+        return null;
       }
 
       try {
@@ -1885,14 +3182,35 @@ export function WorkbenchLayout({
           limit: 1000,
         });
 
+        let droppedRows = 0;
         setResults((prev) => {
           if (!prev) return prev;
           const updatedBatches = prev.batches.map((b, i) => {
             if (i !== batchIndex) return b;
             const mergedRows = [...b.rows, ...moreBatch.rows];
+            const priorLoadedOffset = getLoadedRowOffset(b);
+            const priorLoadedCount = getLoadedRowCount(b);
+            const protectedRowPkTuples = new Set([
+              ...Object.values(pendingEditCells).map((patch) => patch.rowPkTuple),
+              ...Object.values(pendingDeleteRows).map((row) => row.rowPkTuple),
+            ]);
+            const loadedRowCount =
+              priorLoadedCount +
+              Math.max(moreBatch.rows.length, Math.trunc(moreBatch.returnedRows || 0));
+            const trimmed =
+              b.pagingMode === "offset"
+                ? trimRowsForMemory(b, mergedRows, protectedRowPkTuples)
+                : { rows: mergedRows, droppedRows: 0 };
+            droppedRows = trimmed.droppedRows;
             return {
               ...b,
-              rows: mergedRows,
+              rows: trimmed.rows,
+              loadedRowOffset: priorLoadedOffset + trimmed.droppedRows,
+              loadedRowCount,
+              rowWindowTruncated:
+                b.rowWindowTruncated === true || trimmed.droppedRows > 0
+                  ? true
+                  : undefined,
               totalRows: moreBatch.totalRows ?? b.totalRows,
               returnedRows: moreBatch.returnedRows,
               hasMore: moreBatch.hasMore,
@@ -1905,6 +3223,19 @@ export function WorkbenchLayout({
           });
           return { ...prev, batches: updatedBatches };
         });
+
+        if (
+          droppedRows > 0 &&
+          !trimmedBatchAlertsRef.current.has(batchIndex)
+        ) {
+          trimmedBatchAlertsRef.current.add(batchIndex);
+          hostApi.notifications.show({
+            title: "Result window capped",
+            description: `Older loaded rows were released to keep this result within the ${QUERY_RESULT_WINDOW_LIMIT.toLocaleString()} row memory window.`,
+            variant: "default",
+          });
+        }
+        return moreBatch;
       } catch (error) {
         hostApi.notifications.show({
           title: "Load more failed",
@@ -1914,6 +3245,7 @@ export function WorkbenchLayout({
           ),
           variant: "destructive",
         });
+        return null;
       }
     },
     [
@@ -1921,6 +3253,8 @@ export function WorkbenchLayout({
       hostApi.connections,
       connection.id,
       hostApi.notifications,
+      pendingDeleteRows,
+      pendingEditCells,
       runtimeSchema,
     ],
   );
@@ -1931,10 +3265,10 @@ export function WorkbenchLayout({
 
   const handleExport = useCallback(
     async (scope: ExportScope, format: ExportFormat) => {
-      if (!results || isExecuting || isExporting) return;
+      if (!results || isExecuting || isExporting) return null;
 
       const activeBatch = results.batches[activeBatchIndex];
-      if (!activeBatch) return;
+      if (!activeBatch) return null;
       if (scope === "full_result" && activeBatch.pagingMode !== "offset") {
         hostApi.notifications.show({
           title: "Full result unavailable",
@@ -1942,10 +3276,18 @@ export function WorkbenchLayout({
             "Only single pageable SELECT-style results support full result export.",
           variant: "destructive",
         });
-        return;
+        return null;
+      }
+      if (scope === "loaded_rows" && activeBatch.rowWindowTruncated === true) {
+        hostApi.notifications.show({
+          title: "Loaded rows limited",
+          description: `Loaded-row export includes only the retained ${activeBatch.rows.length.toLocaleString()} row window.`,
+          variant: "default",
+        });
       }
 
       const exportRequestId = crypto.randomUUID();
+      activeExportRequestIdRef.current = exportRequestId;
       setCurrentExportRequestId(exportRequestId);
       setIsExporting(true);
 
@@ -1964,6 +3306,9 @@ export function WorkbenchLayout({
           columns: scope === "full_result" ? undefined : activeBatch.columns,
           maxRows: scope === "full_result" ? 100_000 : undefined,
         });
+        if (activeExportRequestIdRef.current !== exportRequestId) {
+          return null;
+        }
 
         downloadBinaryResult(exportResult);
 
@@ -1987,7 +3332,11 @@ export function WorkbenchLayout({
             variant: "success",
           });
         }
+        return exportResult;
       } catch (error) {
+        if (activeExportRequestIdRef.current !== exportRequestId) {
+          return null;
+        }
         const message = formatWorkbenchError(
           error,
           "Unable to export rows from the current result.",
@@ -1999,9 +3348,13 @@ export function WorkbenchLayout({
           description: message,
           variant: cancelled ? "default" : "destructive",
         });
+        return null;
       } finally {
-        setIsExporting(false);
-        setCurrentExportRequestId(null);
+        if (activeExportRequestIdRef.current === exportRequestId) {
+          activeExportRequestIdRef.current = null;
+          setIsExporting(false);
+          setCurrentExportRequestId(null);
+        }
       }
     },
     [
@@ -2015,6 +3368,297 @@ export function WorkbenchLayout({
       runtimeSchema,
     ],
   );
+
+  useEffect(() => {
+    const liveVerification = releaseVerification.live;
+    if (!releaseVerification.enabled || !liveVerification?.enabled) {
+      return;
+    }
+    if (liveVerification.driver && liveVerification.driver !== connection.driver) {
+      return;
+    }
+    if (liveVerification.connectionId && liveVerification.connectionId !== connection.id) {
+      return;
+    }
+    if (
+      liveVerification.connectionName &&
+      connection.name.trim().toLowerCase() !==
+        liveVerification.connectionName.trim().toLowerCase()
+    ) {
+      return;
+    }
+    if (isSchemaLoading) {
+      return;
+    }
+
+    const runKey = `${connection.id}:${connection.driver}`;
+    if (liveVerificationRunKeyRef.current === runKey) {
+      return;
+    }
+    liveVerificationRunKeyRef.current = runKey;
+
+    let cancelled = false;
+    const connectionLabel = connection.name || connection.database;
+    const flowMetadata = {
+      driver: connection.driver,
+      connectionId: connection.id,
+      connectionName: connectionLabel,
+    } as const;
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const emitFlow = async (
+      flowId: string,
+      status: "passed" | "failed" | "warning" | "skipped",
+      note: string,
+    ) => {
+      if (cancelled) return;
+      await emitLiveVerificationFlow(flowId, status, {
+        ...flowMetadata,
+        note,
+      });
+    };
+    const complete = async (
+      status: "passed" | "failed" | "warning",
+      note: string,
+    ) => {
+      if (cancelled) return;
+      await emitLiveVerificationCompleted({
+        ...flowMetadata,
+        status,
+        note,
+        database: connection.database,
+        readonly: connection.readonly === true,
+      });
+    };
+
+    const run = async () => {
+      if (!schemaSnapshot) {
+        await emitFlow(
+          "connect",
+          "failed",
+          schemaErrorMessage ?? "Schema snapshot did not load for the selected connection.",
+        );
+        await complete(
+          "failed",
+          "Live verification stopped before query flows because the connection could not be established.",
+        );
+        return;
+      }
+
+      await emitFlow(
+        "connect",
+        "passed",
+        `Connected to ${connection.driver} ${connection.host}:${connection.port}/${connection.database}.`,
+      );
+
+      const verificationTable = schemaSnapshot.tables[0];
+      if (!verificationTable) {
+        for (const flowId of [
+          "inspection",
+          "query",
+          "paging",
+          "export",
+          "edit",
+          "readonly",
+          "cancel",
+        ] as const) {
+          await emitFlow(flowId, "skipped", "No tables were available in the schema snapshot.");
+        }
+        await complete(
+          "warning",
+          "Connected successfully, but the schema has no tables so deeper workbench flows were skipped.",
+        );
+        return;
+      }
+
+      const inspected = await handleInspectObject("table", verificationTable.name);
+      await emitFlow(
+        "inspection",
+        inspected ? "passed" : "failed",
+        inspected
+          ? `Inspected table ${verificationTable.name}.`
+          : `Failed to inspect table ${verificationTable.name}.`,
+      );
+
+      const source: DbGridEditSource = {
+        kind: "starter-select",
+        tableName: verificationTable.name,
+        schema: runtimeSchema,
+        queryMode: "select",
+      };
+      const querySql = `SELECT *\nFROM ${buildQualifiedTableName(verificationTable.name)}\nLIMIT 100;`;
+      updateActiveTabSql(querySql);
+      setResultTab("results");
+      setLastGridEditSource(source);
+      const queryResponse = await executeImmediate(
+        querySql,
+        false,
+        source,
+        "statement",
+      );
+      const queryBatch = queryResponse?.batches[0] ?? null;
+      await emitFlow(
+        "query",
+        queryBatch && !queryBatch.error ? "passed" : "failed",
+        queryBatch && !queryBatch.error
+          ? `Loaded ${queryBatch.rows.length} rows from ${verificationTable.name}.`
+          : `Failed to execute starter query for ${verificationTable.name}.`,
+      );
+
+      if (queryBatch && queryBatch.hasMore && queryBatch.pagingMode === "offset") {
+        const moreBatch = await handleLoadMore(0);
+        await emitFlow(
+          "paging",
+          moreBatch ? "passed" : "failed",
+          moreBatch
+            ? `Fetched additional rows for ${verificationTable.name}.`
+            : `Load more failed for ${verificationTable.name}.`,
+        );
+      } else {
+        await emitFlow(
+          "paging",
+          "warning",
+          `The starter query for ${verificationTable.name} did not expose offset paging evidence.`,
+        );
+      }
+
+      const exportResult = await handleExport("current_page", "json");
+      await emitFlow(
+        "export",
+        exportResult ? "passed" : "failed",
+        exportResult
+          ? `Exported current-page result to ${exportResult.fileName}.`
+          : `Export failed for ${verificationTable.name}.`,
+      );
+
+      if (
+        queryBatch &&
+        queryBatch.editEligibility?.eligible === true &&
+        queryBatch.rows.length > 0 &&
+        (queryBatch.primaryKeyColumns?.length ?? 0) > 0
+      ) {
+        const firstRow = queryBatch.rows[0];
+        const rowPrimaryKey = buildRowPrimaryKey(
+          firstRow,
+          queryBatch,
+          queryBatch.primaryKeyColumns ?? [],
+        );
+        if (rowPrimaryKey) {
+          const rowPkTuple = buildRowPkTuple(
+            rowPrimaryKey,
+            queryBatch.primaryKeyColumns ?? [],
+          );
+          handleStageDeleteGridRow({
+            rowPrimaryKey,
+            rowPkTuple,
+          });
+          await sleep(0);
+          const prepared = await handlePrepareGridCommit();
+          handleRevertGridDelete(rowPkTuple);
+          setPreparedGridPlan(null);
+          await emitFlow(
+            "edit",
+            prepared ? "passed" : "failed",
+            prepared
+              ? `Prepared a review-only delete plan for ${verificationTable.name} without committing it.`
+              : `Failed to prepare review-only delete plan for ${verificationTable.name}.`,
+          );
+        } else {
+          await emitFlow(
+            "edit",
+            "warning",
+            `Could not resolve primary key values for ${verificationTable.name}.`,
+          );
+        }
+      } else {
+        await emitFlow(
+          "edit",
+          "warning",
+          connection.readonly
+            ? "The selected connection is read-only, so edit verification was not attempted."
+            : `Loaded result for ${verificationTable.name} was not eligible for safe grid editing.`,
+        );
+      }
+
+      await emitFlow(
+        "readonly",
+        connection.readonly ? "passed" : "warning",
+        connection.readonly
+          ? "Selected connection is explicitly marked read-only."
+          : "Selected connection is writable; readonly guardrails were not exercised in this run.",
+      );
+
+      const cancelSql =
+        connection.driver === "postgres" ? "SELECT pg_sleep(8);" : "SELECT SLEEP(8);";
+      const cancelRequestId = crypto.randomUUID();
+      activeQueryRequestIdRef.current = cancelRequestId;
+      setCurrentRequestId(cancelRequestId);
+      setIsExecuting(true);
+      const cancelPromise = hostApi.connections.executeQuery({
+        connectionId: connection.id,
+        sql: cancelSql,
+        requestId: cancelRequestId,
+        schema: runtimeSchema,
+      });
+
+      await sleep(400);
+      await hostApi.connections.cancelQuery(cancelRequestId).catch(() => undefined);
+      let cancelPassed = false;
+      try {
+        await cancelPromise;
+      } catch (error) {
+        const message = formatWorkbenchError(error, "Query cancellation did not return a message.");
+        cancelPassed = /cancel|cancelled|canceled|キャンセル/i.test(message);
+      } finally {
+        if (activeQueryRequestIdRef.current === cancelRequestId) {
+          activeQueryRequestIdRef.current = null;
+        }
+        setIsExecuting(false);
+        setCurrentRequestId(null);
+      }
+      await emitFlow(
+        "cancel",
+        cancelPassed ? "passed" : "failed",
+        cancelPassed
+          ? `Cancelled verification query on ${connection.driver}.`
+          : `Cancellation did not surface a cancellable runtime response on ${connection.driver}.`,
+      );
+
+      await complete(
+        "passed",
+        `Completed live verification flows for ${connectionLabel}.`,
+      );
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildQualifiedTableName,
+    connection.database,
+    connection.driver,
+    connection.host,
+    connection.id,
+    connection.name,
+    connection.port,
+    connection.readonly,
+    executeImmediate,
+    handleExport,
+    handleInspectObject,
+    handleLoadMore,
+    handlePrepareGridCommit,
+    handleRevertGridDelete,
+    handleStageDeleteGridRow,
+    hostApi.connections,
+    isSchemaLoading,
+    releaseVerification.enabled,
+    releaseVerification.live,
+    runtimeSchema,
+    schemaErrorMessage,
+    schemaSnapshot,
+    updateActiveTabSql,
+  ]);
 
   // activeIndex の同期（batches 更新時に範囲外を防ぐ）
   useEffect(() => {
@@ -2030,6 +3674,7 @@ export function WorkbenchLayout({
 
   useEffect(() => {
     setPendingEditCells({});
+    setPendingDeleteRows({});
     setPreparedGridPlan(null);
   }, [activeBatchIndex, results?.requestId]);
 
@@ -2040,34 +3685,57 @@ export function WorkbenchLayout({
   // アクティブバッチ（結果エクスポートメニュー用）
   const activeBatch = results?.batches[Math.min(activeBatchIndex, Math.max(0, (results?.batches.length ?? 1) - 1))];
   const pendingEditCount = Object.keys(pendingEditCells).length;
+  const pendingDeleteCount = Object.keys(pendingDeleteRows).length;
+  const pendingEditRows = useMemo(
+    () => buildPendingEditRowSummaries(pendingEditCells),
+    [pendingEditCells],
+  );
+  const pendingDeletedRows = useMemo(
+    () => buildPendingDeleteRowSummaries(pendingDeleteRows),
+    [pendingDeleteRows],
+  );
+  const willOverwriteSnippet = useMemo(() => {
+    const normalizedName = pendingSnippetName.trim().toLowerCase();
+    if (!normalizedName) return false;
+    return savedSnippets.some(
+      (snippet) => snippet.name.trim().toLowerCase() === normalizedName,
+    );
+  }, [pendingSnippetName, savedSnippets]);
+  const inspectedObjectKind = objectInspection?.objectKind ?? null;
+  const inspectedObjectName = objectInspection?.objectName ?? null;
+  const inspectedObjectSignature = objectInspection?.signature ?? null;
+  const inspectedParentObjectName = objectInspection?.parentObjectName ?? null;
   const activeEditEligibility = activeBatch?.editEligibility;
   const activePrimaryKeyColumns = activeBatch?.primaryKeyColumns ?? [];
   const activeEditBlockReason =
     activeEditEligibility && !activeEditEligibility.eligible
       ? activeEditEligibility.reasons[0]?.message ?? "Current result is read-only."
       : null;
-  const syncAvailableTableNames = (schemaSnapshot?.tables ?? [])
-    .map((table) => table.name)
-    .sort((left, right) => left.localeCompare(right));
   const activeDiffRow = diffRows[selectedDiffRowIndex] ?? null;
   const syncConnectionOptions = connections.length > 0 ? connections : [connection];
+  const schemaDiffConnectionOptions = connections.length > 0 ? connections : [connection];
+  const activeSchemaDiffTargetConnection =
+    connections.find((item) => item.id === schemaDiffTargetConnectionId) ?? null;
   const activeSyncSourceConnection =
     connections.find((item) => item.id === syncSourceConnectionId) ?? connection;
   const activeSyncTargetConnection =
     connections.find((item) => item.id === syncTargetConnectionId) ?? connection;
+  const driverLabel = connection.driver === "postgres" ? "PostgreSQL" : "MySQL";
+  const workbenchContextLabel = `${driverLabel}://${connection.host}:${connection.port}/${connection.database}`;
   const syncRequiresProdTypedConfirmation = activeSyncTargetConnection.environment === "prod";
   const applyPreviewHasBlockingGuard = hasBlockingDataSyncBlocker(applyPreview?.blockers);
   const applyPreviewHasUnsafeDeleteWarning =
     applyPreview?.blockers.some((blocker) => blocker.code === "unsafe_delete_threshold") ?? false;
-  const activeApplyJobId = applyExecute?.jobId ?? applyJobDetail?.jobId ?? null;
   const canExecuteDataApply =
-    Boolean(diffPreview) &&
-    Boolean(applyPreview) &&
-    !isApplyExecuting &&
-    !applyPreviewHasBlockingGuard &&
-    applyPreview?.executable === true &&
-    (!syncRequiresProdTypedConfirmation ||
-      applyProdConfirmation === activeSyncTargetConnection.database);
+    !!applyPreview
+    && applyPreview.executable
+    && !applyPreviewHasBlockingGuard
+    && !isExecutingApply
+    && (!applyPreviewHasUnsafeDeleteWarning || applyUnsafeDeleteConfirmed)
+    && (
+      !syncRequiresProdTypedConfirmation
+      || applyProdConfirmation.trim() === activeSyncTargetConnection.database
+    );
 
   return (
     <>
@@ -2079,6 +3747,49 @@ export function WorkbenchLayout({
           <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
             Primary DB workspace
           </p>
+        </div>
+
+        <div className="shrink-0 border-b border-border bg-background px-3 py-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {connection.name || connection.database}
+                </p>
+                <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                  {driverLabel}
+                </Badge>
+                {connection.environment ? (
+                  <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                    {connection.environment}
+                  </Badge>
+                ) : null}
+                {connection.readonly ? (
+                  <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                    readonly
+                  </Badge>
+                ) : null}
+                {runtimeSchema ? (
+                  <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                    schema:{runtimeSchema}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                {workbenchContextLabel}
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 text-xs"
+              onClick={onManageConnections}
+            >
+              Connection Center
+            </Button>
+          </div>
         </div>
 
         {/* メインボディ: サイドバー + コンテンツエリア */}
@@ -2101,9 +3812,14 @@ export function WorkbenchLayout({
                 void refetchSchemaOptions();
               }
             }}
-            selectedTableName={selectedTableName}
-            onSelectTable={handleSelectTable}
-            onOpenTable={handleOpenTable}
+              selectedTableName={selectedTableName}
+              inspectedObjectKind={inspectedObjectKind}
+              inspectedObjectName={inspectedObjectName}
+              inspectedObjectSignature={inspectedObjectSignature}
+              inspectedParentObjectName={inspectedParentObjectName}
+              onSelectTable={handleSelectTable}
+              onOpenTable={handleOpenTable}
+              onInspectObject={handleInspectObject}
             onRunStarterQuery={handleRunStarterQuery}
           />
 
@@ -2123,6 +3839,16 @@ export function WorkbenchLayout({
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-panel-muted/70 px-2">
               <Button
                 type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleOpenSqlLibrary}
+              >
+                SQL library
+              </Button>
+
+              <Button
+                type="button"
                 variant="secondary"
                 size="sm"
                 className="h-7 text-xs"
@@ -2131,56 +3857,22 @@ export function WorkbenchLayout({
                 Save snippet
               </Button>
 
-              <label htmlFor="workbench-snippet-select" className="text-xs text-muted-foreground">
-                Insert snippet
-              </label>
-              <select
-                id="workbench-snippet-select"
-                className="h-7 min-w-[180px] rounded-sm border border-border bg-background px-2 text-xs"
-                value={selectedSnippetId}
-                onChange={(event) => {
-                  const nextSnippetId = event.target.value;
-                  setSelectedSnippetId(nextSnippetId);
-                  if (nextSnippetId) {
-                    handleInsertSnippet(nextSnippetId);
-                  }
-                }}
-              >
-                <option value="">Insert snippet</option>
-                {savedSnippets.map((snippet) => (
-                  <option key={snippet.id} value={snippet.id}>
-                    {snippet.name}
-                  </option>
-                ))}
-              </select>
-
-              <label htmlFor="workbench-recent-sql-select" className="text-xs text-muted-foreground">
-                Recent SQL
-              </label>
-              <select
-                id="workbench-recent-sql-select"
-                className="h-7 min-w-[220px] rounded-sm border border-border bg-background px-2 text-xs"
-                value={selectedRecentSql}
-                onChange={(event) => {
-                  const nextIndex = event.target.value;
-                  setSelectedRecentSql(nextIndex);
-                  if (nextIndex) {
-                    handleInsertRecentSql(nextIndex);
-                  }
-                }}
-              >
-                <option value="">Recent SQL</option>
-                {recentQueries.map((sql, index) => {
-                  const oneLine = sql.replace(/\s+/g, " ").trim();
-                  const preview =
-                    oneLine.length > 72 ? `${oneLine.slice(0, 69)}...` : oneLine;
-                  return (
-                    <option key={`${index}-${preview}`} value={String(index)}>
-                      {preview || "(empty SQL)"}
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                  {savedSnippets.length} snippet{savedSnippets.length === 1 ? "" : "s"}
+                </Badge>
+                <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                  {queryHistory.length} history
+                </Badge>
+                <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                  {recentQueries.length} recent
+                </Badge>
+                <span className="truncate">
+                  {(connection.name || connection.database).trim()}: connection-scoped tabs,
+                  drafts, history, and snippets. Preview before replacing the active tab or opening
+                  a new one.
+                </span>
+              </div>
             </div>
 
             {/* エディター/結果エリア — react-resizable-panels で縦分割 */}
@@ -2211,7 +3903,9 @@ export function WorkbenchLayout({
                     <Tabs
                       value={resultTab}
                       onValueChange={(v) =>
-                        setResultTab(v as "results" | "explain" | "sync")
+                        setResultTab(
+                          v as "results" | "explain" | "schema-diff" | "sync" | "inspect" | "jobs",
+                        )
                       }
                     >
                       <TabsList className="h-7">
@@ -2221,9 +3915,26 @@ export function WorkbenchLayout({
                         <TabsTrigger value="explain" className="h-6 text-xs">
                           Explain
                         </TabsTrigger>
+                        <TabsTrigger value="schema-diff" className="h-6 text-xs">
+                          <GitCompare className="mr-1 h-3.5 w-3.5" />
+                          Schema Diff
+                        </TabsTrigger>
                         <TabsTrigger value="sync" className="h-6 text-xs">
                           <GitCompare className="mr-1 h-3.5 w-3.5" />
                           Sync
+                          <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                            Preview
+                          </span>
+                        </TabsTrigger>
+                        <TabsTrigger value="inspect" className="h-6 text-xs">
+                          <FileSearch className="mr-1 h-3.5 w-3.5" />
+                          Inspect
+                        </TabsTrigger>
+                        <TabsTrigger value="jobs" className="h-6 text-xs">
+                          Jobs
+                          <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                            Preview
+                          </span>
                         </TabsTrigger>
                       </TabsList>
                     </Tabs>
@@ -2237,9 +3948,24 @@ export function WorkbenchLayout({
                         supportsFullResultExport={activeBatch.pagingMode === "offset"}
                       />
                     )}
+                    {resultTab === "schema-diff" && (
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        {connection.name || connection.database} → {activeSchemaDiffTargetConnection?.name ?? "target connection"}
+                      </div>
+                    )}
                     {resultTab === "sync" && (
                       <div className="text-[11px] text-muted-foreground">
-                        source -&gt; target
+                        Preview surface · source -&gt; target
+                      </div>
+                    )}
+                    {resultTab === "inspect" && (
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        {objectInspection?.displayName ?? "table/view DDL"}
+                      </div>
+                    )}
+                    {resultTab === "jobs" && (
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        Preview surface · persistent background job history
                       </div>
                     )}
                   </div>
@@ -2271,8 +3997,17 @@ export function WorkbenchLayout({
                             onStopOnErrorChange={setStopOnError}
                             editEligibility={activeEditEligibility}
                             primaryKeyColumns={activePrimaryKeyColumns}
+                            pendingEditCells={pendingEditCells}
+                            pendingEditRows={pendingEditRows}
+                            pendingDeleteRows={pendingDeleteRows}
+                            pendingDeletedRows={pendingDeletedRows}
                             pendingEditCount={pendingEditCount}
+                            pendingDeleteCount={pendingDeleteCount}
                             onEditCell={handleEditCell}
+                            onRevertCell={handleRevertGridCell}
+                            onRevertRow={handleRevertGridRow}
+                            onStageDeleteRow={handleStageDeleteGridRow}
+                            onRevertDeleteRow={handleRevertGridDelete}
                             onPrepareCommit={handlePrepareGridCommit}
                             onDiscardEdits={handleDiscardGridEdits}
                           />
@@ -2293,6 +4028,53 @@ export function WorkbenchLayout({
                           />
                         </div>
                       </div>
+                    ) : resultTab === "schema-diff" ? (
+                      <WorkbenchSchemaDiffPane
+                        sourceConnection={connection}
+                        connections={schemaDiffConnectionOptions}
+                        targetConnectionId={schemaDiffTargetConnectionId}
+                        onTargetConnectionChange={setSchemaDiffTargetConnectionId}
+                        onCompare={() => {
+                          void handlePreviewSchemaDiff();
+                        }}
+                        isComparing={isSchemaDiffing}
+                        issue={schemaDiffIssue}
+                        sourceSnapshot={schemaDiffSourceSnapshot}
+                        targetSnapshot={schemaDiffTargetSnapshot}
+                        result={schemaDiffResult}
+                        onReset={() => {
+                          setSchemaDiffSourceSnapshot(null);
+                          setSchemaDiffTargetSnapshot(null);
+                          setSchemaDiffResult(null);
+                          setSchemaDiffIssue(null);
+                        }}
+                      />
+                    ) : resultTab === "inspect" ? (
+                      <ObjectInspectionPane
+                        inspection={objectInspection}
+                        isLoading={isInspectingObject}
+                        error={inspectError}
+                        className="h-full"
+                      />
+                    ) : resultTab === "jobs" ? (
+                      <JobCenterPane
+                        jobs={backgroundJobs}
+                        selectedJobId={selectedJobId}
+                        selectedJobDetail={applyJobDetail}
+                        connections={connections}
+                        activeConnectionId={connection.id}
+                        isRefreshing={isRefreshingJobs}
+                        issue={jobCenterIssue}
+                        onRefresh={() => {
+                          void refreshBackgroundJobs();
+                        }}
+                        onSelectJob={(jobId) => {
+                          setSelectedJobId(jobId);
+                        }}
+                        onReopenSyncContext={(jobId) => {
+                          void handleReopenSyncContext(jobId);
+                        }}
+                      />
                     ) : (
                       <div className="flex h-full flex-col overflow-hidden">
                         {syncIssue ? (
@@ -2369,9 +4151,18 @@ export function WorkbenchLayout({
                               onClick={() => {
                                 void handlePreviewDataDiff();
                               }}
-                              disabled={isDiffPreviewing || syncSelectedTables.length === 0}
+                              disabled={
+                                isDiffPreviewing
+                                || isSyncSchemaLoading
+                                || !!syncSchemaIssueMessage
+                                || syncSelectedTables.length === 0
+                              }
                             >
-                              {isDiffPreviewing ? "Comparing..." : "Compare source -> target"}
+                              {isDiffPreviewing
+                                ? "Comparing..."
+                                : isSyncSchemaLoading
+                                  ? "Loading sync metadata..."
+                                  : "Compare source -> target"}
                             </Button>
                           </div>
 
@@ -2403,6 +4194,126 @@ export function WorkbenchLayout({
                                 );
                               })
                             )}
+                          </div>
+
+                          <div className="mt-2 space-y-2">
+                            {syncSchemaIssueMessage ? (
+                              <p className="text-[11px] text-destructive">
+                                {syncSchemaIssueMessage}
+                              </p>
+                            ) : null}
+                            {!syncSchemaIssueMessage && isSyncSchemaLoading ? (
+                              <p className="text-[11px] text-muted-foreground">
+                                Loading source/target schema metadata for sync compare.
+                              </p>
+                            ) : null}
+                            {syncSelectedTables.length > 0 ? (
+                              <div className="grid gap-2">
+                                {syncSelectedTables.map((tableName) => {
+                                  const metadata =
+                                    syncTableMetadataByName.metadataByName[tableName];
+                                  const config = syncTableConfigs[tableName] ?? {
+                                    keyColumnsText: "",
+                                    compareColumnsText: "",
+                                    whereClause: "",
+                                  };
+                                  const runtimeKeyPreview = formatColumnPreview(
+                                    metadata?.defaultKeyColumns ?? [],
+                                    "none detected",
+                                  );
+                                  const runtimeComparePreview = formatColumnPreview(
+                                    metadata?.defaultCompareColumns ?? [],
+                                    "all non-key columns will be empty",
+                                  );
+                                  const availableColumnPreview = formatColumnPreview(
+                                    metadata?.availableColumns ?? [],
+                                    "no shared columns",
+                                    8,
+                                  );
+
+                                  return (
+                                    <div
+                                      key={`sync-config-${tableName}`}
+                                      className="rounded-sm border border-border bg-background px-2 py-2"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-mono text-[11px] font-semibold text-foreground">
+                                          {tableName}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {metadata?.sourceExists ? "source" : "source missing"} / {" "}
+                                          {metadata?.targetExists ? "target" : "target missing"}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 grid gap-2 md:grid-cols-[1fr_1fr]">
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                                            Key columns override
+                                          </label>
+                                          <input
+                                            className="h-8 w-full rounded-sm border border-border bg-panel-muted/30 px-2 font-mono text-[11px]"
+                                            value={config.keyColumnsText}
+                                            onChange={(event) =>
+                                              handleSyncTableConfigChange(
+                                                tableName,
+                                                "keyColumnsText",
+                                                event.target.value,
+                                              )}
+                                            placeholder={runtimeKeyPreview}
+                                          />
+                                          <p className="text-[10px] text-muted-foreground">
+                                            Runtime default: {runtimeKeyPreview}
+                                          </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                                            Compare columns override
+                                          </label>
+                                          <input
+                                            className="h-8 w-full rounded-sm border border-border bg-panel-muted/30 px-2 font-mono text-[11px]"
+                                            value={config.compareColumnsText}
+                                            onChange={(event) =>
+                                              handleSyncTableConfigChange(
+                                                tableName,
+                                                "compareColumnsText",
+                                                event.target.value,
+                                              )}
+                                            placeholder={runtimeComparePreview}
+                                          />
+                                          <p className="text-[10px] text-muted-foreground">
+                                            Runtime default: {runtimeComparePreview}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="mt-2 space-y-1">
+                                        <label className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                                          Row filter
+                                        </label>
+                                        <input
+                                          className="h-8 w-full rounded-sm border border-border bg-panel-muted/30 px-2 font-mono text-[11px]"
+                                          value={config.whereClause}
+                                          onChange={(event) =>
+                                            handleSyncTableConfigChange(
+                                              tableName,
+                                              "whereClause",
+                                              event.target.value,
+                                            )}
+                                          placeholder="Optional SQL expression, e.g. updated_at >= CURRENT_DATE - INTERVAL '7 days'"
+                                        />
+                                      </div>
+                                      <p className="mt-1 text-[10px] text-muted-foreground">
+                                        Available columns: {availableColumnPreview}
+                                      </p>
+                                      {(metadata?.defaultKeyColumns.length ?? 0) === 0 ? (
+                                        <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                                          No stable key was detected from schema metadata. Enter a business key override before compare if this table should sync.
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
 
@@ -2439,6 +4350,12 @@ export function WorkbenchLayout({
                                         </p>
                                         <p className="mt-1 text-[11px] text-muted-foreground">
                                           {formatDataSyncCounts(summary.statusCounts)}
+                                        </p>
+                                        <p className="mt-1 text-[10px] text-muted-foreground">
+                                          Keys: {formatColumnPreview(summary.keyColumns, "none detected", 4)}
+                                        </p>
+                                        <p className="mt-1 text-[10px] text-muted-foreground">
+                                          Compare: {formatColumnPreview(summary.compareColumns, "runtime default empty", 4)}
                                         </p>
                                         {summary.blockerCodes.length > 0 ? (
                                           <p className="mt-1 text-[11px] text-destructive">
@@ -2550,6 +4467,14 @@ export function WorkbenchLayout({
                         </div>
 
                         <div className="shrink-0 border-t border-border bg-panel-muted/40 px-3 py-2">
+                          <Alert className="mb-2 rounded-sm border-border bg-background px-3 py-2">
+                            <Lock className="h-4 w-4" />
+                            <AlertTitle className="text-xs">Data Sync Apply</AlertTitle>
+                            <AlertDescription className="text-[11px] text-muted-foreground">
+                              {DATA_SYNC_APPLY_READY_MESSAGE}
+                            </AlertDescription>
+                          </Alert>
+
                           <div className="flex flex-wrap items-center gap-2">
                             <Button
                               type="button"
@@ -2565,14 +4490,14 @@ export function WorkbenchLayout({
                             <Button
                               type="button"
                               size="sm"
-                              variant="destructive"
+                              variant="outline"
                               className="h-8 text-xs"
                               disabled={!canExecuteDataApply}
                               onClick={() => {
                                 void handleExecuteDataApply();
                               }}
                             >
-                              {isApplyExecuting ? "Executing..." : "Execute apply"}
+                              {isExecutingApply ? "Applying..." : "Apply selected changes"}
                             </Button>
                             {activeApplyJobId ? (
                               <Button
@@ -2581,10 +4506,10 @@ export function WorkbenchLayout({
                                 variant="outline"
                                 className="h-8 text-xs"
                                 onClick={() => {
-                                  void handleLoadDataApplyJobDetail(activeApplyJobId);
+                                  void handleOpenJobCenterForJob(activeApplyJobId);
                                 }}
                               >
-                                View job detail
+                                Open Job Center
                               </Button>
                             ) : null}
                           </div>
@@ -2622,10 +4547,25 @@ export function WorkbenchLayout({
                                 </div>
                               ) : null}
                               {applyPreviewHasUnsafeDeleteWarning ? (
-                                <p className="text-amber-700 dark:text-amber-300">
-                                  unsafe_delete_threshold warning is active. Review delete volume before execute.
-                                </p>
+                                <div className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-2 text-amber-700 dark:text-amber-300">
+                                  <p>
+                                    unsafe_delete_threshold warning is active. Review delete volume before execute.
+                                  </p>
+                                  <label className="mt-2 inline-flex items-center gap-2 text-[11px]">
+                                    <input
+                                      type="checkbox"
+                                      checked={applyUnsafeDeleteConfirmed}
+                                      onChange={(event) => setApplyUnsafeDeleteConfirmed(event.target.checked)}
+                                    />
+                                    <span>
+                                      I confirm that delete volume above {DATA_SYNC_DELETE_WARNING_THRESHOLD} rows is intentional.
+                                    </span>
+                                  </label>
+                                </div>
                               ) : null}
+                              <p className="text-muted-foreground">
+                                Review the SQL preview and blockers, then run apply when the target is ready.
+                              </p>
                             </div>
                           ) : null}
 
@@ -2654,19 +4594,17 @@ export function WorkbenchLayout({
                               <p className="mt-1 text-muted-foreground">
                                 {formatDataSyncCounts(applyExecute.statusCounts)}
                               </p>
+                              {applyExecute.status === "running" ? (
+                                <p className="mt-1 text-muted-foreground">
+                                  Background job is running. Monitor it from Job Center.
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
-
-                          {applyJobDetail ? (
-                            <div className="mt-2 rounded-sm border border-border bg-background p-2 text-[11px]">
-                              <p className="font-mono">
-                                job detail: {applyJobDetail.jobId} ({applyJobDetail.status})
-                              </p>
-                              <p className="mt-1 text-muted-foreground">
-                                created: {applyJobDetail.createdAt}
-                                {applyJobDetail.finishedAt ? ` / finished: ${applyJobDetail.finishedAt}` : ""}
-                              </p>
-                            </div>
+                          {selectedBackgroundJob ? (
+                            <p className="mt-2 text-[11px] text-muted-foreground">
+                              Selected job in Job Center: {selectedBackgroundJob.jobId} ({selectedBackgroundJob.status})
+                            </p>
                           ) : null}
                         </div>
                       </div>
@@ -2683,12 +4621,57 @@ export function WorkbenchLayout({
       <GridEditCommitDialog
         open={preparedGridPlan !== null}
         affectedRows={preparedGridPlan?.affectedRows ?? 0}
+        updatedRows={preparedGridPlan?.updatedRows ?? 0}
+        deletedRows={preparedGridPlan?.deletedRows ?? 0}
         changedColumnsSummary={preparedGridPlan?.changedColumnsSummary ?? []}
+        pendingRows={pendingEditRows}
+        pendingDeletedRows={pendingDeletedRows}
         sqlPreviewLines={preparedGridPlan?.sqlPreviewLines ?? []}
         previewTruncated={preparedGridPlan?.previewTruncated ?? false}
         isConfirming={isCommittingGridEdit}
         onConfirm={handleCommitGridEdits}
         onCancel={() => setPreparedGridPlan(null)}
+      />
+
+      <SqlLibraryDialog
+        open={sqlLibraryOpen}
+        searchValue={sqlLibrarySearch}
+        entries={filteredSqlLibraryEntries}
+        selectedEntryId={selectedSqlLibraryEntry?.id ?? ""}
+        onSearchValueChange={setSqlLibrarySearch}
+        onSelectedEntryChange={setSelectedSqlLibraryEntryId}
+        onReplaceActiveTab={handleReplaceSqlFromLibrary}
+        onOpenInNewTab={handleOpenSqlFromLibraryInNewTab}
+        onDeleteSnippet={handleDeleteSnippetFromLibrary}
+        onClose={() => setSqlLibraryOpen(false)}
+      />
+
+      <SqlParametersDialog
+        open={pendingParameterReview !== null}
+        parameters={pendingParameterReview?.parameters ?? []}
+        values={parameterValues}
+        renderedSqlPreview={renderedParameterReview?.sql ?? pendingParameterReview?.sql ?? ""}
+        onValueChange={handleParameterValueChange}
+        onConfirm={handleConfirmParameterReview}
+        onCancel={handleCancelParameterReview}
+      />
+
+      <SqlScriptReviewDialog
+        open={pendingScriptReview !== null}
+        statements={pendingScriptReview?.statements ?? []}
+        stopOnError={stopOnError}
+        onConfirm={handleConfirmScriptReview}
+        onCancel={handleCancelScriptReview}
+      />
+
+      <SaveSnippetDialog
+        open={saveSnippetDialogOpen}
+        snippetName={pendingSnippetName}
+        sqlPreview={activeTab?.sql ?? ""}
+        willOverwrite={willOverwriteSnippet}
+        onSnippetNameChange={setPendingSnippetName}
+        onConfirm={handleConfirmSaveSnippet}
+        onCancel={handleCancelSaveSnippet}
       />
 
       {/* 危険 SQL 確認ダイアログ（SAFE-01 / SAFE-02） */}

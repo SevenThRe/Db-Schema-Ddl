@@ -62,3 +62,31 @@ test("unchanged rows stay hidden by default and can be toggled", () => {
   assert.match(workbenchSource, /include unchanged/);
   assert.match(workbenchSource, /includeUnchanged,/);
 });
+
+test("sync compare hydrates source and target schema metadata independently", () => {
+  assert.match(
+    workbenchSource,
+    /queryKey: \["db-workbench-sync-schema", syncSourceConnectionId\]/,
+  );
+  assert.match(
+    workbenchSource,
+    /queryKey: \["db-workbench-sync-schema", syncTargetConnectionId\]/,
+  );
+  assert.match(workbenchSource, /Loading source\/target schema metadata for sync compare\./);
+});
+
+test("sync compare request forwards key compare and filter overrides", () => {
+  assert.match(
+    workbenchSource,
+    /keyColumns: keyColumns\.length > 0 \? keyColumns : undefined/,
+  );
+  assert.match(
+    workbenchSource,
+    /compareColumns:\s+compareColumns\.length > 0 \? compareColumns : undefined/,
+  );
+  assert.match(
+    workbenchSource,
+    /whereClause: whereClause \? whereClause : undefined/,
+  );
+  assert.match(workbenchSource, /No stable key was detected from schema metadata\./);
+});

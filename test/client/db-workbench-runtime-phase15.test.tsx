@@ -55,7 +55,7 @@ test("workbench runtime path wires paging offsets, backend export, and full-resu
     workbench,
     /Full result export may be truncated at 100000 rows\./,
   );
-  assert.match(workbench, /currentRequestId \?\? currentExportRequestId/);
+  assert.match(workbench, /const requestId = queryRequestId \?\? exportRequestId;/);
 });
 
 test("result grid stop-on-error toggle is controlled by the workbench state", async () => {

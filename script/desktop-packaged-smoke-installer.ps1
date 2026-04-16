@@ -29,7 +29,7 @@ $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $script:DesktopSmokeOutputRoot = if ($OutputDirectory) {
   $OutputDirectory
 } else {
-  Join-Path $script:RepoRoot "artifacts\desktop-smoke"
+  Join-Path $script:RepoRoot "artifacts\release-verification"
 }
 
 function Resolve-InstallerArtifactPath {
@@ -71,7 +71,7 @@ function Resolve-OptionalArtifactPath {
 
 function New-RunId {
   $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH-mm-ss-fffZ")
-  return "desktop-smoke-packaged-nsis-$stamp"
+  return "tauri-packaged-smoke-nsis-$stamp"
 }
 
 function New-ReviewPolicy {

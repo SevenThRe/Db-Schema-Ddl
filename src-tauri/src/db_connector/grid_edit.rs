@@ -11,7 +11,7 @@ use tauri::{AppHandle, State};
 use super::query::{get_or_create_pool, load_connection_config, resolve_active_schema};
 use super::{
   AnyPool, DbConnectionConfig, DbDriver, DbGridCommitRequest, DbGridCommitResponse,
-  DbGridEditPatchCell, DbGridEditSourceKind, DbGridPrepareCommitRequest,
+  DbGridDeleteRowDraft, DbGridEditPatchCell, DbGridEditSourceKind, DbGridPrepareCommitRequest,
   DbGridPrepareCommitResponse, DbPoolRegistry,
 };
 
@@ -19,7 +19,14 @@ pub const GRID_EDIT_PLAN_TTL_SECONDS: u64 = 300;
 const SQL_PREVIEW_LIMIT: usize = 20;
 
 #[derive(Debug, Clone)]
-struct PreparedUpdateStatement {
+enum PreparedMutationKind {
+  Update,
+  Delete,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedMutationStatement {
+  kind: PreparedMutationKind,
   sql: String,
   row_pk_tuple: String,
   set_values: Vec<Value>,
@@ -31,7 +38,7 @@ struct PreparedGridEditPlan {
   connection_id: String,
   plan_hash: String,
   created_at_epoch_secs: u64,
-  statements: Vec<PreparedUpdateStatement>,
+  statements: Vec<PreparedMutationStatement>,
 }
 
 pub struct GridEditPlanRegistry {
@@ -53,6 +60,12 @@ struct PreparedRowPatch {
   updates: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedDeleteRow {
+  row_pk_tuple: String,
+  row_primary_key: BTreeMap<String, Value>,
+}
+
 #[tauri::command]
 pub async fn db_grid_prepare_commit(
   app: AppHandle,
@@ -65,9 +78,11 @@ pub async fn db_grid_prepare_commit(
   let primary_key_columns = normalize_primary_keys(&request.primary_key_columns)?;
 
   let prepared_rows = normalize_patch_cells(&request.patch_cells, &primary_key_columns)?;
+  let prepared_deleted_rows = normalize_delete_rows(&request.deleted_rows, &primary_key_columns)?;
+  ensure_no_conflicting_row_mutations(&prepared_rows, &prepared_deleted_rows)?;
 
   let active_schema = resolve_active_schema(&config, request.schema.as_deref());
-  let mut prepared_statements: Vec<PreparedUpdateStatement> = Vec::new();
+  let mut prepared_statements: Vec<PreparedMutationStatement> = Vec::new();
   let mut changed_columns = HashSet::new();
 
   for row_patch in &prepared_rows {
@@ -99,10 +114,39 @@ pub async fn db_grid_prepare_commit(
       &primary_key_columns,
     )?;
 
-    prepared_statements.push(PreparedUpdateStatement {
+    prepared_statements.push(PreparedMutationStatement {
+      kind: PreparedMutationKind::Update,
       sql,
       row_pk_tuple: row_patch.row_pk_tuple.clone(),
       set_values,
+      where_values,
+    });
+  }
+
+  for deleted_row in &prepared_deleted_rows {
+    let sql = build_delete_sql(
+      &config.driver,
+      active_schema.as_deref(),
+      &request.table_name,
+      &primary_key_columns,
+    )?;
+
+    let where_values = primary_key_columns
+      .iter()
+      .map(|column| {
+        deleted_row
+          .row_primary_key
+          .get(column)
+          .cloned()
+          .ok_or_else(|| format!("missing_primary_key_column: {column}"))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+
+    prepared_statements.push(PreparedMutationStatement {
+      kind: PreparedMutationKind::Delete,
+      sql,
+      row_pk_tuple: deleted_row.row_pk_tuple.clone(),
+      set_values: vec![],
       where_values,
     });
   }
@@ -147,6 +191,8 @@ pub async fn db_grid_prepare_commit(
     plan_id,
     plan_hash,
     affected_rows: prepared_statements.len() as u64,
+    updated_rows: prepared_rows.len() as u64,
+    deleted_rows: prepared_deleted_rows.len() as u64,
     changed_columns_summary,
     sql_preview_lines,
     preview_truncated,
@@ -192,7 +238,18 @@ pub async fn db_grid_commit(
   if prepared.statements.is_empty() {
     return Err("Prepared plan is empty".to_string());
   }
-  ensure_update_only_statements(&prepared.statements)?;
+  ensure_supported_mutation_statements(&prepared.statements)?;
+
+  let planned_update_rows = prepared
+    .statements
+    .iter()
+    .filter(|statement| matches!(statement.kind, PreparedMutationKind::Update))
+    .count() as u64;
+  let planned_delete_rows = prepared
+    .statements
+    .iter()
+    .filter(|statement| matches!(statement.kind, PreparedMutationKind::Delete))
+    .count() as u64;
 
   let pool = get_or_create_pool(&pool_registry, &config).await?;
 
@@ -212,7 +269,28 @@ pub async fn db_grid_commit(
           query = bind_mysql_value(query, value);
         }
 
-        if let Err(error) = query.execute(&mut *transaction).await {
+        let execution = query.execute(&mut *transaction).await;
+        let query_result = match execution {
+          Ok(result) => result,
+          Err(error) => {
+            transaction
+              .rollback()
+              .await
+              .map_err(|rollback_error| format!("transaction rollback failed: {rollback_error}"))?;
+            return Ok(DbGridCommitResponse {
+              plan_id: request.plan_id,
+              plan_hash: request.plan_hash,
+              committed_rows: 0,
+              updated_rows: 0,
+              deleted_rows: 0,
+              failed_sql_index: Some(index as u64),
+              failed_row_pk_tuple: Some(statement.row_pk_tuple.clone()),
+              message: Some(format!("commit failed and rolled back: {error}")),
+            });
+          }
+        };
+
+        if let Err(error) = ensure_single_row_affected(query_result.rows_affected(), statement) {
           transaction
             .rollback()
             .await
@@ -221,6 +299,8 @@ pub async fn db_grid_commit(
             plan_id: request.plan_id,
             plan_hash: request.plan_hash,
             committed_rows: 0,
+            updated_rows: 0,
+            deleted_rows: 0,
             failed_sql_index: Some(index as u64),
             failed_row_pk_tuple: Some(statement.row_pk_tuple.clone()),
             message: Some(format!("commit failed and rolled back: {error}")),
@@ -249,7 +329,28 @@ pub async fn db_grid_commit(
           query = bind_pg_value(query, value);
         }
 
-        if let Err(error) = query.execute(&mut *transaction).await {
+        let execution = query.execute(&mut *transaction).await;
+        let query_result = match execution {
+          Ok(result) => result,
+          Err(error) => {
+            transaction
+              .rollback()
+              .await
+              .map_err(|rollback_error| format!("transaction rollback failed: {rollback_error}"))?;
+            return Ok(DbGridCommitResponse {
+              plan_id: request.plan_id,
+              plan_hash: request.plan_hash,
+              committed_rows: 0,
+              updated_rows: 0,
+              deleted_rows: 0,
+              failed_sql_index: Some(index as u64),
+              failed_row_pk_tuple: Some(statement.row_pk_tuple.clone()),
+              message: Some(format!("commit failed and rolled back: {error}")),
+            });
+          }
+        };
+
+        if let Err(error) = ensure_single_row_affected(query_result.rows_affected(), statement) {
           transaction
             .rollback()
             .await
@@ -258,6 +359,8 @@ pub async fn db_grid_commit(
             plan_id: request.plan_id,
             plan_hash: request.plan_hash,
             committed_rows: 0,
+            updated_rows: 0,
+            deleted_rows: 0,
             failed_sql_index: Some(index as u64),
             failed_row_pk_tuple: Some(statement.row_pk_tuple.clone()),
             message: Some(format!("commit failed and rolled back: {error}")),
@@ -285,6 +388,8 @@ pub async fn db_grid_commit(
     plan_id: request.plan_id,
     plan_hash: request.plan_hash,
     committed_rows: commit_result,
+    updated_rows: planned_update_rows,
+    deleted_rows: planned_delete_rows,
     failed_sql_index: None,
     failed_row_pk_tuple: None,
     message: None,
@@ -311,8 +416,8 @@ fn validate_prepare_request(
     return Err("missing_primary_key: no primary key columns provided".to_string());
   }
 
-  if request.patch_cells.is_empty() {
-    return Err("No patch cells were provided".to_string());
+  if request.patch_cells.is_empty() && request.deleted_rows.is_empty() {
+    return Err("No grid mutations were provided".to_string());
   }
 
   if request.table_name.trim().is_empty() {
@@ -405,11 +510,54 @@ fn normalize_patch_cells(
       .insert(patch.column_name.clone(), patch.next_value.clone());
   }
 
-  if rows.is_empty() {
-    return Err("No effective patch cells remain after no-op filtering".to_string());
+  Ok(rows.into_values().collect())
+}
+
+fn normalize_delete_rows(
+  deleted_rows: &[DbGridDeleteRowDraft],
+  primary_key_columns: &[String],
+) -> Result<Vec<PreparedDeleteRow>, String> {
+  let mut rows = BTreeMap::<String, PreparedDeleteRow>::new();
+
+  for delete_row in deleted_rows {
+    let mut row_pk = BTreeMap::new();
+    for (key, value) in &delete_row.row_primary_key {
+      row_pk.insert(key.clone(), value.clone());
+    }
+
+    let computed_tuple = build_row_pk_tuple(&row_pk, primary_key_columns)?;
+    let row_entry = rows
+      .entry(computed_tuple.clone())
+      .or_insert_with(|| PreparedDeleteRow {
+        row_pk_tuple: computed_tuple.clone(),
+        row_primary_key: row_pk.clone(),
+      });
+
+    if row_entry.row_primary_key != row_pk {
+      return Err("duplicate_primary_key_tuple: inconsistent delete row key payload".to_string());
+    }
   }
 
   Ok(rows.into_values().collect())
+}
+
+fn ensure_no_conflicting_row_mutations(
+  prepared_rows: &[PreparedRowPatch],
+  prepared_deleted_rows: &[PreparedDeleteRow],
+) -> Result<(), String> {
+  let deleted_set = prepared_deleted_rows
+    .iter()
+    .map(|row| row.row_pk_tuple.as_str())
+    .collect::<HashSet<_>>();
+
+  if prepared_rows
+    .iter()
+    .any(|row| deleted_set.contains(row.row_pk_tuple.as_str()))
+  {
+    return Err("conflicting_row_delete_and_update: the same row cannot be updated and deleted in one commit".to_string());
+  }
+
+  Ok(())
 }
 
 fn build_row_pk_tuple(
@@ -504,22 +652,87 @@ fn build_update_sql(
   ))
 }
 
-fn ensure_update_only_statements(statements: &[PreparedUpdateStatement]) -> Result<(), String> {
+fn build_delete_sql(
+  driver: &DbDriver,
+  schema: Option<&str>,
+  table_name: &str,
+  primary_key_columns: &[String],
+) -> Result<String, String> {
+  ensure_safe_identifier(table_name)?;
+  for column in primary_key_columns {
+    ensure_safe_identifier(column)?;
+  }
+
+  let qualified_table = match driver {
+    DbDriver::Mysql => quote_identifier(driver, table_name),
+    DbDriver::Postgres => {
+      let effective_schema = schema.unwrap_or("public");
+      ensure_safe_identifier(effective_schema)?;
+      format!(
+        "{}.{}",
+        quote_identifier(driver, effective_schema),
+        quote_identifier(driver, table_name)
+      )
+    }
+  };
+
+  let mut placeholder_index = 1_u32;
+  let where_clause = primary_key_columns
+    .iter()
+    .map(|column| {
+      if matches!(driver, DbDriver::Mysql) {
+        format!("{} = ?", quote_identifier(driver, column))
+      } else {
+        let sql = format!(
+          "{} = ${}",
+          quote_identifier(driver, column),
+          placeholder_index
+        );
+        placeholder_index = placeholder_index.saturating_add(1);
+        sql
+      }
+    })
+    .collect::<Vec<_>>()
+    .join(" AND ");
+
+  Ok(format!("DELETE FROM {qualified_table} WHERE {where_clause}"))
+}
+
+fn ensure_supported_mutation_statements(statements: &[PreparedMutationStatement]) -> Result<(), String> {
   for statement in statements {
-    if !statement
-      .sql
-      .trim_start()
-      .to_ascii_uppercase()
-      .starts_with("UPDATE ")
-    {
-      return Err("Only UPDATE mutation plans are supported in phase 17".to_string());
+    let normalized = statement.sql.trim_start().to_ascii_uppercase();
+    match statement.kind {
+      PreparedMutationKind::Update if normalized.starts_with("UPDATE ") => {}
+      PreparedMutationKind::Delete if normalized.starts_with("DELETE FROM ") => {}
+      _ => {
+        return Err("Only UPDATE and DELETE mutation plans are supported".to_string());
+      }
     }
   }
   Ok(())
 }
 
+fn ensure_single_row_affected(
+  affected_rows: u64,
+  statement: &PreparedMutationStatement,
+) -> Result<(), String> {
+  if affected_rows == 1 {
+    return Ok(());
+  }
+
+  let mutation_kind = match statement.kind {
+    PreparedMutationKind::Update => "update",
+    PreparedMutationKind::Delete => "delete",
+  };
+
+  Err(format!(
+    "{mutation_kind}_row_count_mismatch: expected 1 affected row for {}, got {affected_rows}",
+    statement.row_pk_tuple
+  ))
+}
+
 fn compute_plan_hash(
-  statements: &[PreparedUpdateStatement],
+  statements: &[PreparedMutationStatement],
   table_name: &str,
   schema: Option<&str>,
   primary_key_columns: &[String],
@@ -531,6 +744,10 @@ fn compute_plan_hash(
     "statements": statements
       .iter()
       .map(|statement| json!({
+        "kind": match statement.kind {
+          PreparedMutationKind::Update => "update",
+          PreparedMutationKind::Delete => "delete",
+        },
         "sql": statement.sql,
         "rowPkTuple": statement.row_pk_tuple,
         "setValues": statement.set_values,
@@ -679,8 +896,11 @@ mod tests {
       clear_stored_password: false,
       environment: Some(DbEnvironment::Dev),
       readonly,
+      favorite: false,
+      group_name: None,
       color_tag: None,
       default_schema: Some("public".to_string()),
+      notes: None,
     }
   }
 
@@ -706,6 +926,7 @@ mod tests {
         before_value: Value::from("old"),
         next_value: Value::from("new"),
       }],
+      deleted_rows: vec![],
     }
   }
 
@@ -760,7 +981,8 @@ mod tests {
       connection_id: "conn-1".to_string(),
       plan_hash: "correct".to_string(),
       created_at_epoch_secs: now_epoch_seconds(),
-      statements: vec![PreparedUpdateStatement {
+      statements: vec![PreparedMutationStatement {
+        kind: PreparedMutationKind::Update,
         sql: "UPDATE \"users\" SET \"name\" = $1 WHERE \"id\" = $2".to_string(),
         row_pk_tuple: "id=1".to_string(),
         set_values: vec![Value::from("new")],
@@ -795,8 +1017,9 @@ mod tests {
   }
 
   #[test]
-  fn test_commit_rejects_non_update_statement() {
-    let result = ensure_update_only_statements(&[PreparedUpdateStatement {
+  fn test_commit_rejects_unsupported_statement_kind() {
+    let result = ensure_supported_mutation_statements(&[PreparedMutationStatement {
+      kind: PreparedMutationKind::Update,
       sql: "INSERT INTO users(id) VALUES ($1)".to_string(),
       row_pk_tuple: "id=1".to_string(),
       set_values: vec![Value::from(1)],
@@ -806,6 +1029,24 @@ mod tests {
     assert!(result
       .err()
       .unwrap_or_default()
-      .contains("Only UPDATE mutation plans are supported"));
+      .contains("Only UPDATE and DELETE mutation plans are supported"));
+  }
+
+  #[test]
+  fn test_commit_rejects_zero_affected_rows() {
+    let statement = PreparedMutationStatement {
+      kind: PreparedMutationKind::Delete,
+      sql: "DELETE FROM \"users\" WHERE \"id\" = $1".to_string(),
+      row_pk_tuple: "id=1".to_string(),
+      set_values: vec![],
+      where_values: vec![Value::from(1)],
+    };
+
+    let result = ensure_single_row_affected(0, &statement);
+    assert!(result.is_err());
+    assert!(result
+      .err()
+      .unwrap_or_default()
+      .contains("delete_row_count_mismatch"));
   }
 }

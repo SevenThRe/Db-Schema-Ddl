@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use futures_util::TryStreamExt;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::{MySqlDialect, PostgreSqlDialect};
 use sqlparser::parser::Parser;
@@ -26,6 +27,13 @@ enum StatementExecutionMode {
   PageableQuery,
   UnsupportedResultQuery,
   NonQuery,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SplitSqlStatementSegment {
+  sql: String,
+  segment_start: usize,
+  segment_end: usize,
 }
 
 // ──────────────────────────────────────────────
@@ -221,53 +229,78 @@ async fn create_pool(config: &DbConnectionConfig) -> Result<AnyPool, String> {
 // SQL ステートメント分割
 // ──────────────────────────────────────────────
 
-/// SQL テキストをセミコロンで分割する（シングルクォート・ダブルクォート内のセミコロンを無視）
-/// これはカノニカルなステートメント分割器 — フロントエンドは独自に分割しない
-pub fn split_sql_statements(sql: &str) -> Vec<String> {
+fn push_sql_statement_segment(
+  sql: &str,
+  segment_start: usize,
+  segment_end: usize,
+  statements: &mut Vec<SplitSqlStatementSegment>,
+) {
+  if segment_start >= segment_end || segment_end > sql.len() {
+    return;
+  }
+
+  let raw_segment = &sql[segment_start..segment_end];
+  let trimmed_start_delta = raw_segment.len().saturating_sub(raw_segment.trim_start().len());
+  let trimmed_end_delta = raw_segment.trim_end().len();
+
+  if trimmed_end_delta <= trimmed_start_delta {
+    return;
+  }
+
+  let trimmed_start = segment_start + trimmed_start_delta;
+  let trimmed_end = segment_start + trimmed_end_delta;
+  let trimmed_sql = &sql[trimmed_start..trimmed_end];
+  if trimmed_sql.is_empty() {
+    return;
+  }
+
+  statements.push(SplitSqlStatementSegment {
+    sql: trimmed_sql.to_string(),
+    segment_start,
+    segment_end,
+  });
+}
+
+fn split_sql_statement_segments(sql: &str) -> Vec<SplitSqlStatementSegment> {
   let mut statements = Vec::new();
-  let mut current = String::new();
-  let mut chars = sql.chars().peekable();
+  let mut chars = sql.char_indices().peekable();
+  let mut segment_start = 0usize;
   let mut in_single_quote = false;
   let mut in_double_quote = false;
   let mut in_line_comment = false;
   let mut in_block_comment = false;
 
-  while let Some(ch) = chars.next() {
+  while let Some((offset, ch)) = chars.next() {
     // 行コメント処理
     if in_line_comment {
       if ch == '\n' {
         in_line_comment = false;
       }
-      current.push(ch);
       continue;
     }
 
     // ブロックコメント処理
     if in_block_comment {
       if ch == '*' {
-        if chars.peek() == Some(&'/') {
+        if matches!(chars.peek(), Some((_, '/'))) {
           chars.next();
-          current.push_str("*/");
           in_block_comment = false;
           continue;
         }
       }
-      current.push(ch);
       continue;
     }
 
     // シングルクォート内のエスケープ処理
     if in_single_quote {
       if ch == '\'' {
-        if chars.peek() == Some(&'\'') {
+        if matches!(chars.peek(), Some((_, '\''))) {
           // エスケープされたシングルクォート（''）
           chars.next();
-          current.push_str("''");
           continue;
         }
         in_single_quote = false;
       }
-      current.push(ch);
       continue;
     }
 
@@ -276,7 +309,6 @@ pub fn split_sql_statements(sql: &str) -> Vec<String> {
       if ch == '"' {
         in_double_quote = false;
       }
-      current.push(ch);
       continue;
     }
 
@@ -284,45 +316,73 @@ pub fn split_sql_statements(sql: &str) -> Vec<String> {
     match ch {
       '\'' => {
         in_single_quote = true;
-        current.push(ch);
       }
       '"' => {
         in_double_quote = true;
-        current.push(ch);
       }
-      '-' if chars.peek() == Some(&'-') => {
+      '-' if matches!(chars.peek(), Some((_, '-'))) => {
         // 行コメント開始
         chars.next();
-        current.push_str("--");
         in_line_comment = true;
       }
-      '/' if chars.peek() == Some(&'*') => {
+      '/' if matches!(chars.peek(), Some((_, '*'))) => {
         // ブロックコメント開始
         chars.next();
-        current.push_str("/*");
         in_block_comment = true;
       }
       ';' => {
         // ステートメント区切り
-        let trimmed = current.trim().to_string();
-        if !trimmed.is_empty() {
-          statements.push(trimmed);
-        }
-        current.clear();
+        let segment_end = offset + ch.len_utf8();
+        push_sql_statement_segment(sql, segment_start, segment_end, &mut statements);
+        segment_start = segment_end;
       }
-      _ => {
-        current.push(ch);
-      }
+      _ => {}
     }
   }
 
   // 末尾のセミコロンなしステートメント
-  let trimmed = current.trim().to_string();
-  if !trimmed.is_empty() {
-    statements.push(trimmed);
-  }
+  push_sql_statement_segment(sql, segment_start, sql.len(), &mut statements);
 
   statements
+}
+
+/// SQL テキストをセミコロンで分割する（シングルクォート・ダブルクォート内のセミコロンを無視）
+/// これはカノニカルなステートメント分割器 — フロントエンドは独自に分割しない
+pub fn split_sql_statements(sql: &str) -> Vec<String> {
+  split_sql_statement_segments(sql)
+    .into_iter()
+    .map(|statement| statement.sql)
+    .collect()
+}
+
+fn resolve_target_sql_statements(sql: &str, cursor_offset: Option<u32>) -> Vec<String> {
+  let statements = split_sql_statement_segments(sql);
+  if statements.is_empty() {
+    return Vec::new();
+  }
+
+  let Some(cursor_offset) = cursor_offset else {
+    return statements.into_iter().map(|statement| statement.sql).collect();
+  };
+
+  let cursor_offset = cursor_offset as usize;
+
+  if let Some(statement) = statements
+    .iter()
+    .find(|statement| cursor_offset >= statement.segment_start && cursor_offset < statement.segment_end)
+  {
+    return vec![statement.sql.clone()];
+  }
+
+  if let Some(statement) = statements.iter().find(|statement| cursor_offset < statement.segment_end) {
+    return vec![statement.sql.clone()];
+  }
+
+  vec![statements
+    .last()
+    .expect("non-empty statements must have a last item")
+    .sql
+    .clone()]
 }
 
 // ──────────────────────────────────────────────
@@ -342,10 +402,13 @@ pub async fn db_query_execute(
 ) -> Result<QueryExecutionResponse, String> {
   // 接続設定を取得
   let config = load_connection_config(&app, &request.connection_id)?;
+  let statements = resolve_target_sql_statements(&request.sql, request.cursor_offset);
+  if statements.is_empty() {
+    return Err("空の SQL は実行できません".to_string());
+  }
 
   // readonly 接続チェック
   if config.readonly {
-    let statements = split_sql_statements(&request.sql);
     for stmt_sql in &statements {
       if !sql_is_read_only_statement(stmt_sql, &config.driver) {
         return Err("読み取り専用接続では DML/DDL は実行できません".to_string());
@@ -354,7 +417,10 @@ pub async fn db_query_execute(
   }
 
   // サーバー側安全強制: 危険な SQL が confirmed=false の場合はブロック
-  let all_dangers = detect_dangerous_sql(&request.sql, &config.driver);
+  let all_dangers = statements
+    .iter()
+    .flat_map(|stmt_sql| detect_dangerous_sql(stmt_sql, &config.driver))
+    .collect::<Vec<_>>();
   if !all_dangers.is_empty() && !request.confirmed {
     return Err(
       "危険な SQL が検出されました。confirmed=true を設定して再実行してください。".to_string(),
@@ -377,7 +443,6 @@ pub async fn db_query_execute(
   }
 
   // ステートメント分割・順次実行
-  let statements = split_sql_statements(&request.sql);
   let mut batches: Vec<DbQueryBatchResult> = Vec::new();
   let limit = request.limit as usize;
   let offset = request.offset.unwrap_or(0);
@@ -496,14 +561,26 @@ pub async fn db_preview_dangerous_sql(
   request: DangerousSqlPreviewRequest,
 ) -> Result<DangerousSqlPreview, String> {
   let config = load_connection_config(&app, &request.connection_id)?;
-  let dangers = detect_dangerous_sql(&request.sql, &config.driver);
+  let statements = resolve_target_sql_statements(&request.sql, request.cursor_offset);
+  let preview_sql = if request.cursor_offset.is_some() {
+    statements
+      .first()
+      .cloned()
+      .unwrap_or_else(|| request.sql.trim().to_string())
+  } else {
+    request.sql.trim().to_string()
+  };
+  let dangers = statements
+    .iter()
+    .flat_map(|stmt_sql| detect_dangerous_sql(stmt_sql, &config.driver))
+    .collect::<Vec<_>>();
 
   // environment が未設定の場合は dev として扱う
   let environment = config.environment.clone().unwrap_or(DbEnvironment::Dev);
 
   Ok(DangerousSqlPreview {
     dangers,
-    sql: request.sql,
+    sql: preview_sql,
     connection_name: config.name.clone(),
     environment,
     database: config.database.clone(),
@@ -650,6 +727,9 @@ fn result_batch_from_rows(
     sql: sql.to_string(),
     columns,
     rows: rows.into_iter().take(limit).collect(),
+    loaded_row_offset: Some(offset as u64),
+    loaded_row_count: Some(returned_rows),
+    row_window_truncated: None,
     total_rows,
     returned_rows,
     has_more,
@@ -673,6 +753,9 @@ fn default_batch(
     sql: sql.to_string(),
     columns: vec![],
     rows: vec![],
+    loaded_row_offset: Some(0),
+    loaded_row_count: Some(0),
+    row_window_truncated: None,
     total_rows: None,
     returned_rows: 0,
     has_more: false,
@@ -710,6 +793,66 @@ fn unsupported_paging_batch(sql: &str, schema: Option<&str>) -> DbQueryBatchResu
     Some(LOAD_MORE_UNSUPPORTED_REASON.to_string()),
     schema,
   )
+}
+
+async fn collect_mysql_rows_limited(
+  pool: &sqlx::MySqlPool,
+  sql: &str,
+  limit: usize,
+) -> Result<(Vec<DbQueryColumn>, Vec<DbQueryRow>, Option<u64>), String> {
+  let limit_plus_one = limit.saturating_add(1);
+  let mut stream = sqlx::query(sql).fetch(pool);
+  let mut columns = Vec::new();
+  let mut query_rows = Vec::new();
+
+  while let Some(row) = stream
+    .try_next()
+    .await
+    .map_err(|e| format!("MySQL クエリエラー: {e}"))?
+  {
+    if columns.is_empty() {
+      columns = mysql_columns_from_row(&row);
+    }
+    if query_rows.len() < limit_plus_one {
+      query_rows.push(mysql_row_to_query_row(&row));
+    }
+    if query_rows.len() == limit_plus_one {
+      return Ok((columns, query_rows, None));
+    }
+  }
+
+  let total_rows = query_rows.len() as u64;
+  Ok((columns, query_rows, Some(total_rows)))
+}
+
+async fn collect_postgres_rows_limited(
+  conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+  sql: &str,
+  limit: usize,
+) -> Result<(Vec<DbQueryColumn>, Vec<DbQueryRow>, Option<u64>), String> {
+  let limit_plus_one = limit.saturating_add(1);
+  let mut stream = sqlx::query(sql).fetch(&mut **conn);
+  let mut columns = Vec::new();
+  let mut query_rows = Vec::new();
+
+  while let Some(row) = stream
+    .try_next()
+    .await
+    .map_err(|e| format!("PostgreSQL クエリエラー: {e}"))?
+  {
+    if columns.is_empty() {
+      columns = pg_columns_from_row(&row);
+    }
+    if query_rows.len() < limit_plus_one {
+      query_rows.push(pg_row_to_query_row(&row));
+    }
+    if query_rows.len() == limit_plus_one {
+      return Ok((columns, query_rows, None));
+    }
+  }
+
+  let total_rows = query_rows.len() as u64;
+  Ok((columns, query_rows, Some(total_rows)))
 }
 
 async fn execute_mysql_statement(
@@ -751,12 +894,7 @@ async fn execute_mysql_statement(
       ))
     }
     StatementExecutionMode::UnsupportedResultQuery => {
-      let rows = sqlx::query(sql)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("MySQL クエリエラー: {e}"))?;
-      let total_rows = rows.len() as u64;
-      let (columns, query_rows) = mysql_rows_to_query_data(&rows);
+      let (columns, query_rows, total_rows) = collect_mysql_rows_limited(pool, sql, limit).await?;
 
       Ok(result_batch_from_rows(
         sql,
@@ -766,7 +904,7 @@ async fn execute_mysql_statement(
         offset,
         DbQueryPagingMode::Unsupported,
         None,
-        Some(total_rows),
+        total_rows,
       ))
     }
     StatementExecutionMode::NonQuery => {
@@ -831,12 +969,8 @@ async fn execute_postgres_statement(
       ))
     }
     StatementExecutionMode::UnsupportedResultQuery => {
-      let rows = sqlx::query(sql)
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(|e| format!("PostgreSQL クエリエラー: {e}"))?;
-      let total_rows = rows.len() as u64;
-      let (columns, query_rows) = pg_rows_to_query_data(&rows);
+      let (columns, query_rows, total_rows) =
+        collect_postgres_rows_limited(&mut conn, sql, limit).await?;
 
       Ok(result_batch_from_rows(
         sql,
@@ -846,7 +980,7 @@ async fn execute_postgres_statement(
         offset,
         DbQueryPagingMode::Unsupported,
         active_schema,
-        Some(total_rows),
+        total_rows,
       ))
     }
     StatementExecutionMode::NonQuery => {
@@ -870,7 +1004,7 @@ fn build_search_path_sql(schema: &str) -> String {
   format!("SET search_path TO {}, public", quote_identifier(schema))
 }
 
-async fn apply_search_path(
+pub(crate) async fn apply_search_path(
   conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
   schema: &str,
 ) -> Result<(), String> {
@@ -885,69 +1019,71 @@ async fn apply_search_path(
 fn mysql_rows_to_query_data(
   rows: &[sqlx::mysql::MySqlRow],
 ) -> (Vec<DbQueryColumn>, Vec<DbQueryRow>) {
-  use sqlx::TypeInfo;
-
   let columns: Vec<DbQueryColumn> = rows
     .first()
-    .map(|first| {
-      first
-        .columns()
-        .iter()
-        .map(|c| DbQueryColumn {
-          name: c.name().to_string(),
-          data_type: c.type_info().name().to_string(),
-        })
-        .collect()
-    })
+    .map(mysql_columns_from_row)
     .unwrap_or_default();
 
-  let query_rows = rows
-    .iter()
-    .map(|row| {
-      let values = row
-        .columns()
-        .iter()
-        .enumerate()
-        .map(|(i, _)| mysql_value_to_json(row, i))
-        .collect();
-      DbQueryRow { values }
-    })
-    .collect();
+  let query_rows = rows.iter().map(mysql_row_to_query_row).collect();
 
   (columns, query_rows)
 }
 
-fn pg_rows_to_query_data(rows: &[sqlx::postgres::PgRow]) -> (Vec<DbQueryColumn>, Vec<DbQueryRow>) {
+fn mysql_columns_from_row(row: &sqlx::mysql::MySqlRow) -> Vec<DbQueryColumn> {
   use sqlx::TypeInfo;
 
+  row
+    .columns()
+    .iter()
+    .map(|c| DbQueryColumn {
+      name: c.name().to_string(),
+      data_type: c.type_info().name().to_string(),
+    })
+    .collect()
+}
+
+fn mysql_row_to_query_row(row: &sqlx::mysql::MySqlRow) -> DbQueryRow {
+  let values = row
+    .columns()
+    .iter()
+    .enumerate()
+    .map(|(i, _)| mysql_value_to_json(row, i))
+    .collect();
+  DbQueryRow { values }
+}
+
+fn pg_rows_to_query_data(rows: &[sqlx::postgres::PgRow]) -> (Vec<DbQueryColumn>, Vec<DbQueryRow>) {
   let columns: Vec<DbQueryColumn> = rows
     .first()
-    .map(|first| {
-      first
-        .columns()
-        .iter()
-        .map(|c| DbQueryColumn {
-          name: c.name().to_string(),
-          data_type: c.type_info().name().to_string(),
-        })
-        .collect()
-    })
+    .map(pg_columns_from_row)
     .unwrap_or_default();
 
-  let query_rows = rows
-    .iter()
-    .map(|row| {
-      let values = row
-        .columns()
-        .iter()
-        .enumerate()
-        .map(|(i, _)| pg_value_to_json(row, i))
-        .collect();
-      DbQueryRow { values }
-    })
-    .collect();
+  let query_rows = rows.iter().map(pg_row_to_query_row).collect();
 
   (columns, query_rows)
+}
+
+fn pg_columns_from_row(row: &sqlx::postgres::PgRow) -> Vec<DbQueryColumn> {
+  use sqlx::TypeInfo;
+
+  row
+    .columns()
+    .iter()
+    .map(|c| DbQueryColumn {
+      name: c.name().to_string(),
+      data_type: c.type_info().name().to_string(),
+    })
+    .collect()
+}
+
+fn pg_row_to_query_row(row: &sqlx::postgres::PgRow) -> DbQueryRow {
+  let values = row
+    .columns()
+    .iter()
+    .enumerate()
+    .map(|(i, _)| pg_value_to_json(row, i))
+    .collect();
+  DbQueryRow { values }
 }
 
 /// MySQL の行値を serde_json::Value に変換する
@@ -1176,6 +1312,20 @@ mod tests {
   }
 
   #[test]
+  fn test_resolve_target_sql_statements_selects_statement_at_cursor() {
+    let sql = "SELECT 1;\nDELETE FROM users;\nSELECT 2;";
+    let statements = resolve_target_sql_statements(sql, Some(12));
+    assert_eq!(statements, vec!["DELETE FROM users".to_string()]);
+  }
+
+  #[test]
+  fn test_resolve_target_sql_statements_falls_forward_from_empty_segment() {
+    let sql = " ;  ;\nSELECT 42;\n";
+    let statements = resolve_target_sql_statements(sql, Some(0));
+    assert_eq!(statements, vec!["SELECT 42".to_string()]);
+  }
+
+  #[test]
   fn test_build_wrapped_page_sql_uses_wrapper_and_limit_plus_one() {
     let limit = 200usize;
     let limit_plus_one = limit.saturating_add(1);
@@ -1251,6 +1401,9 @@ mod tests {
 
     assert_eq!(batch.rows.len(), 2, "unsupported paging still returns visible rows");
     assert!(batch.has_more, "runtime should signal truncation even when load-more is disabled");
+    assert_eq!(batch.loaded_row_offset, Some(0));
+    assert_eq!(batch.loaded_row_count, Some(2));
+    assert_eq!(batch.row_window_truncated, None);
     assert_eq!(batch.total_rows, Some(3));
     assert_eq!(batch.next_offset, None, "load-more cursor must stay disabled");
     assert_eq!(

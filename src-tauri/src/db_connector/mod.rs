@@ -2,12 +2,14 @@
 // MySQL / PostgreSQL への接続設定を管理し、スキーマのイントロスペクションと差分比較を提供する
 
 pub mod commands;
+pub mod discovery;
 mod introspect;
 pub mod query;
 pub mod explain;
 pub mod grid_edit;
 pub mod data_diff;
 pub mod data_apply;
+pub mod object_inspect;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -64,12 +66,56 @@ pub struct DbConnectionConfig {
   /// 読み取り専用モード — true の場合 DML/DDL を Rust 側でブロック（旧設定は false として扱う）
   #[serde(default)]
   pub readonly: bool,
+  /// 收藏连接，在连接中心优先展示
+  #[serde(default, skip_serializing_if = "is_false")]
+  pub favorite: bool,
+  /// 连接分组名
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub group_name: Option<String>,
   /// ワークベンチヘッダーの色タグ（CSS カラー文字列）
   #[serde(skip_serializing_if = "Option::is_none")]
   pub color_tag: Option<String>,
   /// デフォルトスキーマ名
   #[serde(skip_serializing_if = "Option::is_none")]
   pub default_schema: Option<String>,
+  /// 操作员备注
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DbDiscoverySource {
+  MysqlHandshake,
+  PostgresSslProbe,
+  TcpPortScan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DbDiscoveryConfidence {
+  High,
+  Medium,
+  Low,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDiscoveredEndpoint {
+  pub id: String,
+  pub driver: DbDriver,
+  pub host: String,
+  pub port: u16,
+  pub source: DbDiscoverySource,
+  pub confidence: DbDiscoveryConfidence,
+  pub label: String,
+  pub detail: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub database_hint: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub username_hint: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub default_schema_hint: Option<String>,
 }
 
 // ──────────────────────────────────────────────
@@ -84,6 +130,8 @@ pub struct QueryExecutionRequest {
   pub connection_id: String,
   pub sql: String,
   pub request_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub cursor_offset: Option<u32>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub schema: Option<String>,
   /// 1フェッチあたりの最大行数（デフォルト 1000）
@@ -203,6 +251,13 @@ pub struct DbGridEditPatchCell {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct DbGridDeleteRowDraft {
+  pub row_primary_key: HashMap<String, serde_json::Value>,
+  pub row_pk_tuple: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DbGridPrepareCommitRequest {
   pub connection_id: String,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,6 +266,8 @@ pub struct DbGridPrepareCommitRequest {
   pub source: DbGridEditSource,
   pub primary_key_columns: Vec<String>,
   pub patch_cells: Vec<DbGridEditPatchCell>,
+  #[serde(default)]
+  pub deleted_rows: Vec<DbGridDeleteRowDraft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -219,6 +276,8 @@ pub struct DbGridPrepareCommitResponse {
   pub plan_id: String,
   pub plan_hash: String,
   pub affected_rows: u64,
+  pub updated_rows: u64,
+  pub deleted_rows: u64,
   #[serde(default)]
   pub changed_columns_summary: Vec<String>,
   #[serde(default)]
@@ -240,6 +299,8 @@ pub struct DbGridCommitResponse {
   pub plan_id: String,
   pub plan_hash: String,
   pub committed_rows: u64,
+  pub updated_rows: u64,
+  pub deleted_rows: u64,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub failed_sql_index: Option<u64>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,6 +316,12 @@ pub struct DbQueryBatchResult {
   pub sql: String,
   pub columns: Vec<DbQueryColumn>,
   pub rows: Vec<DbQueryRow>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub loaded_row_offset: Option<u64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub loaded_row_count: Option<u64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub row_window_truncated: Option<bool>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub total_rows: Option<u64>,
   pub returned_rows: u64,
@@ -342,6 +409,8 @@ pub struct DangerousSqlPreview {
 pub struct DangerousSqlPreviewRequest {
   pub connection_id: String,
   pub sql: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub cursor_offset: Option<u32>,
 }
 
 /// 結果行エクスポートリクエスト
@@ -388,8 +457,10 @@ pub enum DbDataSyncBlockerCode {
   MissingStableKey,
   TargetSnapshotChanged,
   UnsafeDeleteThreshold,
+  UnsafeDeleteConfirmationRequired,
   ReadonlyTarget,
   ArtifactExpired,
+  TargetDatabaseConfirmationRequired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -595,6 +666,12 @@ pub struct DbDataApplyExecuteRequest {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub current_target_snapshot_hash: Option<String>,
   pub selections: Vec<DbDataApplySelection>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub delete_warning_threshold: Option<u64>,
+  #[serde(default)]
+  pub confirm_unsafe_delete: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target_database_confirmation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -617,6 +694,57 @@ pub enum DbDataApplyJobStatus {
   Completed,
   Failed,
   Partial,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbBackgroundJobKind {
+  DataApply,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbBackgroundJobSummary {
+  pub job_id: String,
+  pub job_kind: DbBackgroundJobKind,
+  pub title: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub source_connection_id: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target_connection_id: Option<String>,
+  pub status: DbDataApplyJobStatus,
+  pub status_counts: DbDataDiffActionCounts,
+  #[serde(default)]
+  pub blockers: Vec<DbDataSyncBlocker>,
+  pub table_count: u64,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub primary_table_name: Option<String>,
+  pub statement_count: u64,
+  #[serde(default)]
+  pub sql_preview_lines: Vec<String>,
+  #[serde(default)]
+  pub preview_truncated: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub failure_summary: Option<String>,
+  pub created_at: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub started_at: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbBackgroundJobListRequest {
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbBackgroundJobListResponse {
+  #[serde(default)]
+  pub jobs: Vec<DbBackgroundJobSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -656,6 +784,11 @@ pub struct DbDataApplyJobDetailResponse {
   pub table_results: Vec<DbDataApplyTableResult>,
   #[serde(default)]
   pub blockers: Vec<DbDataSyncBlocker>,
+  #[serde(default)]
+  pub sql_preview_lines: Vec<String>,
+  #[serde(default)]
+  pub preview_truncated: bool,
+  pub statement_count: u64,
   pub created_at: String,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub started_at: Option<String>,
@@ -731,6 +864,44 @@ pub struct DbViewSchema {
   pub columns: Vec<DbColumnSchema>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbRoutineKind {
+  Function,
+  Procedure,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbRoutineSchema {
+  pub name: String,
+  pub kind: DbRoutineKind,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub comment: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub signature: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub return_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbTriggerSchema {
+  pub name: String,
+  pub table_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub timing: Option<String>,
+  pub event: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSequenceSchema {
+  pub name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub comment: Option<String>,
+}
+
 /// DB スキーマスナップショット
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -741,6 +912,71 @@ pub struct DbSchemaSnapshot {
   pub schema: String,
   pub tables: Vec<DbTableSchema>,
   pub views: Vec<DbViewSchema>,
+  #[serde(default)]
+  pub routines: Vec<DbRoutineSchema>,
+  #[serde(default)]
+  pub triggers: Vec<DbTriggerSchema>,
+  #[serde(default)]
+  pub sequences: Vec<DbSequenceSchema>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbObjectKind {
+  Table,
+  View,
+  Index,
+  ForeignKey,
+  Sequence,
+  Function,
+  Procedure,
+  Trigger,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbObjectInspectionRequest {
+  pub connection_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema: Option<String>,
+  pub object_kind: DbObjectKind,
+  pub object_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub signature: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub parent_object_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbObjectInspectionResponse {
+  pub connection_id: String,
+  pub database: String,
+  pub schema: String,
+  pub object_kind: DbObjectKind,
+  pub object_name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub signature: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub parent_object_name: Option<String>,
+  pub display_name: String,
+  pub supported: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub ddl: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub comment: Option<String>,
+  #[serde(default)]
+  pub columns: Vec<DbColumnSchema>,
+  #[serde(default)]
+  pub indexes: Vec<DbIndexSchema>,
+  #[serde(default)]
+  pub foreign_keys: Vec<DbForeignKeySchema>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub definition_sql: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub unsupported_message: Option<String>,
+  #[serde(default)]
+  pub coverage_notes: Vec<String>,
 }
 
 /// カラムレベルの差分
