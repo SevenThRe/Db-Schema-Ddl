@@ -10,7 +10,12 @@ const workbenchPath = path.resolve(
   __dirname,
   "../../client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
 );
+const runtimeHelperPath = path.resolve(
+  __dirname,
+  "../../client/src/components/extensions/db-workbench/data-apply-runtime.ts",
+);
 const workbenchSource = readFileSync(workbenchPath, "utf8");
+const runtimeHelperSource = readFileSync(runtimeHelperPath, "utf8");
 
 test("data sync flow keeps compare then preview then execute ordering", () => {
   const compareIndex = workbenchSource.indexOf("previewDataDiff(");
@@ -48,5 +53,6 @@ test("prod typed confirmation gate is required before execute call", () => {
 test("execute job detail loader stays reachable after execution", () => {
   assert.match(workbenchSource, /fetchDataApplyJobDetail\(/);
   assert.match(workbenchSource, /Open Job Center/);
-  assert.match(workbenchSource, /Review job detail/);
+  assert.match(runtimeHelperSource, /Review job detail/);
+  assert.match(runtimeHelperSource, /Open Job Center/);
 });

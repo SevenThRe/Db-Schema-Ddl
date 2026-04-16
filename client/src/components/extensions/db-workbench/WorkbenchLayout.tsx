@@ -108,6 +108,11 @@ import {
   type SqlStatementSegment,
 } from "./sql-statements";
 import { WorkbenchSchemaDiffPane } from "./SchemaDiffPane";
+import {
+  buildDataApplyNotification,
+  isDataApplyJobActive,
+  mergeDataApplyExecutionDetail,
+} from "./data-apply-runtime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 type StarterQueryMode = "select" | "count" | "columns";
@@ -447,12 +452,6 @@ function formatDataSyncCounts(counts: {
   unchanged: number;
 }): string {
   return `I:${counts.insert} U:${counts.update} D:${counts.delete} =:${counts.unchanged}`;
-}
-
-function isBackgroundJobActive(
-  status: DbBackgroundJobSummary["status"] | DbDataApplyJobDetailResponse["status"] | null | undefined,
-): boolean {
-  return status === "running" || status === "pending";
 }
 
 function backgroundJobSortValue(job: { startedAt?: string; createdAt: string }): number {
@@ -2647,7 +2646,7 @@ export function WorkbenchLayout({
   const selectedBackgroundJob =
     backgroundJobs.find((job) => job.jobId === selectedJobId) ?? null;
   const activeBackgroundJob =
-    backgroundJobs.find((job) => isBackgroundJobActive(job.status)) ?? null;
+    backgroundJobs.find((job) => isDataApplyJobActive(job.status)) ?? null;
   const activeApplyJobId =
     applyExecute?.jobId ?? activeBackgroundJob?.jobId ?? applyJobDetail?.jobId ?? null;
   const activeApplyJobStatus =
@@ -2724,41 +2723,10 @@ export function WorkbenchLayout({
       setSelectedJobId(result.jobId);
       const detail = await handleLoadDataApplyJobDetail(result.jobId);
       await refreshBackgroundJobs(true);
-      hostApi.notifications.show({
-        title:
-          result.status === "running"
-            ? "Data Sync apply started"
-            : result.status === "completed"
-              ? "Data Sync apply completed"
-              : result.status === "partial"
-                ? "Data Sync apply finished with partial failures"
-              : "Data Sync apply finished with failure",
-        description:
-          result.status === "running"
-            ? "The apply job is running in the background. Job detail will refresh automatically."
-            : result.status === "completed"
-              ? `${result.statusCounts.insert + result.statusCounts.update + result.statusCounts.delete} row actions executed. Re-run compare to refresh deltas.`
-              : result.status === "partial"
-                ? "The apply job completed with some failed row actions. Open Job Center for the persisted audit trail."
-              : "The apply transaction did not fully commit. Review job detail for failure context.",
-        variant:
-          result.status === "running"
-            ? "default"
-            : result.status === "completed"
-              ? "success"
-              : "destructive",
-      });
+      hostApi.notifications.show(buildDataApplyNotification(result.status, result.statusCounts, "execute"));
       if (detail.status !== result.status) {
         setApplyExecute((current) =>
-          current && current.jobId === detail.jobId
-            ? {
-                ...current,
-                status: detail.status,
-                statusCounts: detail.statusCounts,
-                tableResults: detail.tableResults,
-                blockers: detail.blockers,
-              }
-            : current,
+          mergeDataApplyExecutionDetail(current, detail, { refreshCurrentTargetSnapshotHash: false }),
         );
       }
     } catch (error) {
@@ -2786,7 +2754,7 @@ export function WorkbenchLayout({
   ]);
 
   useEffect(() => {
-    if (!activeApplyJobId || !isBackgroundJobActive(activeApplyJobStatus)) {
+    if (!activeApplyJobId || !isDataApplyJobActive(activeApplyJobStatus)) {
       return;
     }
 
@@ -2800,42 +2768,16 @@ export function WorkbenchLayout({
 
         setApplyJobDetail(detail);
         setBackgroundJobs((current) => mergeBackgroundJobs(current, [toBackgroundJobSummary(detail)]));
-        setApplyExecute((current) =>
-          current && current.jobId === detail.jobId
-            ? {
-                ...current,
-                currentTargetSnapshotHash:
-                  detail.currentTargetSnapshotHash ?? current.currentTargetSnapshotHash,
-                status: detail.status,
-                statusCounts: detail.statusCounts,
-                tableResults: detail.tableResults,
-              blockers: detail.blockers,
-              }
-            : current,
-        );
+        setApplyExecute((current) => mergeDataApplyExecutionDetail(current, detail));
 
         await refreshBackgroundJobs(true);
 
-        if (isBackgroundJobActive(detail.status)) {
+        if (isDataApplyJobActive(detail.status)) {
           timerId = window.setTimeout(poll, 1500);
           return;
         }
 
-        hostApi.notifications.show({
-          title:
-            detail.status === "completed"
-              ? "Data Sync apply completed"
-              : detail.status === "partial"
-                ? "Data Sync apply finished with partial failures"
-              : "Data Sync apply finished with failure",
-          description:
-            detail.status === "completed"
-              ? `${detail.statusCounts.insert + detail.statusCounts.update + detail.statusCounts.delete} row actions executed. Re-run compare to refresh deltas.`
-              : detail.status === "partial"
-                ? "The apply job completed with partial failures. Open Job Center for the persisted audit trail."
-              : "The apply transaction did not fully commit. Review job detail for failure context.",
-          variant: detail.status === "completed" ? "success" : "destructive",
-        });
+        hostApi.notifications.show(buildDataApplyNotification(detail.status, detail.statusCounts, "detail"));
       } catch (error) {
         if (cancelled) return;
         setSyncIssue(
