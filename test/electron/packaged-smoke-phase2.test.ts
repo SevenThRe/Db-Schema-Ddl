@@ -17,14 +17,14 @@ test("packaged smoke artifact exposes structured packaged evidence", () => {
     appVersion: "1.1.4",
     environment: "packaged-electron",
     runMode: "packaged-win-unpacked",
-    logPath: "C:/Users/tester/AppData/Roaming/DBSchemaExcel2DDL/logs/main.log",
-    executablePath: "C:/builds/win-unpacked/DBSchemaExcel2DDL.exe",
+    logPath: "C:/Users/tester/AppData/Roaming/DBTools/logs/main.log",
+    executablePath: "C:/builds/win-unpacked/DBTools.exe",
     screenshotPaths: [
       "C:/artifacts/desktop-smoke/win-unpacked-main-window.png",
       "C:/artifacts/desktop-smoke/win-unpacked-db-management.png",
     ],
     logExcerpt: {
-      path: "C:/Users/tester/AppData/Roaming/DBSchemaExcel2DDL/logs/main.log",
+      path: "C:/Users/tester/AppData/Roaming/DBTools/logs/main.log",
       excerpt: "browser_window_loaded\nextension_catalog_fetch_failed",
       startLine: 18,
       endLine: 19,
@@ -41,13 +41,13 @@ test("packaged smoke artifact exposes structured packaged evidence", () => {
   });
 
   assert.equal(artifact.runMode, "packaged-win-unpacked");
-  assert.equal(artifact.executablePath, "C:/builds/win-unpacked/DBSchemaExcel2DDL.exe");
+  assert.equal(artifact.executablePath, "C:/builds/win-unpacked/DBTools.exe");
   assert.deepEqual(artifact.screenshotPaths, [
     "C:/artifacts/desktop-smoke/win-unpacked-main-window.png",
     "C:/artifacts/desktop-smoke/win-unpacked-db-management.png",
   ]);
   assert.deepEqual(artifact.logExcerpt, {
-    path: "C:/Users/tester/AppData/Roaming/DBSchemaExcel2DDL/logs/main.log",
+    path: "C:/Users/tester/AppData/Roaming/DBTools/logs/main.log",
     excerpt: "browser_window_loaded\nextension_catalog_fetch_failed",
     startLine: 18,
     endLine: 19,
@@ -70,7 +70,7 @@ test("packaged smoke recognizes win-unpacked and nsis as first-class run modes",
     environment: "packaged-electron",
     runMode: "packaged-win-unpacked",
     logPath: "C:/logs/win-unpacked.log",
-    executablePath: "C:/builds/win-unpacked/DBSchemaExcel2DDL.exe",
+    executablePath: "C:/builds/win-unpacked/DBTools.exe",
     steps: [],
   });
 
@@ -81,7 +81,7 @@ test("packaged smoke recognizes win-unpacked and nsis as first-class run modes",
     environment: "packaged-electron",
     runMode: "packaged-nsis",
     logPath: "C:/logs/nsis.log",
-    executablePath: "C:/Program Files/DBSchemaExcel2DDL/DBSchemaExcel2DDL.exe",
+    executablePath: "C:/Program Files/DBTools/DBTools.exe",
     steps: [],
   });
 
@@ -97,7 +97,7 @@ test("packaged markdown and json evidence derive from the same artifact", () => 
     environment: "packaged-electron",
     runMode: "packaged-nsis",
     logPath: "C:/logs/nsis.log",
-    executablePath: "C:/Program Files/DBSchemaExcel2DDL/DBSchemaExcel2DDL.exe",
+    executablePath: "C:/Program Files/DBTools/DBTools.exe",
     screenshotPaths: ["C:/artifacts/desktop-smoke/nsis-main-window.png"],
     logExcerpt: {
       path: "C:/logs/nsis.log",
@@ -125,7 +125,7 @@ test("packaged markdown and json evidence derive from the same artifact", () => 
 
   assert.match(markdown, /Desktop Smoke Run desktop-smoke-packaged-004/);
   assert.match(markdown, /packaged-nsis/);
-  assert.match(markdown, /C:\/Program Files\/DBSchemaExcel2DDL\/DBSchemaExcel2DDL\.exe/);
+  assert.match(markdown, /C:\/Program Files\/DBTools\/DBTools\.exe/);
   assert.match(markdown, /C:\/artifacts\/desktop-smoke\/nsis-main-window\.png/);
   assert.match(markdown, /PACKAGED_STARTUP_READY/);
 });
@@ -135,7 +135,7 @@ test("packaged smoke resolves the win-unpacked executable path", () => {
 
   assert.equal(
     executablePath,
-    path.join("C:/workspace/db-schema-ddl", "dist-electron", "win-unpacked", "DBSchemaExcel2DDL.exe"),
+    path.join("C:/workspace/db-schema-ddl", "dist-electron", "win-unpacked", "DBTools.exe"),
   );
 });
 

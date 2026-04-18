@@ -50,7 +50,13 @@ export type MainSurface =
   | { kind: "workspace" }
   | { kind: "ddl-import" }
   | { kind: "extensions" }
-  | { kind: "extension"; extensionId: string; panelId: string };
+  | {
+      kind: "extension";
+      extensionId: string;
+      activityItemId?: string;
+      sidebarViewId?: string;
+      workbenchViewId?: string;
+    };
 
 /** データベース接続操作 API */
 export interface ConnectionsApi {

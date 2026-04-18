@@ -36,6 +36,9 @@ pub enum ExtensionError {
     #[error("拡張機能が実行中ではありません: {0}")]
     NotRunning(String),
 
+    #[error("この拡張機能には起動可能な sidecar がありません: {0}")]
+    NoSidecar(String),
+
     #[error("マニフェスト解析エラー: {0}")]
     InvalidManifest(String),
 

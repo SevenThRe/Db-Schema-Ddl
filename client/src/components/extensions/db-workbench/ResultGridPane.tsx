@@ -11,7 +11,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { List, type ListProps } from "react-window";
-import { Copy, RotateCcw, Search, Trash2, X, XCircle } from "lucide-react";
+import { Copy, Plus, RotateCcw, Search, Trash2, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -30,6 +30,8 @@ import type {
 } from "./grid-edit-summary";
 import { formatGridCellValue } from "./grid-edit-summary";
 import type {
+  DbTableSchema,
+  DbGridInsertedRowDraft,
   DbGridDeleteRowDraft,
   DbQueryBatchResult,
   DbQueryColumn,
@@ -40,7 +42,8 @@ import type {
 
 type GridCellValue = string | number | boolean | null;
 
-interface GridRowView {
+interface LoadedGridRowView {
+  kind: "loaded";
   row: DbQueryRow;
   sourceIndex: number;
   rowPrimaryKey: Record<string, GridCellValue> | null;
@@ -49,6 +52,18 @@ interface GridRowView {
   dirtyColumnNames: Set<string>;
   isPendingDelete: boolean;
 }
+
+interface DraftGridRowView {
+  kind: "insert-draft";
+  rowDraftId: string;
+  sourceIndex: number;
+  displayValues: GridCellValue[];
+  includedColumnNames: Set<string>;
+  dirtyColumnNames: Set<string>;
+  isPendingDelete: false;
+}
+
+type GridRowView = LoadedGridRowView | DraftGridRowView;
 
 // ──────────────────────────────────────────────
 // 型定義
@@ -69,16 +84,26 @@ export interface ResultGridPaneProps {
   /** Stop on error 変更コールバック */
   onStopOnErrorChange: (value: boolean) => void;
   editEligibility?: DbGridEditEligibility;
+  tableSchema?: DbTableSchema | null;
   primaryKeyColumns?: string[];
   pendingEditCells: Record<string, DbGridEditPatchCell>;
   pendingEditRows: PendingEditRowSummary[];
+  pendingInsertedRows: Record<string, DbGridInsertedRowDraft>;
   pendingDeleteRows: Record<string, DbGridDeleteRowDraft>;
   pendingDeletedRows: PendingDeleteRowSummary[];
   pendingEditCount: number;
+  pendingInsertedCount: number;
   pendingDeleteCount: number;
   onEditCell: (patch: DbGridEditPatchCell) => void;
   onRevertCell: (rowPkTuple: string, columnName: string) => void;
   onRevertRow: (rowPkTuple: string) => void;
+  onAddInsertedRow: () => void;
+  onEditInsertedRowValue: (
+    rowDraftId: string,
+    columnName: string,
+    nextValue: GridCellValue | undefined,
+  ) => void;
+  onDiscardInsertedRow: (rowDraftId: string) => void;
   onStageDeleteRow: (row: DbGridDeleteRowDraft) => void;
   onRevertDeleteRow: (rowPkTuple: string) => void;
   onPrepareCommit: () => void;
@@ -217,6 +242,7 @@ function buildGridRowView(
   );
 
   return {
+    kind: "loaded",
     row,
     sourceIndex,
     rowPrimaryKey,
@@ -225,6 +251,52 @@ function buildGridRowView(
     dirtyColumnNames: new Set(pendingRowCells?.keys() ?? []),
     isPendingDelete: rowPkTuple ? pendingDeleteLookup.has(rowPkTuple) : false,
   };
+}
+
+function buildInsertedRowView(
+  draft: DbGridInsertedRowDraft,
+  columns: DbQueryColumn[],
+): DraftGridRowView {
+  const includedColumnNames = new Set(Object.keys(draft.values));
+  return {
+    kind: "insert-draft",
+    rowDraftId: draft.rowDraftId,
+    sourceIndex: -1,
+    displayValues: columns.map((column) =>
+      includedColumnNames.has(column.name) ? draft.values[column.name] ?? null : null,
+    ),
+    includedColumnNames,
+    dirtyColumnNames: includedColumnNames,
+    isPendingDelete: false,
+  };
+}
+
+function parseInsertedValue(editedRawValue: string):
+  | { kind: "unset" }
+  | { kind: "value"; value: GridCellValue } {
+  const trimmed = editedRawValue.trim();
+  if (!trimmed) {
+    return { kind: "unset" };
+  }
+  if (/^null$/i.test(trimmed)) {
+    return { kind: "value", value: null };
+  }
+  if (/^true$/i.test(trimmed)) {
+    return { kind: "value", value: true };
+  }
+  if (/^false$/i.test(trimmed)) {
+    return { kind: "value", value: false };
+  }
+  if (trimmed === "\"\"" || trimmed === "''") {
+    return { kind: "value", value: "" };
+  }
+
+  const asNumber = Number(trimmed);
+  if (!Number.isNaN(asNumber) && trimmed !== "") {
+    return { kind: "value", value: asNumber };
+  }
+
+  return { kind: "value", value: editedRawValue };
 }
 
 // ──────────────────────────────────────────────
@@ -340,6 +412,9 @@ function ScriptRunSummary({
 function SelectedRowInspector({
   rowValues,
   rowPkTuple,
+  insertDraftId,
+  isInsertDraft = false,
+  includedColumnNames,
   dirtyColumnNames,
   isPendingDelete = false,
   columns,
@@ -350,11 +425,15 @@ function SelectedRowInspector({
   onCopyCell,
   onRevertCell,
   onRevertRow,
+  onDiscardInsertedRow,
   onStageDeleteRow,
   onRevertDeleteRow,
 }: {
   rowValues: GridCellValue[] | null;
   rowPkTuple: string | null;
+  insertDraftId?: string | null;
+  isInsertDraft?: boolean;
+  includedColumnNames?: Set<string>;
   dirtyColumnNames?: Set<string>;
   isPendingDelete?: boolean;
   columns: DbQueryColumn[];
@@ -365,6 +444,7 @@ function SelectedRowInspector({
   onCopyCell: (column: DbQueryColumn, value: GridCellValue) => void;
   onRevertCell: (columnName: string) => void;
   onRevertRow: () => void;
+  onDiscardInsertedRow: () => void;
   onStageDeleteRow: () => void;
   onRevertDeleteRow: () => void;
 }) {
@@ -378,7 +458,9 @@ function SelectedRowInspector({
             Row Inspector
           </p>
           <p className="mt-0.5 text-xs text-foreground">
-            {rowValues && rowIndex !== null
+            {isInsertDraft && rowValues
+              ? `Insert draft ${insertDraftId?.slice(0, 8) ?? ""} · ${dirtyFieldCount} field${dirtyFieldCount === 1 ? "" : "s"} included`
+              : rowValues && rowIndex !== null
               ? `Loaded row ${rowIndex.toLocaleString()} · inspect and copy field values${dirtyFieldCount > 0 ? ` · ${dirtyFieldCount} pending field${dirtyFieldCount > 1 ? "s" : ""}` : ""}${isPendingDelete ? " · pending delete" : ""}`
               : "Select a row to inspect fields, verify values, and continue from the result set."}
           </p>
@@ -388,22 +470,24 @@ function SelectedRowInspector({
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
-            onClick={onRevertRow}
-            disabled={!rowPkTuple || dirtyFieldCount === 0}
+            onClick={isInsertDraft ? onDiscardInsertedRow : onRevertRow}
+            disabled={isInsertDraft ? !insertDraftId : !rowPkTuple || dirtyFieldCount === 0}
           >
             <RotateCcw className="mr-1 h-3 w-3" />
-            Revert row
+            {isInsertDraft ? "Discard draft" : "Revert row"}
           </Button>
-          <Button
-            variant={isPendingDelete ? "outline" : "destructive"}
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={isPendingDelete ? onRevertDeleteRow : onStageDeleteRow}
-            disabled={!rowPkTuple || !canStageDelete}
-          >
-            <Trash2 className="mr-1 h-3 w-3" />
-            {isPendingDelete ? "Revert delete" : "Stage delete"}
-          </Button>
+          {!isInsertDraft ? (
+            <Button
+              variant={isPendingDelete ? "outline" : "destructive"}
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={isPendingDelete ? onRevertDeleteRow : onStageDeleteRow}
+              disabled={!rowPkTuple || !canStageDelete}
+            >
+              <Trash2 className="mr-1 h-3 w-3" />
+              {isPendingDelete ? "Revert delete" : "Stage delete"}
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             size="sm"
@@ -431,7 +515,8 @@ function SelectedRowInspector({
         <div className="max-h-44 overflow-auto border-t border-border">
           {columns.map((column, index) => {
             const value = rowValues[index] ?? null;
-            const displayValue = formatCellValue(value);
+            const isDraftDefault = isInsertDraft && !includedColumnNames?.has(column.name);
+            const displayValue = isDraftDefault ? "DEFAULT" : formatCellValue(value);
             const isDirty = dirtyColumnNames?.has(column.name) ?? false;
             return (
               <div
@@ -452,15 +537,22 @@ function SelectedRowInspector({
                       "break-all rounded-sm border px-2 py-1 font-mono text-[11px]",
                       isPendingDelete
                         ? "border-destructive/40 bg-destructive/5"
+                        : isDraftDefault
+                        ? "border-sky-500/30 bg-sky-500/5"
                         : isDirty
                         ? "border-amber-500/40 bg-amber-500/10"
                         : "border-border bg-muted/20",
-                      value === null ? "italic text-muted-foreground" : "text-foreground",
+                      value === null || isDraftDefault ? "italic text-muted-foreground" : "text-foreground",
                       isPendingDelete ? "line-through opacity-70" : undefined,
                     )}
                   >
                     {displayValue}
                   </div>
+                  {isDraftDefault ? (
+                    <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-sky-700 dark:text-sky-300">
+                      default
+                    </p>
+                  ) : null}
                   {isPendingDelete ? (
                     <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-destructive">
                       pending delete
@@ -482,15 +574,20 @@ function SelectedRowInspector({
                     <Copy className="mr-1 h-3 w-3" />
                     Copy
                   </Button>
-                  {isDirty && !isPendingDelete ? (
+                  {(isDirty || isDraftDefault) && !isPendingDelete ? (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-[10px] text-amber-700 hover:text-amber-800 dark:text-amber-300"
+                      className={cn(
+                        "h-6 px-2 text-[10px]",
+                        isInsertDraft
+                          ? "text-sky-700 hover:text-sky-800 dark:text-sky-300"
+                          : "text-amber-700 hover:text-amber-800 dark:text-amber-300",
+                      )}
                       onClick={() => onRevertCell(column.name)}
                     >
                       <RotateCcw className="mr-1 h-3 w-3" />
-                      Revert
+                      {isInsertDraft ? "Unset" : "Revert"}
                     </Button>
                   ) : null}
                 </div>
@@ -512,16 +609,22 @@ function SingleBatchGrid({
   batchIndex,
   onLoadMore,
   editEligibility,
+  tableSchema,
   primaryKeyColumns,
   pendingEditCells,
   pendingEditRows,
+  pendingInsertedRows,
   pendingDeleteRows,
   pendingDeletedRows,
   pendingEditCount,
+  pendingInsertedCount,
   pendingDeleteCount,
   onEditCell,
   onRevertCell,
   onRevertRow,
+  onAddInsertedRow,
+  onEditInsertedRowValue,
+  onDiscardInsertedRow,
   onStageDeleteRow,
   onRevertDeleteRow,
   onPrepareCommit,
@@ -531,16 +634,26 @@ function SingleBatchGrid({
   batchIndex: number;
   onLoadMore: (batchIndex: number) => void;
   editEligibility?: DbGridEditEligibility;
+  tableSchema?: DbTableSchema | null;
   primaryKeyColumns?: string[];
   pendingEditCells: Record<string, DbGridEditPatchCell>;
   pendingEditRows: PendingEditRowSummary[];
+  pendingInsertedRows: Record<string, DbGridInsertedRowDraft>;
   pendingDeleteRows: Record<string, DbGridDeleteRowDraft>;
   pendingDeletedRows: PendingDeleteRowSummary[];
   pendingEditCount: number;
+  pendingInsertedCount: number;
   pendingDeleteCount: number;
   onEditCell: (patch: DbGridEditPatchCell) => void;
   onRevertCell: (rowPkTuple: string, columnName: string) => void;
   onRevertRow: (rowPkTuple: string) => void;
+  onAddInsertedRow: () => void;
+  onEditInsertedRowValue: (
+    rowDraftId: string,
+    columnName: string,
+    nextValue: GridCellValue | undefined,
+  ) => void;
+  onDiscardInsertedRow: (rowDraftId: string) => void;
   onStageDeleteRow: (row: DbGridDeleteRowDraft) => void;
   onRevertDeleteRow: (rowPkTuple: string) => void;
   onPrepareCommit: () => void;
@@ -570,6 +683,10 @@ function SingleBatchGrid({
   const primaryKeySet = useMemo(
     () => new Set(primaryKeyList),
     [primaryKeyList],
+  );
+  const tableColumnByName = useMemo(
+    () => new Map((tableSchema?.columns ?? []).map((column) => [column.name, column])),
+    [tableSchema],
   );
   const isEditEnabled = editEligibility?.eligible === true;
   const pendingEditLookup = useMemo(
@@ -647,8 +764,11 @@ function SingleBatchGrid({
 
   const normalizedFilter = filterText.trim().toLowerCase();
   const rowViews = useMemo(
-    () =>
-      batch.rows.map((row, sourceIndex) =>
+    () => [
+      ...Object.values(pendingInsertedRows).map((draft) =>
+        buildInsertedRowView(draft, batch.columns),
+      ),
+      ...batch.rows.map((row, sourceIndex) =>
         buildGridRowView(
           row,
           (batch.loadedRowOffset ?? 0) + sourceIndex,
@@ -658,7 +778,16 @@ function SingleBatchGrid({
           pendingDeleteLookup,
         ),
       ),
-    [batch.columns, batch.loadedRowOffset, batch.rows, pendingDeleteLookup, pendingEditLookup, primaryKeyList],
+    ],
+    [
+      batch.columns,
+      batch.loadedRowOffset,
+      batch.rows,
+      pendingDeleteLookup,
+      pendingEditLookup,
+      pendingInsertedRows,
+      primaryKeyList,
+    ],
   );
   const filteredRows = useMemo(() => {
     if (!normalizedFilter) return rowViews;
@@ -699,7 +828,7 @@ function SingleBatchGrid({
 
   const selectedRowData = selectedRow === null ? null : filteredRows[selectedRow] ?? null;
   const selectedLoadedIndex =
-    selectedRowData === null ? null : selectedRowData.sourceIndex + 1;
+    !selectedRowData || selectedRowData.kind !== "loaded" ? null : selectedRowData.sourceIndex + 1;
 
   const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   const loadedCount =
@@ -725,7 +854,7 @@ function SingleBatchGrid({
     : `${filteredCount.toLocaleString()} shown / ${loadedCount.toLocaleString()} loaded / ${totalLabel}`;
   const pendingSummaryRows = pendingEditRows.slice(0, 4);
   const pendingDeleteSummaryRows = pendingDeletedRows.slice(0, 4);
-  const pendingMutationCount = pendingEditCount + pendingDeleteCount;
+  const pendingMutationCount = pendingEditCount + pendingInsertedCount + pendingDeleteCount;
 
   const headerHeight = 28;
   const filterBarHeight = 42;
@@ -755,16 +884,38 @@ function SingleBatchGrid({
 
   const handleCopyRowJson = useCallback(() => {
     if (!selectedRowData) return;
-    const json = JSON.stringify(
-      valuesToObject(selectedRowData.displayValues, batch.columns),
-      null,
-      2,
-    );
+    const json =
+      selectedRowData.kind === "insert-draft"
+        ? JSON.stringify(
+            Object.fromEntries(
+              batch.columns
+                .filter((column) => selectedRowData.includedColumnNames.has(column.name))
+                .map((column, index) => [column.name, selectedRowData.displayValues[index] ?? null]),
+            ),
+            null,
+            2,
+          )
+        : JSON.stringify(
+            valuesToObject(selectedRowData.displayValues, batch.columns),
+            null,
+            2,
+          );
     void copyText(json, "已复制当前行 JSON");
   }, [batch.columns, copyText, selectedRowData]);
 
   const handleCopyRowTsv = useCallback(() => {
     if (!selectedRowData) return;
+    if (selectedRowData.kind === "insert-draft") {
+      const includedColumns = batch.columns.filter((column) =>
+        selectedRowData.includedColumnNames.has(column.name),
+      );
+      const includedValues = includedColumns.map((column) => {
+        const columnIndex = batch.columns.findIndex((item) => item.name === column.name);
+        return selectedRowData.displayValues[columnIndex] ?? null;
+      });
+      void copyText(valuesToTsv(includedValues, includedColumns), "已复制当前行 TSV");
+      return;
+    }
     void copyText(valuesToTsv(selectedRowData.displayValues, batch.columns), "已复制当前行 TSV");
   }, [batch.columns, copyText, selectedRowData]);
 
@@ -776,21 +927,32 @@ function SingleBatchGrid({
   );
   const handleRevertSelectedCell = useCallback(
     (columnName: string) => {
-      if (!selectedRowData?.rowPkTuple) return;
+      if (!selectedRowData) return;
       setEditingCell(null);
       setEditingValue("");
+      if (selectedRowData.kind === "insert-draft") {
+        onEditInsertedRowValue(selectedRowData.rowDraftId, columnName, undefined);
+        return;
+      }
+      if (!selectedRowData.rowPkTuple) return;
       onRevertCell(selectedRowData.rowPkTuple, columnName);
     },
-    [onRevertCell, selectedRowData],
+    [onEditInsertedRowValue, onRevertCell, selectedRowData],
   );
   const handleRevertSelectedRow = useCallback(() => {
-    if (!selectedRowData?.rowPkTuple) return;
+    if (!selectedRowData) return;
     setEditingCell(null);
     setEditingValue("");
+    if (selectedRowData.kind === "insert-draft") {
+      onDiscardInsertedRow(selectedRowData.rowDraftId);
+      return;
+    }
+    if (!selectedRowData.rowPkTuple) return;
     onRevertRow(selectedRowData.rowPkTuple);
-  }, [onRevertRow, selectedRowData]);
+  }, [onDiscardInsertedRow, onRevertRow, selectedRowData]);
   const handleStageDeleteSelectedRow = useCallback(() => {
-    if (!selectedRowData?.rowPkTuple || !selectedRowData.rowPrimaryKey) return;
+    if (!selectedRowData || selectedRowData.kind !== "loaded") return;
+    if (!selectedRowData.rowPkTuple || !selectedRowData.rowPrimaryKey) return;
     setEditingCell(null);
     setEditingValue("");
     onStageDeleteRow({
@@ -799,7 +961,8 @@ function SingleBatchGrid({
     });
   }, [onStageDeleteRow, selectedRowData]);
   const handleRevertSelectedDelete = useCallback(() => {
-    if (!selectedRowData?.rowPkTuple) return;
+    if (!selectedRowData || selectedRowData.kind !== "loaded") return;
+    if (!selectedRowData.rowPkTuple) return;
     setEditingCell(null);
     setEditingValue("");
     onRevertDeleteRow(selectedRowData.rowPkTuple);
@@ -814,6 +977,18 @@ function SingleBatchGrid({
       nextRawValue: string,
     ) => {
       if (!isEditEnabled) {
+        setEditingCell(null);
+        setEditingValue("");
+        return;
+      }
+      if (rowView.kind === "insert-draft") {
+        const parsedValue = parseInsertedValue(nextRawValue);
+        onEditInsertedRowValue(
+          rowView.rowDraftId,
+          column.name,
+          parsedValue.kind === "value" ? parsedValue.value : undefined,
+        );
+        setSelectedRow(rowIndex);
         setEditingCell(null);
         setEditingValue("");
         return;
@@ -858,19 +1033,29 @@ function SingleBatchGrid({
       setEditingCell(null);
       setEditingValue("");
     },
-    [isEditEnabled, onEditCell, pendingEditLookup, primaryKeySet, toast],
+    [isEditEnabled, onEditCell, onEditInsertedRowValue, pendingEditLookup, primaryKeySet, toast],
   );
 
   const startEdit = useCallback(
     (rowView: GridRowView, rowIndex: number, column: DbQueryColumn, columnIndex: number) => {
-      if (!isEditEnabled || primaryKeySet.has(column.name) || rowView.isPendingDelete) {
+      if (!isEditEnabled) {
+        return;
+      }
+      if (
+        rowView.kind === "loaded" &&
+        (primaryKeySet.has(column.name) || rowView.isPendingDelete)
+      ) {
         return;
       }
       setEditingCell({
         rowIndex,
         columnName: column.name,
       });
-      setEditingValue(formatCellValue(rowView.displayValues[columnIndex] ?? null));
+      if (rowView.kind === "insert-draft" && !rowView.includedColumnNames.has(column.name)) {
+        setEditingValue("");
+      } else {
+        setEditingValue(formatCellValue(rowView.displayValues[columnIndex] ?? null));
+      }
     },
     [isEditEnabled, primaryKeySet],
   );
@@ -883,6 +1068,7 @@ function SingleBatchGrid({
     const isSelected = selectedRow === index;
     const hasDirtyCells = rowView.dirtyColumnNames.size > 0;
     const isPendingDelete = rowView.isPendingDelete;
+    const isInsertDraft = rowView.kind === "insert-draft";
 
     return (
       <div
@@ -892,27 +1078,34 @@ function SingleBatchGrid({
         className={cn(
           "flex cursor-pointer items-center border-b border-border",
           isSelected
-            ? isPendingDelete
-              ? "bg-destructive/10"
-              : "bg-primary/10"
-            : isPendingDelete
-              ? "bg-destructive/5 hover:bg-destructive/10"
-              : hasDirtyCells
-              ? "bg-amber-500/5 hover:bg-amber-500/10"
-              : "hover:bg-muted/40",
+            ? isInsertDraft
+              ? "bg-sky-500/10"
+              : isPendingDelete
+                ? "bg-destructive/10"
+                : "bg-primary/10"
+            : isInsertDraft
+              ? "bg-sky-500/5 hover:bg-sky-500/10"
+              : isPendingDelete
+                ? "bg-destructive/5 hover:bg-destructive/10"
+                : hasDirtyCells
+                  ? "bg-amber-500/5 hover:bg-amber-500/10"
+                  : "hover:bg-muted/40",
         )}
         onClick={() => setSelectedRow(index)}
       >
         {batch.columns.map((column, columnIndex) => {
           const value = rowView.displayValues[columnIndex] ?? null;
-          const displayValue = formatCellValue(value);
-          const isNull = value === null;
-          const isPrimaryKeyColumn = primaryKeySet.has(column.name);
+          const isDraftDefault =
+            rowView.kind === "insert-draft" && !rowView.includedColumnNames.has(column.name);
+          const displayValue = isDraftDefault ? "DEFAULT" : formatCellValue(value);
+          const isNull = !isDraftDefault && value === null;
+          const isPrimaryKeyColumn = rowView.kind === "loaded" && primaryKeySet.has(column.name);
           const isDirty = rowView.dirtyColumnNames.has(column.name);
           const isCellEditing =
             editingCell?.rowIndex === index &&
             editingCell.columnName === column.name;
           const canEditCell = isEditEnabled && !isPrimaryKeyColumn && !isPendingDelete;
+          const columnMetadata = tableColumnByName.get(column.name);
 
           return (
             <TooltipProvider key={`${column.name}:${columnIndex}`} delayDuration={500}>
@@ -921,6 +1114,7 @@ function SingleBatchGrid({
                   <div
                     className={cn(
                       "shrink-0 overflow-hidden border-r border-border px-2",
+                      isInsertDraft && !isCellEditing ? "bg-sky-500/5" : undefined,
                       isPendingDelete && !isCellEditing ? "bg-destructive/5" : undefined,
                       isDirty && !isCellEditing ? "bg-amber-500/10" : undefined,
                     )}
@@ -951,11 +1145,13 @@ function SingleBatchGrid({
                       <span
                         className={cn(
                           "block truncate text-xs font-mono leading-8",
-                          isNull ? "italic text-muted-foreground" : "text-foreground",
+                          isDraftDefault || isNull ? "italic text-muted-foreground" : "text-foreground",
                           canEditCell ? "cursor-text" : undefined,
                           isPrimaryKeyColumn ? "text-muted-foreground" : undefined,
                           isPendingDelete ? "line-through opacity-70" : undefined,
-                          isDirty ? "font-semibold text-amber-900 dark:text-amber-100" : undefined,
+                          isDirty && !isDraftDefault
+                            ? "font-semibold text-amber-900 dark:text-amber-100"
+                            : undefined,
                         )}
                         title={isPrimaryKeyColumn ? "Primary key column (read-only)" : undefined}
                       >
@@ -968,6 +1164,11 @@ function SingleBatchGrid({
                   <p className="max-w-xs break-all font-mono text-xs">
                     {displayValue}
                   </p>
+                  {isDraftDefault ? (
+                    <p className="mt-1 text-[10px] text-sky-700 dark:text-sky-300">
+                      Omitted from INSERT. Database default will apply.
+                    </p>
+                  ) : null}
                   {isDirty ? (
                     <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
                       Pending edit
@@ -981,6 +1182,11 @@ function SingleBatchGrid({
                   {isPrimaryKeyColumn ? (
                     <p className="mt-1 text-[10px] text-muted-foreground">
                       Primary key column (read-only)
+                    </p>
+                  ) : null}
+                  {columnMetadata?.defaultValue ? (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Default: {columnMetadata.defaultValue}
                     </p>
                   ) : null}
                 </TooltipContent>
@@ -1014,9 +1220,24 @@ function SingleBatchGrid({
             </button>
           ) : null}
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={onAddInsertedRow}
+          disabled={!isEditEnabled}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add row draft
+        </Button>
         <div className="flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
           <span>{filteredCount.toLocaleString()} shown</span>
           <span>{loadedCount.toLocaleString()} loaded</span>
+          {Object.keys(pendingInsertedRows).length > 0 ? (
+            <span className="font-medium text-sky-700 dark:text-sky-300">
+              {Object.keys(pendingInsertedRows).length.toLocaleString()} draft
+            </span>
+          ) : null}
           {isRowWindowTruncated ? (
             <span className="font-medium text-amber-700 dark:text-amber-300">
               Retaining latest {retainedCount.toLocaleString()} rows
@@ -1213,11 +1434,16 @@ function SingleBatchGrid({
 
       <div className="flex shrink-0 items-center gap-2 border-t border-border bg-background px-3 py-1">
         <span className="text-xs text-muted-foreground">
-          Pending changes: {pendingEditCount} edited cell{pendingEditCount === 1 ? "" : "s"} across {pendingEditRows.length} row{pendingEditRows.length === 1 ? "" : "s"} · {pendingDeleteCount} delete{pendingDeleteCount === 1 ? "" : "s"}
+          Pending changes: {pendingEditCount} edited cell{pendingEditCount === 1 ? "" : "s"} across {pendingEditRows.length} row{pendingEditRows.length === 1 ? "" : "s"} · {pendingInsertedCount} insert draft{pendingInsertedCount === 1 ? "" : "s"} ready · {pendingDeleteCount} delete{pendingDeleteCount === 1 ? "" : "s"}
         </span>
         {pendingEditCount > 0 ? (
           <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
             Dirty cells highlighted
+          </span>
+        ) : null}
+        {pendingInsertedCount > 0 ? (
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-sky-700 dark:text-sky-300">
+            Draft inserts highlighted
           </span>
         ) : null}
         {pendingDeleteCount > 0 ? (
@@ -1247,17 +1473,21 @@ function SingleBatchGrid({
 
       <SelectedRowInspector
         rowValues={selectedRowData?.displayValues ?? null}
-        rowPkTuple={selectedRowData?.rowPkTuple ?? null}
+        rowPkTuple={selectedRowData?.kind === "loaded" ? selectedRowData.rowPkTuple ?? null : null}
+        insertDraftId={selectedRowData?.kind === "insert-draft" ? selectedRowData.rowDraftId : null}
+        isInsertDraft={selectedRowData?.kind === "insert-draft"}
+        includedColumnNames={selectedRowData?.kind === "insert-draft" ? selectedRowData.includedColumnNames : undefined}
         dirtyColumnNames={selectedRowData?.dirtyColumnNames}
         isPendingDelete={selectedRowData?.isPendingDelete ?? false}
         columns={batch.columns}
         rowIndex={selectedLoadedIndex}
-        canStageDelete={isEditEnabled}
+        canStageDelete={isEditEnabled && selectedRowData?.kind !== "insert-draft"}
         onCopyRowJson={handleCopyRowJson}
         onCopyRowTsv={handleCopyRowTsv}
         onCopyCell={handleCopyCell}
         onRevertCell={handleRevertSelectedCell}
         onRevertRow={handleRevertSelectedRow}
+        onDiscardInsertedRow={handleRevertSelectedRow}
         onStageDeleteRow={handleStageDeleteSelectedRow}
         onRevertDeleteRow={handleRevertSelectedDelete}
       />
@@ -1283,16 +1513,22 @@ export function ResultGridPane({
   stopOnError,
   onStopOnErrorChange,
   editEligibility,
+  tableSchema,
   primaryKeyColumns,
   pendingEditCells,
   pendingEditRows,
+  pendingInsertedRows,
   pendingDeleteRows,
   pendingDeletedRows,
   pendingEditCount,
+  pendingInsertedCount,
   pendingDeleteCount,
   onEditCell,
   onRevertCell,
   onRevertRow,
+  onAddInsertedRow,
+  onEditInsertedRowValue,
+  onDiscardInsertedRow,
   onStageDeleteRow,
   onRevertDeleteRow,
   onPrepareCommit,
@@ -1366,16 +1602,22 @@ export function ResultGridPane({
           batchIndex={activeIndex}
           onLoadMore={onLoadMore}
           editEligibility={editEligibility}
+          tableSchema={tableSchema}
           primaryKeyColumns={primaryKeyColumns}
           pendingEditCells={pendingEditCells}
           pendingEditRows={pendingEditRows}
+          pendingInsertedRows={pendingInsertedRows}
           pendingDeleteRows={pendingDeleteRows}
           pendingDeletedRows={pendingDeletedRows}
           pendingEditCount={pendingEditCount}
+          pendingInsertedCount={pendingInsertedCount}
           pendingDeleteCount={pendingDeleteCount}
           onEditCell={onEditCell}
           onRevertCell={onRevertCell}
           onRevertRow={onRevertRow}
+          onAddInsertedRow={onAddInsertedRow}
+          onEditInsertedRowValue={onEditInsertedRowValue}
+          onDiscardInsertedRow={onDiscardInsertedRow}
           onStageDeleteRow={onStageDeleteRow}
           onRevertDeleteRow={onRevertDeleteRow}
           onPrepareCommit={onPrepareCommit}

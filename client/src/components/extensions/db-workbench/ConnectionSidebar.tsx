@@ -832,35 +832,66 @@ export function ConnectionSidebar({
                               inspectedObjectKind === "foreign_key" &&
                               inspectedObjectName === foreignKey.name &&
                               (inspectedParentObjectName ?? "") === table.name;
+                            const isReferencedTableInspected =
+                              inspectedObjectKind === "table" &&
+                              inspectedObjectName === foreignKey.referencedTable;
                             return (
-                              <button
+                              <div
                                 key={`${table.name}:fk:${foreignKey.name}`}
-                                type="button"
                                 className={cn(
-                                  "w-full rounded-sm px-2 py-1.5 text-left text-[11px] hover:bg-muted/50",
-                                  isForeignKeyInspected && "bg-muted font-medium",
+                                  "rounded-sm border border-transparent px-2 py-1.5",
+                                  (isForeignKeyInspected || isReferencedTableInspected) &&
+                                    "border-border bg-muted/40",
                                 )}
-                                onClick={() =>
-                                  onInspectObject?.("foreign_key", foreignKey.name, {
-                                    parentObjectName: table.name,
-                                  })
-                                }
-                                title={`Inspect foreign key ${foreignKey.name}`}
                               >
-                                <div className="flex items-center gap-2">
-                                  <div className="min-w-0 flex-1 truncate font-mono text-foreground">
-                                    {foreignKey.name}
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "w-full rounded-sm text-left text-[11px] hover:bg-muted/50",
+                                    isForeignKeyInspected && "font-medium",
+                                  )}
+                                  onClick={() =>
+                                    onInspectObject?.("foreign_key", foreignKey.name, {
+                                      parentObjectName: table.name,
+                                    })
+                                  }
+                                  title={`Inspect foreign key ${foreignKey.name}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div className="min-w-0 flex-1 truncate font-mono text-foreground">
+                                      {foreignKey.name}
+                                    </div>
+                                    {isForeignKeyInspected ? (
+                                      <ExplorerBadge tone="success" className="shrink-0">
+                                        DDL
+                                      </ExplorerBadge>
+                                    ) : null}
                                   </div>
-                                  {isForeignKeyInspected ? (
-                                    <ExplorerBadge tone="success" className="shrink-0">
-                                      DDL
-                                    </ExplorerBadge>
-                                  ) : null}
+                                  <div className="truncate text-[11px] text-muted-foreground">
+                                    {foreignKey.columns.join(", ")} → {foreignKey.referencedTable}
+                                  </div>
+                                </button>
+                                <div className="mt-1 flex items-center gap-1.5 pl-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px]"
+                                    onClick={() => onInspectObject?.("table", foreignKey.referencedTable)}
+                                  >
+                                    Inspect ref
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px]"
+                                    onClick={() => onOpenTable?.(foreignKey.referencedTable)}
+                                  >
+                                    Open ref
+                                  </Button>
                                 </div>
-                                <div className="truncate text-[11px] text-muted-foreground">
-                                  {foreignKey.columns.join(", ")} → {foreignKey.referencedTable}
-                                </div>
-                              </button>
+                              </div>
                             );
                           })}
 

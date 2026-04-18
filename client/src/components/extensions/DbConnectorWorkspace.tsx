@@ -20,6 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useHostApiFor } from "@/extensions/host-context";
+import {
+  DEFAULT_DB_PORTS,
+  autoNameFrom,
+  buildReleaseVerificationBootstrapConfig,
+  parseConnectionString,
+} from "@/lib/db-connection-string";
 import { cn } from "@/lib/utils";
 import {
   emitLiveVerificationCompleted,
@@ -32,8 +38,12 @@ import type {
 } from "@shared/schema";
 import { WorkbenchLayout } from "./db-workbench/WorkbenchLayout";
 import { DbSchemaDiffViewer } from "./db-workbench/SchemaDiffPane";
+import type { ExtensionWorkspaceProps } from "@/extensions/panel-registry";
+import {
+  dispatchDbConnectorConnectionSelection,
+  subscribeDbConnectorConnectionSelection,
+} from "./db-workbench/sidebar/db-connector-sidebar-events";
 
-const DEFAULT_PORTS: Record<DbDriver, number> = { mysql: 3306, postgres: 5432 };
 type WorkspaceView = "connections" | "schema" | "diff" | "sql";
 
 const WORKSPACE_VIEW_STORAGE_KEY = "db-workbench:workspace-view:v1";
@@ -63,8 +73,12 @@ function readInitialWorkspaceView(selectedConnId: string | null): WorkspaceView 
     return routeValue;
   }
 
-  const storedValue = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
-  return isWorkspaceView(storedValue) ? storedValue : "connections";
+  try {
+    const storedValue = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
+    return isWorkspaceView(storedValue) ? storedValue : "connections";
+  } catch {
+    return "connections";
+  }
 }
 
 function readInitialSelectedConnectionId(): string | null {
@@ -76,29 +90,41 @@ function readInitialSelectedConnectionId(): string | null {
     return routeValue;
   }
 
-  const storedValue = window.localStorage.getItem(WORKSPACE_CONNECTION_STORAGE_KEY);
-  return storedValue && storedValue.trim() ? storedValue : null;
+  try {
+    const storedValue = window.localStorage.getItem(WORKSPACE_CONNECTION_STORAGE_KEY);
+    return storedValue && storedValue.trim() ? storedValue : null;
+  } catch {
+    return null;
+  }
 }
 
 function persistWorkspaceRoute(view: WorkspaceView, connectionId: string | null): void {
   if (typeof window === "undefined") return;
 
-  window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, view);
-  if (connectionId) {
-    window.localStorage.setItem(WORKSPACE_CONNECTION_STORAGE_KEY, connectionId);
-  } else {
-    window.localStorage.removeItem(WORKSPACE_CONNECTION_STORAGE_KEY);
+  try {
+    window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, view);
+    if (connectionId) {
+      window.localStorage.setItem(WORKSPACE_CONNECTION_STORAGE_KEY, connectionId);
+    } else {
+      window.localStorage.removeItem(WORKSPACE_CONNECTION_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures inside sandboxed runtime iframes.
   }
 
-  const nextUrl = new URL(window.location.href);
-  nextUrl.searchParams.set(WORKSPACE_VIEW_QUERY_KEY, view);
-  if (connectionId) {
-    nextUrl.searchParams.set(WORKSPACE_CONNECTION_QUERY_KEY, connectionId);
-  } else {
-    nextUrl.searchParams.delete(WORKSPACE_CONNECTION_QUERY_KEY);
-  }
+  try {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set(WORKSPACE_VIEW_QUERY_KEY, view);
+    if (connectionId) {
+      nextUrl.searchParams.set(WORKSPACE_CONNECTION_QUERY_KEY, connectionId);
+    } else {
+      nextUrl.searchParams.delete(WORKSPACE_CONNECTION_QUERY_KEY);
+    }
 
-  window.history.replaceState(window.history.state, "", nextUrl);
+    window.history.replaceState(window.history.state, "", nextUrl);
+  } catch {
+    // Ignore history update failures inside constrained runtime mounts.
+  }
 }
 
 function emptyConfig(): DbConnectionConfig {
@@ -107,17 +133,12 @@ function emptyConfig(): DbConnectionConfig {
     name: "",
     driver: "mysql",
     host: "localhost",
-    port: 3306,
+    port: DEFAULT_DB_PORTS.mysql,
     database: "",
     username: "root",
     password: "",
     favorite: false,
   };
-}
-
-// ホスト・ポート・データベース名から自動生成する接続名を返す
-function autoNameFrom(host: string, port: number, database: string): string {
-  return database ? `${host}:${port}@${database}` : "";
 }
 
 function configFromDiscoveredEndpoint(candidate: DbDiscoveredEndpoint): DbConnectionConfig {
@@ -213,114 +234,6 @@ function resolveLiveVerificationConnection(
   return connections[0] ?? null;
 }
 
-// 接続文字列をパースして DbConnectionConfig の一部を返す
-// 対応フォーマット:
-//   mysql://user:pass@host:port/db
-//   postgresql://user:pass@host:port/db
-//   jdbc:mysql://host:port/db?user=u&password=p
-//   jdbc:postgresql://host:port/db?user=u&password=p
-//   host=h port=p dbname=d user=u password=p  (psql キーバリュー形式)
-//   DB_HOST=h DB_PORT=p DB_NAME=d DB_USER=u DB_PASSWORD=p  (.env 形式)
-//   JetBrains DataSourceSettings XML / clipboard dump
-function parseConnectionString(input: string): Partial<DbConnectionConfig> | null {
-  const s = input.trim();
-  if (!s) return null;
-
-  // ── URL 形式（mysql:// / postgresql:// / jdbc:mysql:// / jdbc:postgresql://）──
-  const urlMatch = s.match(
-    /^(?:jdbc:)?(mysql|postgresql|postgres):\/\/([^:@/\s]*)(?::([^@/\s]*))?@([^:/\s]+)(?::(\d+))?\/([^?#\s]*)/i,
-  );
-  if (urlMatch) {
-    const [, proto, user, pass, host, portStr, db] = urlMatch;
-    const driver: DbDriver = proto.toLowerCase().startsWith("postgres") ? "postgres" : "mysql";
-    const port = portStr ? Number(portStr) : DEFAULT_PORTS[driver];
-    // クエリパラメータからも user / password を取得（jdbc 形式）
-    const qUser = s.match(/[?&]user=([^&\s]+)/i)?.[1] ?? user;
-    const qPass = s.match(/[?&]password=([^&\s]+)/i)?.[1] ?? pass;
-    return {
-      driver,
-      host: host || "localhost",
-      port,
-      database: db || "",
-      username: qUser || "",
-      password: qPass || "",
-    };
-  }
-
-  // ── psql キーバリュー形式（host=… port=… dbname=… user=… password=…）──
-  if (/\bhost\s*=/.test(s) || /\bdbname\s*=/.test(s)) {
-    const kv = (key: string) => s.match(new RegExp(`\\b${key}\\s*=\\s*([^\\s]+)`))?.[1] ?? "";
-    const portVal = kv("port");
-    const driver: DbDriver = "postgres";
-    return {
-      driver,
-      host: kv("host") || "localhost",
-      port: portVal ? Number(portVal) : DEFAULT_PORTS[driver],
-      database: kv("dbname") || kv("database"),
-      username: kv("user") || kv("username"),
-      password: kv("password"),
-    };
-  }
-
-  // ── .env / 環境変数形式（DB_HOST=… DB_PORT=… DB_NAME=…）──
-  if (/DB_HOST\s*=/i.test(s) || /DATABASE_URL\s*=/i.test(s)) {
-    // DATABASE_URL が含まれている場合は再帰でパース
-    const urlLine = s.match(/DATABASE_URL\s*=\s*["']?([^\s"']+)/i)?.[1];
-    if (urlLine) return parseConnectionString(urlLine);
-
-    const ev = (key: string) =>
-      s.match(new RegExp(`${key}\\s*=\\s*["']?([^"'\\s]+)`, "i"))?.[1] ?? "";
-    const driverRaw = ev("DB_DRIVER") || ev("DB_CONNECTION") || "mysql";
-    const driver: DbDriver = driverRaw.toLowerCase().startsWith("postgres") ? "postgres" : "mysql";
-    const portVal = ev("DB_PORT");
-    return {
-      driver,
-      host: ev("DB_HOST") || "localhost",
-      port: portVal ? Number(portVal) : DEFAULT_PORTS[driver],
-      database: ev("DB_NAME") || ev("DB_DATABASE"),
-      username: ev("DB_USER") || ev("DB_USERNAME"),
-      password: ev("DB_PASSWORD") || ev("DB_PASS"),
-    };
-  }
-
-  // ── JetBrains DataSourceSettings XML / clipboard dump ──
-  if (/<data-source\b/i.test(s) || /<jdbc-url>/i.test(s)) {
-    const readTag = (tagName: string) => s.match(new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"))?.[1]?.trim() ?? "";
-    const readAttr = (attrName: string) => s.match(new RegExp(`${attrName}="([^"]+)"`, "i"))?.[1]?.trim() ?? "";
-
-    const jdbcUrl = readTag("jdbc-url");
-    const userName = readTag("user-name");
-    const dsName = readAttr("name");
-    const product = readAttr("product");
-    const driverRef = readTag("driver-ref") || readAttr("dbms");
-
-    const parsedUrl = jdbcUrl ? parseConnectionString(jdbcUrl) : null;
-    if (parsedUrl) {
-      return {
-        ...parsedUrl,
-        username: userName || parsedUrl.username,
-        name: dsName || undefined,
-        driver: parsedUrl.driver,
-      };
-    }
-
-    const driverText = `${product} ${driverRef}`.toLowerCase();
-    const driver: DbDriver = driverText.includes("postgres") ? "postgres" : "mysql";
-    const host = s.match(/jdbc:[^:]+:\/\/([^:/\s]+)(?::(\d+))?\/([^\s<]+)/i);
-    if (host) {
-      return {
-        driver,
-        host: host[1] || "localhost",
-        port: host[2] ? Number(host[2]) : DEFAULT_PORTS[driver],
-        database: host[3] || "",
-        username: userName || "",
-        name: dsName || "",
-      };
-    }
-  }
-
-  return null;
-}
 
 // ──────────────────────────────────────────────
 // 接続フォーム
@@ -386,7 +299,7 @@ function ConnectionForm({
     });
 
   const handleDriverChange = (driver: DbDriver) => {
-    setForm((prev) => ({ ...prev, driver, port: DEFAULT_PORTS[driver] }));
+    setForm((prev) => ({ ...prev, driver, port: DEFAULT_DB_PORTS[driver] }));
   };
 
   const handleTest = async () => {
@@ -773,7 +686,10 @@ function SchemaBrowser({ snapshot }: { snapshot: DbSchemaSnapshot }) {
 // メインコンポーネント
 // ──────────────────────────────────────────────
 
-export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
+export function DbConnectorWorkspace({
+  extensionId,
+  workbenchViewId,
+}: Pick<ExtensionWorkspaceProps, "extensionId" | "workbenchViewId">) {
   // Capability スコープ済み HostApi を使用する（extensionId で権限を絞り込む）
   const host = useHostApiFor(extensionId);
   const toast = host.notifications.show;
@@ -796,9 +712,13 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
   const diffSourceSelectId = useId();
   const diffTargetSelectId = useId();
   const initialRecoveryConnectionIdRef = useRef<string | null>(selectedConnId);
+  const sidebarMode = workbenchViewId ? "host" : "embedded";
   const recoveryCheckpointSentRef = useRef(false);
   const lastSurfaceCheckpointKeyRef = useRef<string | null>(null);
   const liveVerificationResolutionSentRef = useRef(false);
+  const liveVerificationBootstrapAttemptedRef = useRef(false);
+  const liveVerificationBootstrapStartedAtRef = useRef<number | null>(null);
+  const liveVerificationBootstrapStateRef = useRef<"idle" | "saving" | "saved" | "failed">("idle");
   const discoveryEnabled = workspaceView === "connections" && !editingConfig;
 
   // 接続一覧
@@ -893,6 +813,23 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
   const activeConnection = selectedConnId
     ? connections.find((c) => c.id === selectedConnId) ?? null
     : null;
+  const liveVerificationBootstrap = useMemo(
+    () =>
+      buildReleaseVerificationBootstrapConfig({
+        driver: releaseVerification.live?.driver,
+        connectionName: releaseVerification.live?.connectionName,
+        connectionString: releaseVerification.live?.connectionString,
+        readonly: releaseVerification.live?.readonly,
+        defaultSchema: releaseVerification.live?.defaultSchema,
+      }),
+    [
+      releaseVerification.live?.connectionName,
+      releaseVerification.live?.connectionString,
+      releaseVerification.live?.defaultSchema,
+      releaseVerification.live?.driver,
+      releaseVerification.live?.readonly,
+    ],
+  );
   const liveVerificationTarget = releaseVerification.live?.enabled
     ? resolveLiveVerificationConnection(connections, {
         driver: releaseVerification.live.driver,
@@ -963,6 +900,24 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
     setSelectedConnId(connectionId);
     setWorkspaceView(nextView);
   }, []);
+
+  useEffect(() => {
+    if (!selectedConnId) {
+      return;
+    }
+    dispatchDbConnectorConnectionSelection(selectedConnId);
+  }, [selectedConnId]);
+
+  useEffect(
+    () =>
+      subscribeDbConnectorConnectionSelection((connectionId) => {
+        if (!connectionId || connectionId === selectedConnId) {
+          return;
+        }
+        activateConnection(connectionId, PRIMARY_WORKSPACE_VIEW);
+      }),
+    [activateConnection, selectedConnId],
+  );
 
   const prefillDiscoveredConnection = useCallback((candidate: DbDiscoveredEndpoint) => {
     setResumeRecoveryNotice(null);
@@ -1061,26 +1016,77 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
       return;
     }
 
+    if (
+      liveVerificationBootstrap.config &&
+      !liveVerificationBootstrapAttemptedRef.current &&
+      liveVerificationBootstrapStateRef.current === "idle"
+    ) {
+      liveVerificationBootstrapAttemptedRef.current = true;
+      liveVerificationBootstrapStartedAtRef.current = Date.now();
+      liveVerificationBootstrapStateRef.current = "saving";
+      void saveMutation
+        .mutateAsync(normalizeConnectionConfig(liveVerificationBootstrap.config))
+        .then(() => {
+          liveVerificationBootstrapStateRef.current = "saved";
+        })
+        .catch((error) => {
+          liveVerificationBootstrapStateRef.current = "failed";
+          if (liveVerificationResolutionSentRef.current) {
+            return;
+          }
+          liveVerificationResolutionSentRef.current = true;
+          const note = `Live verification bootstrap connection could not be saved: ${String(error)}`;
+          void emitLiveVerificationFlow("connect", "failed", {
+            driver: releaseVerification.live?.driver ?? liveVerificationBootstrap.config?.driver,
+            note,
+          });
+          void emitLiveVerificationCompleted({
+            driver: releaseVerification.live?.driver ?? liveVerificationBootstrap.config?.driver,
+            status: "failed",
+            note,
+          });
+        });
+      return;
+    }
+
+    if (liveVerificationBootstrapStateRef.current === "saving") {
+      return;
+    }
+
+    if (liveVerificationBootstrapStateRef.current === "saved") {
+      const startedAt = liveVerificationBootstrapStartedAtRef.current;
+      if (startedAt && Date.now() - startedAt < 5_000) {
+        return;
+      }
+    }
+
     if (liveVerificationResolutionSentRef.current) {
       return;
     }
     liveVerificationResolutionSentRef.current = true;
+    const resolutionNote =
+      liveVerificationBootstrap.error ??
+      (liveVerificationBootstrap.config
+        ? "Live verification bootstrap connection did not resolve to a saved target."
+        : "No saved connection matched the requested live verification target, and no bootstrap connection string was provided.");
     void emitLiveVerificationFlow("connect", "failed", {
       driver: releaseVerification.live.driver,
-      note: "No saved connection matched the requested live verification target.",
+      note: resolutionNote,
     });
     void emitLiveVerificationCompleted({
       driver: releaseVerification.live.driver,
       status: "failed",
-      note: "Live verification stopped before connection because no matching saved connection was found.",
+      note: resolutionNote,
     });
   }, [
     activateConnection,
     editingConfig,
     isLoading,
+    liveVerificationBootstrap,
     liveVerificationTarget,
     releaseVerification.enabled,
     releaseVerification.live,
+    saveMutation,
     selectedConnId,
     workspaceView,
   ]);
@@ -1721,6 +1727,7 @@ export function DbConnectorWorkspace({ extensionId }: { extensionId: string }) {
               hostApi={host}
               onManageConnections={openConnectionView}
               onSwitchConnection={(connectionId) => activateConnection(connectionId, PRIMARY_WORKSPACE_VIEW)}
+              sidebarMode={sidebarMode}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">

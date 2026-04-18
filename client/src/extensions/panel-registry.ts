@@ -1,7 +1,7 @@
 // パネルレジストリ — builtin 拡張コンポーネントの登録と取得
 //
 // 起動時に register-all.ts から呼ばれ、
-// ExtensionWorkspaceHost が panelId でコンポーネントを解決する。
+// ExtensionWorkspaceHost が workbenchViewId でコンポーネントを解決する。
 
 import type { ComponentType } from "react";
 
@@ -9,6 +9,9 @@ export interface ExtensionWorkspaceProps {
   extensionId: string;
   fileId?: number | null;
   fileName?: string | null;
+  activityItemId?: string;
+  sidebarViewId?: string;
+  workbenchViewId?: string;
 }
 
 type PanelComponent = ComponentType<ExtensionWorkspaceProps>;

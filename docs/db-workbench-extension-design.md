@@ -3,6 +3,7 @@
 补充文档：
 
 - 数据差异与同步设计：`docs/db-workbench-data-sync-design.md`
+- 功能清单与覆盖现状：`docs/db-workbench-feature-checklist.md`
 
 ## 1. 设计目标
 

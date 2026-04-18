@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::{ExtResult, ExtensionError};
-use crate::builtin_extensions::ExtensionContributes;
+use crate::builtin_extensions::{ExtensionContributes, UiBundle};
 
 // ──────────────────────────────────────────────
 // Manifest データ構造
@@ -27,10 +27,13 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub min_host_version: Option<String>,
     /// プラットフォーム → エントリーポイントファイル名
-    pub entry: HashMap<String, String>,
+    #[serde(default)]
+    pub entry: Option<HashMap<String, String>>,
     #[serde(default)]
     pub capabilities: Vec<String>,
-    /// V2: 拡張が宣言する Contribution（ナビゲーション・ワークスペース等）
+    #[serde(default)]
+    pub ui_bundle: Option<UiBundle>,
+    /// V2/V3: 拡張が宣言する Contribution（activityBar / sidebarViews / workbenchViews と legacy navigation / workspacePanels）
     #[serde(default)]
     pub contributes: Option<ExtensionContributes>,
 }
@@ -84,10 +87,21 @@ impl ExtensionManifest {
             ));
         }
 
-        // 現在のプラットフォームのエントリーポイントが存在するか
         let platform = current_platform();
-        if !self.entry.contains_key(platform) {
+        let has_ui_bundle = self.ui_bundle.is_some();
+        let has_current_platform_entry = self
+            .entry
+            .as_ref()
+            .and_then(|entry| entry.get(platform))
+            .is_some();
+        if !has_current_platform_entry && !has_ui_bundle {
             return Err(ExtensionError::UnsupportedPlatform(platform.to_string()));
+        }
+
+        if self.entry.as_ref().map(|entry| entry.is_empty()).unwrap_or(true) && !has_ui_bundle {
+            return Err(ExtensionError::InvalidManifest(
+                "拡張は entry または uiBundle の少なくとも一方を宣言する必要があります".into(),
+            ));
         }
 
         // API バージョンのサポート確認
@@ -98,14 +112,23 @@ impl ExtensionManifest {
             ));
         }
 
+        if let Some(bundle) = &self.ui_bundle {
+            if bundle.mode != "iframe" {
+                return Err(ExtensionError::InvalidManifest(
+                    format!("非サポート uiBundle.mode: {}", bundle.mode),
+                ));
+            }
+        }
+
         Ok(())
     }
 
     /// 現在プラットフォームのエントリーポイントファイル名を取得
-    pub fn entry_for_current_platform(&self) -> ExtResult<&str> {
-        self.entry
-            .get(current_platform())
-            .map(|s| s.as_str())
-            .ok_or_else(|| ExtensionError::UnsupportedPlatform(current_platform().to_string()))
+    pub fn entry_for_current_platform(&self) -> ExtResult<Option<&str>> {
+        Ok(self
+            .entry
+            .as_ref()
+            .and_then(|entry| entry.get(current_platform()))
+            .map(|s| s.as_str()))
     }
 }

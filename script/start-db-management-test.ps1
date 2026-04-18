@@ -1,5 +1,5 @@
 param(
-  [string]$ExecutablePath = (Join-Path $PSScriptRoot "..\dist-electron\win-unpacked\DBSchemaExcel2DDL.exe")
+  [string]$ExecutablePath = (Join-Path $PSScriptRoot "..\dist-electron\win-unpacked\DBTools.exe")
 )
 
 $resolvedExecutable = Resolve-Path -LiteralPath $ExecutablePath -ErrorAction Stop

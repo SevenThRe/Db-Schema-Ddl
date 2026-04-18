@@ -5,8 +5,8 @@
     "clearSelection": "清除选择"
   },
   "app": {
-    "title": "DDL 生成器",
-    "subtitle": "Excel 转 SQL 工具"
+    "title": "DBTools",
+    "subtitle": "Excel / DDL / Diff / Tools"
   },
   "sidebar": {
     "expandSidebar": "展开侧边栏",
@@ -780,25 +780,45 @@
   }
 ,
   "extensions":   {
-    "title": "扩展功能",
-    "navLabel": "扩展功能",
-    "panelTitle": "扩展中心",
+    "title": "工具",
+    "navLabel": "工具管理",
+    "panelTitle": "工具管理",
+    "managementTitle": "工具管理",
+    "managementDescription": "安装、启用和维护外部工具。已安装且启用的工具会出现在主工作区活动栏中。",
+    "sourceLabel": "来源",
+    "sourceBundled": "内建",
+    "sourceExternal": "外部",
+    "noDescription": "暂无描述",
+    "noCapabilities": "暂无能力声明",
     "transformer": "变换器",
-    "dbConnector": "数据库连接器",
+    "dbConnector": "数据库工作台",
     "open": "打开",
     "back": "返回",
     "noFileSelected": "请先在左侧文件列表选择一个 Excel 文件",
     "center": {
-      "title": "扩展中心",
-      "description": "这里只管理可安装和可维护的外部扩展，不再把应用自带功能混在这里显示。",
-      "marketplaceTitle": "外部扩展",
-      "marketplaceDescription": "这里只管理可安装和可维护的外部扩展目录。",
+      "title": "工具管理",
+      "description": "这里只管理可安装和可维护的外部工具。安装完成后，可直接打开或暂时禁用。",
+      "marketplaceTitle": "外部工具",
+      "marketplaceDescription": "这里只管理可安装和可维护的外部工具目录。",
       "installedLabel": "已安装",
-      "emptyTitle": "当前还没有可用扩展目录",
-      "emptyDescription": "接入外部 catalog 后，这里会显示可安装的扩展及其当前状态。"
+      "emptyTitle": "当前还没有可管理的外部工具",
+      "emptyDescription": "接入外部 catalog 后，这里会显示可安装工具及其当前状态。"
     },
     "badge": {
-      "running": "运行中"
+      "running": "运行中",
+      "official": "官方"
+    },
+    "status": {
+      "notInstalled": "未安装",
+      "installed": "已启用",
+      "disabled": "已禁用",
+      "bundleIssue": "运行包异常"
+    },
+    "statusDescription": {
+      "notInstalled": "安装后工具会出现在活动栏中。",
+      "installed": "该工具已可打开并参与主工作区导航。",
+      "disabled": "该工具已安装，但当前不会出现在活动栏中。",
+      "bundleIssue": "该工具已安装，但运行包状态异常，暂时无法正常打开。"
     },
     "catalog": {
       "fetchFailed": "获取失败",
@@ -808,26 +828,50 @@
     },
     "button": {
       "install": "安装",
+      "open": "打开",
+      "enable": "启用",
+      "disable": "禁用",
       "uninstall": "删除",
       "start": "启动",
       "stop": "停止",
       "checkUpdate": "检查更新"
     },
+    "dialog": {
+      "uninstallTitle": "确认删除工具",
+      "uninstallDescription": "删除后，{{name}} 会从主工作区移除。之后需要重新安装才能恢复，是否继续？"
+    },
     "officialExtensions": {
+      "dbConnector": {
+        "name": "数据库工作台",
+        "description": "安装后提供数据库连接、对象浏览、SQL 执行、结果查看和执行计划能力"
+      },
       "dbManagement": {
-        "name": "DB 连接管理",
-        "description": "连接 MySQL / PostgreSQL，直接比对与应用 Schema"
+        "name": "数据库工作台",
+        "description": "连接 MySQL / PostgreSQL，直接查看、比对并执行 Schema 工作流"
       }
     },
     "workspace": {
-      "disabled": "此扩展已被禁用",
-      "panelNotFound": "面板 \"{{panelId}}\" 未找到"
+      "disabled": "此工具已被禁用",
+      "surfaceNotFound": "工作区视图 \"{{surfaceId}}\" 未找到"
+    },
+    "shell": {
+      "tool": "工具",
+      "workspace": "工作区",
+      "noSidebarView": "未选择侧边视图",
+      "unregisteredView": "当前工具尚未为这个视图注册侧边内容。",
+      "selectActivity": "选择一个工具入口后，这里会显示对应的侧边签页。"
     },
     "toast": {
       "installSuccess": "安装完成",
+      "installReady": "工具已就绪，可直接打开。",
       "installFailed": "安装失败",
+      "enableSuccess": "已启用工具",
+      "enableFailed": "启用失败",
+      "disableSuccess": "已禁用工具",
+      "disableFailed": "禁用失败",
       "uninstallSuccess": "卸载完成",
       "uninstallFailed": "卸载失败",
+      "openUnavailable": "当前无法打开此工具",
       "startSuccess": "已启动",
       "startFailed": "启动失败",
       "stopSuccess": "已停止",

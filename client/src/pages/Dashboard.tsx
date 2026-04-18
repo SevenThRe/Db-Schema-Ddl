@@ -12,14 +12,18 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, RotateCcw, Sparkles, Database } from "lucide-react";
+import { Grid3X3, TableProperties, Search, List, PanelLeft, PanelRight, Loader2, RotateCcw, Sparkles, Puzzle } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFiles, useSettings, useSheets } from "@/hooks/use-ddl";
 import { type TableInfo } from "@shared/schema";
+import { OFFICIAL_EXTENSIONS } from "@shared/extension-schema";
 import { useTranslation } from "react-i18next";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ExtensionWorkspaceHost } from "@/extensions/ExtensionWorkspaceHost";
+import { useExtensionHost } from "@/extensions/host-context";
+import { ExtensionActivityBar } from "@/extensions/shell/ExtensionActivityBar";
+import { ExtensionSecondarySidebar } from "@/extensions/shell/ExtensionSecondarySidebar";
 import { ExtensionManagementPage } from "@/components/extension-management/ExtensionManagementPage";
 import type { MainSurface } from "@/extensions/host-api";
 import { StatusBar } from "@/components/StatusBar";
@@ -34,6 +38,8 @@ const COMPACT_MAIN_LAYOUT_BREAKPOINT = 1500;
 const LAST_SELECTED_SHEET_STORAGE_KEY = "dashboard:lastSelectedSheetByFile";
 const LAST_SELECTED_FILE_STORAGE_KEY = "dashboard:lastSelectedFile";
 const WORKSPACE_CHROME_STORAGE_KEY = "dashboard:workspaceChrome";
+const LAST_EXTENSION_ACTIVITY_STORAGE_KEY = "dashboard:lastExtensionActivity";
+const LAST_SIDEBAR_VIEW_BY_EXTENSION_STORAGE_KEY = "dashboard:lastSidebarViewByExtension";
 const PREVIEW_ACTION_BUTTON_CLASS =
   "h-8 gap-1.5 shrink-0 rounded-lg border border-slate-200/80 bg-white px-2.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900";
 
@@ -49,6 +55,9 @@ interface StoredWorkspaceChrome {
   showSheetPane?: boolean;
   showDdlPane?: boolean;
 }
+
+type StoredSidebarViewSelections = Record<string, string>;
+type ExtensionSurface = Extract<MainSurface, { kind: "extension" }>;
 
 function readStoredSheetSelections(): StoredSheetSelections {
   if (typeof window === "undefined") {
@@ -136,6 +145,43 @@ function readStoredWorkspaceChrome(): StoredWorkspaceChrome {
       result.showDdlPane = (parsed as { showDdlPane: boolean }).showDdlPane;
     }
     return result;
+  } catch {
+    return {};
+  }
+}
+
+function readStoredExtensionActivityId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.localStorage.getItem(LAST_EXTENSION_ACTIVITY_STORAGE_KEY);
+  return value && value.trim() ? value : null;
+}
+
+function readStoredSidebarViewSelections(): StoredSidebarViewSelections {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LAST_SIDEBAR_VIEW_BY_EXTENSION_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const normalized: StoredSidebarViewSelections = {};
+    for (const [extensionId, sidebarViewId] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof sidebarViewId === "string" && sidebarViewId.trim()) {
+        normalized[extensionId] = sidebarViewId;
+      }
+    }
+    return normalized;
   } catch {
     return {};
   }
@@ -229,12 +275,106 @@ export default function Dashboard() {
   const [lastSelectedSheetByFile, setLastSelectedSheetByFile] = useState<StoredSheetSelections>(() =>
     readStoredSheetSelections(),
   );
+  const [lastExtensionActivityId, setLastExtensionActivityId] = useState<string | null>(() =>
+    readStoredExtensionActivityId(),
+  );
+  const [lastSidebarViewByExtension, setLastSidebarViewByExtension] = useState<StoredSidebarViewSelections>(() =>
+    readStoredSidebarViewSelections(),
+  );
   const smokeAutoOpenAppliedRef = useRef(false);
 
   const { data: files } = useFiles();
   const { data: settings } = useSettings();
   const { data: sheets, isLoading: isSheetsLoading } = useSheets(selectedFileId);
+  const {
+    activityBarItems,
+    sidebarViews,
+    isLoading: isExtensionHostLoading,
+  } = useExtensionHost();
   const { t } = useTranslation();
+
+  const preferredExtensionActivity =
+    activityBarItems.find((item) => item.id === lastExtensionActivityId) ?? activityBarItems[0] ?? null;
+  const databaseToolActivity =
+    activityBarItems.find((item) => item.extensionId === OFFICIAL_EXTENSIONS.DB_CONNECTOR) ?? null;
+  const isExtensionSurface = activeSurface.kind === "extension";
+  const activeExtensionActivity =
+    activeSurface.kind === "extension"
+      ? activityBarItems.find(
+          (item) =>
+            item.id === activeSurface.activityItemId || item.extensionId === activeSurface.extensionId,
+        ) ?? null
+      : null;
+  const activeExtensionId =
+    activeExtensionActivity?.extensionId ??
+    (activeSurface.kind === "extension" ? activeSurface.extensionId : null);
+  const activeExtensionSidebarViews =
+    activeExtensionId != null
+      ? sidebarViews.filter(
+          (view) =>
+            view.extensionId === activeExtensionId &&
+            (!activeExtensionActivity?.id ||
+              !view.activityItemId ||
+              view.activityItemId === activeExtensionActivity.id),
+        )
+      : [];
+  const activeSidebarViewId =
+    activeSurface.kind === "extension"
+      ? activeSurface.sidebarViewId ??
+        (activeExtensionId ? lastSidebarViewByExtension[activeExtensionId] : undefined) ??
+        activeExtensionActivity?.defaultSidebarViewId ??
+        activeExtensionSidebarViews[0]?.id ??
+        null
+      : null;
+  const activeWorkbenchViewId =
+    activeSurface.kind === "extension"
+      ? activeSurface.workbenchViewId ??
+        activeExtensionActivity?.defaultWorkbenchViewId ??
+        null
+      : null;
+
+  const buildExtensionSurface = useCallback(
+    (
+      activityItem: (typeof activityBarItems)[number],
+      overrides?: {
+        sidebarViewId?: string | null;
+        workbenchViewId?: string | null;
+      },
+    ): ExtensionSurface => {
+      const extensionSidebarViews = sidebarViews.filter(
+        (view) =>
+          view.extensionId === activityItem.extensionId &&
+          (!view.activityItemId || view.activityItemId === activityItem.id),
+      );
+      const rememberedSidebarViewId = lastSidebarViewByExtension[activityItem.extensionId];
+      const resolvedSidebarViewId =
+        overrides?.sidebarViewId ??
+        (extensionSidebarViews.some((view) => view.id === rememberedSidebarViewId)
+          ? rememberedSidebarViewId
+          : null) ??
+        activityItem.defaultSidebarViewId ??
+        extensionSidebarViews[0]?.id ??
+        undefined;
+      const resolvedWorkbenchViewId =
+        overrides?.workbenchViewId ?? activityItem.defaultWorkbenchViewId ?? undefined;
+
+      return {
+        kind: "extension",
+        extensionId: activityItem.extensionId,
+        activityItemId: activityItem.id,
+        sidebarViewId: resolvedSidebarViewId ?? undefined,
+        workbenchViewId: resolvedWorkbenchViewId,
+      };
+    },
+    [lastSidebarViewByExtension, sidebarViews],
+  );
+
+  const openPreferredExtensionSurface = useCallback(() => {
+    if (!preferredExtensionActivity) {
+      return;
+    }
+    setActiveSurface(buildExtensionSurface(preferredExtensionActivity));
+  }, [buildExtensionSurface, preferredExtensionActivity]);
 
   useEffect(() => {
     void emitReleaseCheckpoint("dashboard_ready", {
@@ -251,12 +391,15 @@ export default function Dashboard() {
       return;
     }
     smokeAutoOpenAppliedRef.current = true;
-    setActiveSurface({
-      kind: "extension",
-      extensionId: "db-connector",
-      panelId: "db-connector-workspace",
-    });
-  }, [releaseVerification.autoOpenDbWorkbench, releaseVerification.enabled]);
+    if (preferredExtensionActivity) {
+      setActiveSurface(buildExtensionSurface(preferredExtensionActivity));
+    }
+  }, [
+    buildExtensionSurface,
+    preferredExtensionActivity,
+    releaseVerification.autoOpenDbWorkbench,
+    releaseVerification.enabled,
+  ]);
 
   useEffect(() => {
     if (!desktopCapabilities.features.ddlImport && activeSurface.kind === "ddl-import") {
@@ -269,6 +412,13 @@ export default function Dashboard() {
       setViewMode("auto");
     }
   }, [desktopCapabilities.features.schemaDiff, viewMode]);
+
+  useEffect(() => {
+    if (activeSurface.kind !== "extension" || isExtensionHostLoading || activeExtensionActivity) {
+      return;
+    }
+    setActiveSurface({ kind: "workspace" });
+  }, [activeExtensionActivity, activeSurface.kind, isExtensionHostLoading]);
 
   const handleCurrentTableChange = useCallback((table: TableInfo | null, index: number) => {
     setCurrentTable(table);
@@ -516,6 +666,56 @@ export default function Dashboard() {
   }, [lastSelectedSheetByFile]);
 
   useEffect(() => {
+    if (!activeExtensionActivity) {
+      return;
+    }
+    setLastExtensionActivityId((previous) =>
+      previous === activeExtensionActivity.id ? previous : activeExtensionActivity.id,
+    );
+  }, [activeExtensionActivity]);
+
+  useEffect(() => {
+    if (!activeExtensionId || !activeSidebarViewId) {
+      return;
+    }
+    setLastSidebarViewByExtension((previous) =>
+      previous[activeExtensionId] === activeSidebarViewId
+        ? previous
+        : {
+            ...previous,
+            [activeExtensionId]: activeSidebarViewId,
+          },
+    );
+  }, [activeExtensionId, activeSidebarViewId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (lastExtensionActivityId) {
+      window.localStorage.setItem(LAST_EXTENSION_ACTIVITY_STORAGE_KEY, lastExtensionActivityId);
+    } else {
+      window.localStorage.removeItem(LAST_EXTENSION_ACTIVITY_STORAGE_KEY);
+    }
+  }, [lastExtensionActivityId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        LAST_SIDEBAR_VIEW_BY_EXTENSION_STORAGE_KEY,
+        JSON.stringify(lastSidebarViewByExtension),
+      );
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [lastSidebarViewByExtension]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -549,6 +749,35 @@ export default function Dashboard() {
       setSheetSelectorOpen(false);
     }
   }, [isCompactLayout]);
+
+  useEffect(() => {
+    const currentSurface: ExtensionSurface | null =
+      activeSurface.kind === "extension" ? activeSurface : null;
+    if (!currentSurface || !activeExtensionActivity || (!activeSidebarViewId && !activeWorkbenchViewId)) {
+      return;
+    }
+
+    const normalizedSurface = buildExtensionSurface(activeExtensionActivity, {
+      sidebarViewId: activeSidebarViewId,
+      workbenchViewId: activeWorkbenchViewId,
+    });
+
+    if (
+      currentSurface.activityItemId === normalizedSurface.activityItemId &&
+      currentSurface.sidebarViewId === normalizedSurface.sidebarViewId &&
+      currentSurface.workbenchViewId === normalizedSurface.workbenchViewId
+    ) {
+      return;
+    }
+
+    setActiveSurface(normalizedSurface);
+  }, [
+    activeExtensionActivity,
+    activeSidebarViewId,
+    activeSurface,
+    activeWorkbenchViewId,
+    buildExtensionSurface,
+  ]);
 
   useEffect(() => {
     if (desktopCapabilities.runtime !== "tauri" || !settings?.statusBarItems.includes("memory")) {
@@ -683,8 +912,6 @@ export default function Dashboard() {
   const selectedFileMemoryKey = selectedFile ? buildSheetStorageKey(selectedFile) : null;
   const activeTables = viewMode === "spreadsheet" && regionTables ? regionTables : null;
   const selectedFileName = selectedFile?.originalName ?? null;
-  const isDedicatedDatabaseSurface =
-    activeSurface.kind === "extension" && activeSurface.extensionId === "db-connector";
   const isResolvingDefaultSheet =
     Boolean(selectedFileId) &&
     !selectedSheet &&
@@ -821,6 +1048,15 @@ export default function Dashboard() {
         setSelectedFileId(fileId);
         setActiveSurface({ kind: "workspace" });
       }}
+      databaseToolInstalled={Boolean(databaseToolActivity)}
+      databaseToolLabel={databaseToolActivity?.label ?? t("extensions.dbConnector")}
+      onOpenDatabaseTool={() => {
+        if (databaseToolActivity) {
+          setActiveSurface(buildExtensionSurface(databaseToolActivity));
+          return;
+        }
+        setActiveSurface({ kind: "extensions" });
+      }}
     />
   );
 
@@ -840,32 +1076,26 @@ export default function Dashboard() {
                   <TableProperties className="mr-1.5 h-3.5 w-3.5" />
                   {t("dashboard.workspace")}
                 </Button>
-                {isDedicatedDatabaseSurface ? (
+                {preferredExtensionActivity ? (
                   <Button
-                    variant="default"
+                    variant={isExtensionSurface ? "default" : "outline"}
                     size="sm"
                     className="h-8 rounded-lg px-3 text-xs font-medium"
-                    onClick={() =>
-                      setActiveSurface({
-                        kind: "extension",
-                        extensionId: "db-connector",
-                        panelId: "db-connector-workspace",
-                      })
-                    }
+                    onClick={openPreferredExtensionSurface}
                   >
-                    <Database className="mr-1.5 h-3.5 w-3.5" />
-                    数据库
+                    <Puzzle className="mr-1.5 h-3.5 w-3.5" />
+                    {activeExtensionActivity?.label ?? preferredExtensionActivity.label}
                   </Button>
                 ) : null}
               </div>
               <p className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
-                {isDedicatedDatabaseSurface
-                  ? "Database workspace"
+                {isExtensionSurface
+                  ? `${activeExtensionActivity?.label ?? preferredExtensionActivity?.label ?? t("extensions.shell.tool")} ${t("extensions.shell.workspace").toLowerCase()}`
                   : `${selectedFileName || t("sidebar.noFilesYet")}${selectedSheet ? ` / ${selectedSheet}` : ""}${currentTable ? ` / ${currentTable.physicalTableName}` : ""}`}
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {!isDedicatedDatabaseSurface ? (
+              {!isExtensionSurface ? (
               <div className="hidden items-center gap-1.5 lg:flex">
                 <span className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-white px-2.5 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                   {viewMode === "auto" ? t("view.autoParse") : viewMode === "spreadsheet" ? t("view.spreadsheet") : "Diff"}
@@ -877,7 +1107,7 @@ export default function Dashboard() {
                 ) : null}
               </div>
               ) : null}
-              {!isDedicatedDatabaseSurface ? (
+              {!isExtensionSurface ? (
               <div className="hidden items-center gap-0.5 rounded-lg border border-slate-200/80 bg-slate-50/80 p-0.5 xl:flex dark:border-slate-800 dark:bg-slate-950">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -944,7 +1174,7 @@ export default function Dashboard() {
         </header>
 
         <div className="mt-2.5 flex flex-1 overflow-hidden gap-2">
-          {!isDedicatedDatabaseSurface ? (
+          {!isExtensionSurface ? (
             <Sidebar
               selectedFileId={selectedFileId}
               selectedFileIds={selectedFileIds}
@@ -958,19 +1188,67 @@ export default function Dashboard() {
               onNavigate={setActiveSurface}
               className="workspace-nav-pane overflow-hidden"
             />
-          ) : null}
+          ) : (
+            <>
+              <ExtensionActivityBar
+                items={activityBarItems}
+                activeActivityItemId={activeExtensionActivity?.id ?? null}
+                onSelectActivity={(activityItemId) => {
+                  const nextActivity = activityBarItems.find((item) => item.id === activityItemId);
+                  if (nextActivity) {
+                    setActiveSurface(buildExtensionSurface(nextActivity));
+                  }
+                }}
+              />
+              <ExtensionSecondarySidebar
+                activityItem={activeExtensionActivity}
+                sidebarViews={activeExtensionSidebarViews}
+                activeSidebarViewId={activeSidebarViewId}
+                workbenchViewId={activeWorkbenchViewId}
+                onSelectSidebarView={(sidebarViewId) => {
+                  if (!activeExtensionActivity) {
+                    return;
+                  }
+                  setActiveSurface(
+                    buildExtensionSurface(activeExtensionActivity, {
+                      sidebarViewId,
+                      workbenchViewId:
+                        activeWorkbenchViewId ?? activeExtensionActivity.defaultWorkbenchViewId,
+                    }),
+                  );
+                }}
+                onOpenWorkbenchView={(workbenchViewId) => {
+                  if (!activeExtensionActivity) {
+                    return;
+                  }
+                  setActiveSurface(
+                    buildExtensionSurface(activeExtensionActivity, {
+                      sidebarViewId: activeSidebarViewId,
+                      workbenchViewId:
+                        workbenchViewId ?? activeExtensionActivity.defaultWorkbenchViewId,
+                    }),
+                  );
+                }}
+                onNavigate={setActiveSurface}
+              />
+            </>
+          )}
 
           <main className="min-w-0 flex-1 overflow-hidden">
             <div className="flex h-full min-w-0 overflow-hidden">
               {activeSurface.kind === "extensions" ? (
                 <ExtensionManagementPage onNavigate={setActiveSurface} />
               ) : activeSurface.kind === "extension" ? (
-                <ExtensionWorkspaceHost
-                  extensionId={activeSurface.extensionId}
-                  panelId={activeSurface.panelId}
-                  fileId={selectedFileId}
-                  fileName={selectedFileName}
-                />
+                <div className="workspace-panel flex h-full w-full min-w-0 overflow-hidden">
+                  <ExtensionWorkspaceHost
+                    extensionId={activeSurface.extensionId}
+                    activityItemId={activeSurface.activityItemId}
+                    sidebarViewId={activeSurface.sidebarViewId}
+                    workbenchViewId={activeSurface.workbenchViewId}
+                    fileId={selectedFileId}
+                    fileName={selectedFileName}
+                  />
+                </div>
               ) : desktopCapabilities.features.ddlImport && activeSurface.kind === "ddl-import" ? (
                 renderDdlImportWorkspace()
               ) : isCompactLayout ? (

@@ -8,10 +8,16 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ResolvedExtension } from "@shared/extension-schema";
 import {
+  resolveActivityBarItems,
+  resolveSidebarViews,
+  resolveWorkbenchViews,
   resolveNavigation,
   resolveWorkspacePanels,
   resolveSettingsSections,
   resolveContextActions,
+  type ResolvedActivityBarItem,
+  type ResolvedSidebarView,
+  type ResolvedWorkbenchView,
   type ResolvedNavItem,
   type ResolvedWorkspacePanel,
   type ResolvedSettingsSection,
@@ -30,11 +36,15 @@ import { useStatusBarController } from "@/status-bar/context";
 export interface ExtensionHostState {
   extensions: ResolvedExtension[];
   isLoading: boolean;
+  activityBarItems: ResolvedActivityBarItem[];
+  sidebarViews: ResolvedSidebarView[];
+  workbenchViews: ResolvedWorkbenchView[];
   navigation: ResolvedNavItem[];
   workspacePanels: ResolvedWorkspacePanel[];
   settingsSections: ResolvedSettingsSection[];
   contextActions: ResolvedContextAction[];
   hostApi: HostApi;
+  scopedHostApis: Record<string, HostApi>;
 }
 
 /** デフォルト HostApi（Context 外での安全なフォールバック） */
@@ -75,14 +85,39 @@ const noopHostApi: HostApi = {
 const defaultState: ExtensionHostState = {
   extensions: [],
   isLoading: false,
+  activityBarItems: [],
+  sidebarViews: [],
+  workbenchViews: [],
   navigation: [],
   workspacePanels: [],
   settingsSections: [],
   contextActions: [],
   hostApi: noopHostApi,
+  scopedHostApis: {},
 };
 
 const ExtensionHostContext = createContext<ExtensionHostState>(defaultState);
+
+function buildResolvedState(
+  extensions: ResolvedExtension[],
+  isLoading: boolean,
+  hostApi: HostApi,
+  scopedHostApis: Record<string, HostApi>,
+): ExtensionHostState {
+  return {
+    extensions,
+    isLoading,
+    activityBarItems: resolveActivityBarItems(extensions),
+    sidebarViews: resolveSidebarViews(extensions),
+    workbenchViews: resolveWorkbenchViews(extensions),
+    navigation: resolveNavigation(extensions),
+    workspacePanels: resolveWorkspacePanels(extensions),
+    settingsSections: resolveSettingsSections(extensions),
+    contextActions: resolveContextActions(extensions),
+    hostApi,
+    scopedHostApis,
+  };
+}
 
 // ──────────────────────────────────────────────
 // Provider
@@ -107,22 +142,57 @@ export function ExtensionHostProvider({ children }: { children: ReactNode }) {
     enabled: capabilities.features.extensions,
   });
 
-  const navigation = useMemo(() => resolveNavigation(extensions), [extensions]);
-  const workspacePanels = useMemo(() => resolveWorkspacePanels(extensions), [extensions]);
-  const settingsSections = useMemo(() => resolveSettingsSections(extensions), [extensions]);
-  const contextActions = useMemo(() => resolveContextActions(extensions), [extensions]);
+  const scopedHostApis = useMemo<Record<string, HostApi>>(
+    () =>
+      Object.fromEntries(
+        extensions.map((ext) => [
+          ext.manifest.id,
+          createHostApi(
+            toast,
+            ext.manifest.capabilities ?? [],
+            statusBarController,
+            `ext:${ext.manifest.id}`,
+          ),
+        ]),
+      ),
+    [extensions, statusBarController, toast],
+  );
 
   const value = useMemo<ExtensionHostState>(
-    () => ({
+    () => buildResolvedState(extensions, isLoading, hostApi, scopedHostApis),
+    [
       extensions,
       isLoading,
-      navigation,
-      workspacePanels,
-      settingsSections,
-      contextActions,
       hostApi,
-    }),
-    [extensions, isLoading, navigation, workspacePanels, settingsSections, contextActions, hostApi],
+      scopedHostApis,
+    ],
+  );
+
+  return (
+    <ExtensionHostContext.Provider value={value}>
+      {children}
+    </ExtensionHostContext.Provider>
+  );
+}
+
+interface ExtensionHostStaticProviderProps {
+  children: ReactNode;
+  extensions: ResolvedExtension[];
+  isLoading?: boolean;
+  hostApi?: HostApi;
+  scopedHostApis?: Record<string, HostApi>;
+}
+
+export function ExtensionHostStaticProvider({
+  children,
+  extensions,
+  isLoading = false,
+  hostApi = noopHostApi,
+  scopedHostApis = {},
+}: ExtensionHostStaticProviderProps) {
+  const value = useMemo(
+    () => buildResolvedState(extensions, isLoading, hostApi, scopedHostApis),
+    [extensions, hostApi, isLoading, scopedHostApis],
   );
 
   return (
@@ -153,14 +223,18 @@ export function useHostApi(): HostApi {
  * マニフェストに宣言された capabilities のみが有効になる
  */
 export function useHostApiFor(extensionId: string): HostApi {
-  const { extensions } = useContext(ExtensionHostContext);
+  const { extensions, scopedHostApis } = useContext(ExtensionHostContext);
   const { toast } = useToast();
   const statusBarController = useStatusBarController();
 
   return useMemo(() => {
+    const injectedHostApi = scopedHostApis[extensionId];
+    if (injectedHostApi) {
+      return injectedHostApi;
+    }
     const ext = extensions.find((e) => e.manifest.id === extensionId);
     // 未知の extensionId → 全メソッド拒否（権限ゼロ）で安全に失敗させる
     const caps = ext?.manifest.capabilities ?? [];
     return createHostApi(toast, caps, statusBarController, `ext:${extensionId}`);
-  }, [extensionId, extensions, statusBarController, toast]);
+  }, [extensionId, extensions, scopedHostApis, statusBarController, toast]);
 }

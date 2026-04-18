@@ -33,7 +33,14 @@ function createSnapshot(): DbSchemaSnapshot {
         name: "public.orders",
         columns: [column("id"), column("user_id"), column("total_amount")],
         indexes: [],
-        foreignKeys: [],
+        foreignKeys: [
+          {
+            name: "fk_orders_users",
+            columns: ["user_id"],
+            referencedTable: "public.users",
+            referencedColumns: ["id"],
+          },
+        ],
       },
       {
         name: "audit.events",
@@ -52,6 +59,16 @@ function createSnapshot(): DbSchemaSnapshot {
         columns: [column("id"), column("event_type")],
       },
     ],
+    routines: [
+      {
+        name: "public.coalesce_display_name",
+        kind: "function",
+        signature: "coalesce_display_name(name text, email text)",
+        returnType: "text",
+      },
+    ],
+    triggers: [],
+    sequences: [],
   };
 }
 
@@ -108,4 +125,61 @@ test("alias `o` resolves orders columns after JOIN orders o", () => {
   assert.equal(aliasHint?.alias, "o");
   assert.ok(suggestions.some((item) => item.label === "total_amount"));
   assert.equal(suggestions.some((item) => item.label === "email"), false);
+});
+
+test("CTE alias resolves projected columns inside the active statement scope", () => {
+  const context = buildAutocompleteContext(createSnapshot(), "public");
+  const sql =
+    "WITH recent_orders AS (SELECT user_id, total_amount FROM orders) SELECT ro. FROM recent_orders ro";
+  const cursorOffset = sql.indexOf("ro.") + "ro.".length;
+  const suggestions = buildCompletionItems(context, null, sql, cursorOffset);
+
+  assert.ok(suggestions.some((item) => item.label === "user_id"));
+  assert.ok(suggestions.some((item) => item.label === "total_amount"));
+  assert.equal(suggestions.some((item) => item.label === "email"), false);
+});
+
+test("subquery alias resolves projected columns for nested SELECT sources", () => {
+  const context = buildAutocompleteContext(createSnapshot(), "public");
+  const sql =
+    "SELECT sub. FROM (SELECT id, email FROM users) sub";
+  const cursorOffset = sql.indexOf("sub.") + "sub.".length;
+  const suggestions = buildCompletionItems(context, null, sql, cursorOffset);
+
+  assert.ok(suggestions.some((item) => item.label === "id"));
+  assert.ok(suggestions.some((item) => item.label === "email"));
+  assert.equal(suggestions.some((item) => item.label === "total_amount"), false);
+});
+
+test("JOIN scope prefers FK-aware join templates before plain relation names", () => {
+  const context = buildAutocompleteContext(createSnapshot(), "public");
+  const sql = "SELECT * FROM users u JOIN ";
+  const cursorOffset = sql.length;
+  const suggestions = buildCompletionItems(context, null, sql, cursorOffset);
+
+  assert.equal(suggestions[0]?.kind, "template");
+  assert.match(suggestions[0]?.label ?? "", /JOIN orders via FK/i);
+  assert.equal(
+    suggestions.some(
+      (item) =>
+        item.kind === "template" &&
+        item.insertText.includes("orders o ON o.user_id = u.id"),
+    ),
+    true,
+  );
+});
+
+test("general and column scopes include routine/function suggestions", () => {
+  const context = buildAutocompleteContext(createSnapshot(), "public");
+  const suggestions = buildCompletionItems(context, null, "SELECT ", "SELECT ".length);
+
+  assert.equal(
+    suggestions.some(
+      (item) =>
+        item.kind === "function" &&
+        item.label === "coalesce_display_name" &&
+        item.insertAsSnippet === true,
+    ),
+    true,
+  );
 });

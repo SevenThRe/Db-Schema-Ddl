@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "DBSchemaExcel2DDL",
+  "productName": "DBTools",
   "version": "1.1.4",
   "identifier": "com.seventhre.db-schema-ddl",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DBSchemaExcel2DDL",
+        "title": "DBTools",
         "width": 1600,
         "height": 960,
         "minWidth": 1200,
@@ -24,7 +24,18 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [
+            "$APPDATA/extensions/**"
+          ],
+          "deny": [
+            "$APPDATA/extensions/**/installed.json"
+          ]
+        }
+      }
     }
   },
   "bundle": {

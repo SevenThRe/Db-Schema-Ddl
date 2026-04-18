@@ -1,0 +1,11 @@
+1776393079785 [checkpoint:tauri_setup_ready] {"productName":"DBTools"}
+1776393079805 [checkpoint:browser_window_loaded]
+1776393082400 [checkpoint:browser_window_loaded]
+1776393082537 [checkpoint:dashboard_ready] {"activeSurface":"extension"}
+1776393082541 [checkpoint:dashboard_ready] {"activeSurface":"workspace"}
+1776393082599 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"sql","selectedConnectionId":null}
+1776393082967 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1776393083693 [checkpoint:db_workbench_recovery_classified] {"activeConnectionId":null,"classification":"restored","requestedConnectionId":"__release-verification__mysql"}
+1776393083694 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"sql","selectedConnectionId":"__release-verification__mysql"}
+1776393098733 [checkpoint:db_workbench_live_flow] {"connectionId":"__release-verification__mysql","connectionName":"bootstrap mysql","driver":"mysql","flowId":"connect","note":"MySQL 连接失败: pool timed out while waiting for an open connection","status":"failed"}
+1776393098738 [checkpoint:db_workbench_live_completed] {"connectionId":"__release-verification__mysql","connectionName":"bootstrap mysql","database":"app","driver":"mysql","note":"Live verification stopped before query flows because the connection could not be established.","readonly":false,"status":"failed"}

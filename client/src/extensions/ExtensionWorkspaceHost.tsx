@@ -1,4 +1,4 @@
-// 拡張ワークスペースホスト — panelId からレジストリを参照してコンポーネントを描画
+// 拡張ワークスペースホスト — workbenchViewId からレジストリを参照してコンポーネントを描画
 //
 // Dashboard のメインエリアで surface.kind === "extension" のとき使用する。
 // 無効化された拡張はレンダリングをブロックし、Capability スコープ済み HostApi を提供する。
@@ -9,6 +9,7 @@ import { useExtensionHost, useHostApiFor } from "./host-context";
 import { createContext, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import type { HostApi } from "./host-api";
+import { ExtensionRuntimeFrame } from "./ExtensionRuntimeFrame";
 
 // ── スコープ済み HostApi コンテキスト ──────────────────
 const ScopedHostApiContext = createContext<HostApi | null>(null);
@@ -22,19 +23,23 @@ export function useScopedHostApi(): HostApi | null {
 
 interface ExtensionWorkspaceHostProps {
   extensionId: string;
-  panelId: string;
+  activityItemId?: string;
+  sidebarViewId?: string;
+  workbenchViewId?: string;
   fileId?: number | null;
   fileName?: string | null;
 }
 
 export function ExtensionWorkspaceHost({
   extensionId,
-  panelId,
+  activityItemId,
+  sidebarViewId,
+  workbenchViewId,
   fileId,
   fileName,
 }: ExtensionWorkspaceHostProps) {
   const { t } = useTranslation();
-  const { workspacePanels, extensions } = useExtensionHost();
+  const { workbenchViews, extensions } = useExtensionHost();
   const scopedHostApi = useHostApiFor(extensionId);
 
   // 拡張の有効状態を確認する
@@ -53,17 +58,39 @@ export function ExtensionWorkspaceHost({
     );
   }
 
-  // workspacePanels から component キーを解決
-  const panelDef = workspacePanels.find((p) => p.id === panelId);
-  const componentKey = panelDef?.component ?? panelId;
-  const Panel = getPanel(componentKey);
+  const workbenchDef =
+    workbenchViewId != null
+      ? workbenchViews.find(
+          (view) => view.extensionId === extensionId && view.id === workbenchViewId,
+        )
+      : undefined;
+  const resolvedTargetId = workbenchViewId ?? extensionId;
+  const componentKey = workbenchDef?.component ?? workbenchViewId;
+  const Panel = componentKey ? getPanel(componentKey) : undefined;
 
   if (!Panel) {
+    if (ext && workbenchDef?.runtimeViewId) {
+      return (
+        <ScopedHostApiContext.Provider value={scopedHostApi}>
+          <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
+            <ExtensionRuntimeFrame
+              extension={ext}
+              runtimeViewId={workbenchDef.runtimeViewId}
+              surfaceId={workbenchDef.id}
+              surfaceKind="workbench"
+              title={workbenchDef.title}
+              className="h-full w-full flex-1 rounded-none border-0"
+            />
+          </div>
+        </ScopedHostApiContext.Provider>
+      );
+    }
+
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <AlertCircle className="h-8 w-8 text-muted-foreground opacity-40" />
         <p className="text-sm text-muted-foreground">
-          {t("extensions.workspace.panelNotFound", { panelId })}
+          {t("extensions.workspace.surfaceNotFound", { surfaceId: resolvedTargetId })}
         </p>
       </div>
     );
@@ -73,6 +100,9 @@ export function ExtensionWorkspaceHost({
     extensionId,
     fileId,
     fileName,
+    activityItemId,
+    sidebarViewId,
+    workbenchViewId,
   };
 
   return (

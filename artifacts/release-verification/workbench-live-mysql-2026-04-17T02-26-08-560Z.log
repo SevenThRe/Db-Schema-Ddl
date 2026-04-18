@@ -1,0 +1,12 @@
+1776392838617 [checkpoint:tauri_setup_ready] {"productName":"DBTools"}
+1776392838668 [checkpoint:browser_window_loaded]
+1776392844391 [checkpoint:browser_window_loaded]
+1776392844525 [checkpoint:dashboard_ready] {"activeSurface":"extension"}
+1776392844526 [checkpoint:dashboard_ready] {"activeSurface":"workspace"}
+1776392844573 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1776392845847 [checkpoint:db_workbench_recovery_classified] {"activeConnectionId":null,"classification":"none","requestedConnectionId":null}
+1776392845891 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"sql","selectedConnectionId":null}
+1776392845895 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1776392845895 [checkpoint:db_workbench_live_flow] {"connectionId":null,"connectionName":null,"driver":"mysql","flowId":"connect","note":"Live verification bootstrap connection did not resolve to a saved target.","status":"failed"}
+1776392845896 [checkpoint:db_workbench_live_completed] {"connectionId":null,"connectionName":null,"database":null,"driver":"mysql","note":"Live verification bootstrap connection did not resolve to a saved target.","status":"failed"}
+1776392845941 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"sql","selectedConnectionId":"__release-verification__mysql"}

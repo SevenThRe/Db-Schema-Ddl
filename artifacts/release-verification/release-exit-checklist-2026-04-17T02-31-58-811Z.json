@@ -1,0 +1,79 @@
+{
+  "artifactVersion": "v1",
+  "runId": "release-exit-checklist-2026-04-17T02-31-58-811Z",
+  "generatedAt": "2026-04-17T02:31:58.811Z",
+  "installerPath": "E:\\work\\Db-Schema-Ddl\\src-tauri\\target\\release\\db-schema-ddl-tauri.exe",
+  "installerMtime": "2026-04-12T06:29:15.368Z",
+  "decision": "blocked",
+  "blocked": true,
+  "evidence": {
+    "packagedSmoke": {
+      "key": "packaged-smoke",
+      "label": "Packaged smoke",
+      "required": true,
+      "status": "current",
+      "generatedAt": "2026-04-12T06:30:19.330Z",
+      "artifactPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\tauri-packaged-smoke-2026-04-12T06-30-19-330Z.json",
+      "blockerCodes": [],
+      "notes": []
+    },
+    "mysqlLive": {
+      "key": "mysql-live",
+      "label": "MySQL live verification",
+      "required": true,
+      "status": "failed",
+      "generatedAt": "2026-04-17T02:31:17.971Z",
+      "artifactPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\workbench-live-mysql-2026-04-17T02-31-17-971Z.json",
+      "blockerCodes": [
+        "MYSQL_LIVE_VERIFICATION_FAILED"
+      ],
+      "notes": [
+        "Live verification stopped before query flows because the connection could not be established."
+      ]
+    },
+    "postgresLive": {
+      "key": "postgres-live",
+      "label": "PostgreSQL live verification",
+      "required": true,
+      "status": "missing",
+      "blockerCodes": [
+        "POSTGRES_LIVE_VERIFICATION_MISSING"
+      ],
+      "notes": [
+        "Run `npm run verify:desktop:live -- --driver=postgres` for the current installer candidate."
+      ]
+    },
+    "lateHardening": {
+      "key": "late-hardening",
+      "label": "Late hardening proof",
+      "required": true,
+      "status": "current",
+      "generatedAt": "2026-04-15",
+      "artifactPath": "E:\\work\\Db-Schema-Ddl\\.planning\\phases\\31-db-workbench-runtime-and-sync-hardening\\31-VERIFICATION.md",
+      "blockerCodes": [],
+      "notes": [
+        "31-db-workbench-runtime-and-sync-hardening status: passed"
+      ]
+    }
+  },
+  "missingEvidence": [
+    "postgres-live"
+  ],
+  "staleEvidence": [],
+  "shipBlockers": [
+    {
+      "code": "MYSQL_LIVE_VERIFICATION_FAILED",
+      "severity": "blocking",
+      "message": "MySQL live verification contains failed flows.",
+      "artifactPath": "E:\\work\\Db-Schema-Ddl\\artifacts\\release-verification\\workbench-live-mysql-2026-04-17T02-31-17-971Z.json"
+    },
+    {
+      "code": "POSTGRES_LIVE_VERIFICATION_MISSING",
+      "severity": "blocking",
+      "message": "Missing PostgreSQL live verification artifact."
+    }
+  ],
+  "postReleaseBacklog": [
+    "Data Sync / Job Center still need dedicated runtime proof before promotion beyond Preview."
+  ]
+}

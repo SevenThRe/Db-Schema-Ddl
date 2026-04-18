@@ -1357,6 +1357,11 @@ export interface DbGridDeleteRowDraft {
   rowPkTuple: string;
 }
 
+export interface DbGridInsertedRowDraft {
+  rowDraftId: string;
+  values: Record<string, string | number | boolean | null>;
+}
+
 export interface DbGridPrepareCommitRequest {
   connectionId: string;
   schema?: string;
@@ -1365,12 +1370,14 @@ export interface DbGridPrepareCommitRequest {
   primaryKeyColumns: string[];
   patchCells: DbGridEditPatchCell[];
   deletedRows?: DbGridDeleteRowDraft[];
+  insertedRows?: DbGridInsertedRowDraft[];
 }
 
 export interface DbGridPrepareCommitResponse {
   planId: string;
   planHash: string;
   affectedRows: number;
+  insertedRows: number;
   updatedRows: number;
   deletedRows: number;
   changedColumnsSummary: string[];
@@ -1388,6 +1395,7 @@ export interface DbGridCommitResponse {
   planId: string;
   planHash: string;
   committedRows: number;
+  insertedRows: number;
   updatedRows: number;
   deletedRows: number;
   failedSqlIndex?: number;

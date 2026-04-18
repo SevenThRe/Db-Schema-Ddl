@@ -19,7 +19,8 @@ pub struct InstalledExtension {
     /// インストール日時 (ISO 8601)
     pub installed_at: String,
     /// エントリーポイントの絶対パス
-    pub entry_path: PathBuf,
+    #[serde(default)]
+    pub entry_path: Option<PathBuf>,
 }
 
 // ──────────────────────────────────────────────
@@ -76,7 +77,7 @@ impl ExtensionRegistry {
     }
 
     /// 拡張をレジストリに登録（インストール後に呼ぶ）
-    pub fn register(&self, manifest: ExtensionManifest, entry_path: PathBuf) -> ExtResult<InstalledExtension> {
+    pub fn register(&self, manifest: ExtensionManifest, entry_path: Option<PathBuf>) -> ExtResult<InstalledExtension> {
         let now = chrono::Utc::now().to_rfc3339();
         let ext = InstalledExtension {
             manifest,

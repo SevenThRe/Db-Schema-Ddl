@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$InstallerArtifactPath,
-  [string]$InstallDirectory = (Join-Path ${env:ProgramFiles} "DBSchemaExcel2DDL"),
+  [string]$InstallDirectory = (Join-Path ${env:ProgramFiles} "DBTools"),
   [string]$OutputDirectory,
   [string]$InstallerScreenshotPath,
   [string]$FirstLaunchScreenshotPath,
@@ -276,7 +276,7 @@ if ($resolvedInstallerArtifactPath) {
   $blockerFindings.Add((New-BlockerFinding -Code "INSTALLER_ARTIFACT_MISSING" -Message "No NSIS installer artifact was found under dist-electron. Run npm run build:electron before this smoke seam.")) | Out-Null
 }
 
-$installedExecutablePath = Join-Path $InstallDirectory "DBSchemaExcel2DDL.exe"
+$installedExecutablePath = Join-Path $InstallDirectory "DBTools.exe"
 Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "install-directory" -Path $InstallDirectory -Note "Expected install directory. Existing NSIS config may reuse a sticky prior path."
 Add-EvidenceRef -EvidenceRefs $evidenceRefs -Kind "installed-executable" -Path $installedExecutablePath -Note "Expected installed app path for first-launch evidence."
 

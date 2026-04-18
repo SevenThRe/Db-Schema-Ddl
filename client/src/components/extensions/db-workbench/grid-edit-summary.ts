@@ -1,4 +1,8 @@
-import type { DbGridDeleteRowDraft, DbGridEditPatchCell } from "@shared/schema";
+import type {
+  DbGridDeleteRowDraft,
+  DbGridEditPatchCell,
+  DbGridInsertedRowDraft,
+} from "@shared/schema";
 
 export type GridCellValue = string | number | boolean | null;
 
@@ -18,6 +22,18 @@ export interface PendingEditRowSummary {
 export interface PendingDeleteRowSummary {
   rowPkTuple: string;
   rowKeyLabel: string;
+}
+
+export interface PendingInsertedCellSummary {
+  columnName: string;
+  value: GridCellValue;
+}
+
+export interface PendingInsertedRowSummary {
+  rowDraftId: string;
+  rowLabel: string;
+  fieldCount: number;
+  cells: PendingInsertedCellSummary[];
 }
 
 export function formatGridCellValue(value: GridCellValue): string {
@@ -81,4 +97,26 @@ export function buildPendingDeleteRowSummaries(
       } satisfies PendingDeleteRowSummary;
     })
     .sort((left, right) => left.rowKeyLabel.localeCompare(right.rowKeyLabel));
+}
+
+export function buildPendingInsertedRowSummaries(
+  pendingInsertedRows: Record<string, DbGridInsertedRowDraft>,
+): PendingInsertedRowSummary[] {
+  return Object.values(pendingInsertedRows)
+    .map((row) => {
+      const cells = Object.entries(row.values)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([columnName, value]) => ({
+          columnName,
+          value,
+        }));
+
+      return {
+        rowDraftId: row.rowDraftId,
+        rowLabel: `draft:${row.rowDraftId.slice(0, 8)}`,
+        fieldCount: cells.length,
+        cells,
+      } satisfies PendingInsertedRowSummary;
+    })
+    .sort((left, right) => left.rowLabel.localeCompare(right.rowLabel));
 }

@@ -1,4 +1,4 @@
-# Db-Schema-Ddl 文档站
+# DBTools 文档站
 
 本目录是项目的 Docusaurus 文档站（中文首发版），用于提供面向新手的图文使用教程与排错指南。
 

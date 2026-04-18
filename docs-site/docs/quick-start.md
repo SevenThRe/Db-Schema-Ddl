@@ -15,9 +15,9 @@ sidebar_position: 3
 下载地址：
 
 [GitHub Releases（手动选择版本）](https://github.com/SevenThRe/Db-Schema-Ddl/releases)  
-[![Download Latest](https://img.shields.io/badge/Download-Latest-2ea44f?logo=github)](https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest/download/DBSchemaExcel2DDL-Setup-latest.exe)
+[![Download Latest](https://img.shields.io/badge/Download-Latest-2ea44f?logo=github)](https://github.com/SevenThRe/Db-Schema-Ddl/releases/latest/download/DBTools-Setup-latest.exe)
 
-安装后启动应用即可进入工作台。
+安装后启动 DBTools 即可进入工作台。
 
 ### 源码版
 
@@ -26,25 +26,11 @@ sidebar_position: 3
 ```bash
 npm install
 npm run dev
+# 或桌面模式
+npm run tauri:dev
 ```
 
-默认访问地址：`http://localhost:5000`
-
-## 自动化场景入口
-
-如果你希望由 AI Agent 直接调用解析与生成能力，可启动 MCP 接口：
-
-```bash
-npm run mcp
-```
-
-调试模式可使用：
-
-```bash
-npm run mcp:debug
-```
-
-能力说明见 [MCP 自动化接口](./mcp-integration.md)。
+Web 开发默认访问地址：`http://127.0.0.1:5001`
 
 ## 首次进入要看到什么
 

@@ -1,12 +1,69 @@
 // 組み込み拡張機能レジストリ
 // アプリケーションに内蔵された拡張機能のマニフェスト定義を管理する
-// V2: Contribution モデル対応 — ナビゲーション・ワークスペース・設定・コンテキストアクション
+// V2: Contribution モデル対応 — アクティビティバー・サイドバー・ワークベンチ・設定・コンテキストアクション
 
 use serde::{Deserialize, Serialize};
 
 // ──────────────────────────────────────────────
 // Contribution サブ構造体
 // ──────────────────────────────────────────────
+
+/// 拡張シェルのアクティビティバー項目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBarItem {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default = "default_order")]
+    pub order: u32,
+    pub default_sidebar_view_id: String,
+    pub default_workbench_view_id: String,
+}
+
+/// 拡張が提供するセカンダリサイドバー項目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarView {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_item_id: Option<String>,
+    #[serde(default = "default_order")]
+    pub order: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_view_id: Option<String>,
+}
+
+/// 拡張が提供するメインワークベンチビュー
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchView {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_item_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_view_id: Option<String>,
+}
+
+/// 外部拡張が提供するフロントエンド UI バンドル定義
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiBundle {
+    pub entry: String,
+    #[serde(default = "default_ui_bundle_mode")]
+    pub mode: String,
+    #[serde(default = "default_ui_bundle_api_version")]
+    pub api_version: u32,
+}
 
 /// サイドバーまたはヘッダーに表示するナビゲーションエントリ
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,10 +114,24 @@ fn default_order() -> u32 {
     100
 }
 
+fn default_ui_bundle_mode() -> String {
+    "iframe".to_string()
+}
+
+fn default_ui_bundle_api_version() -> u32 {
+    1
+}
+
 /// 拡張が宣言する Contribution（貢献）の集合
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionContributes {
+    #[serde(default)]
+    pub activity_bar: Vec<ActivityBarItem>,
+    #[serde(default)]
+    pub sidebar_views: Vec<SidebarView>,
+    #[serde(default)]
+    pub workbench_views: Vec<WorkbenchView>,
     #[serde(default)]
     pub navigation: Vec<NavigationItem>,
     #[serde(default)]
@@ -101,13 +172,16 @@ pub struct BuiltinExtensionManifest {
     /// 要求する Capability 一覧（db.connect, db.schema.read 等）
     #[serde(default)]
     pub capabilities: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_bundle: Option<UiBundle>,
     pub input_formats: Vec<String>,
     pub output_formats: Vec<String>,
     pub contributes: ExtensionContributes,
 }
 
-// Phase 4: built-in feature (DDL 生成器, DDL 導入, Schema Diff) はナビゲーションを宣言しない。
-// 外部拡張 (db-connector) のみがナビゲーションを contribution として宣言する。
+// built-in feature (DDL 生成器, DDL 導入, Schema Diff) はナビゲーションを宣言しない。
+// installable extension のみが activity / sidebar / workbench を宣言する。
+// built-in 定義自体は旧 navigation / workspace_panels の互換入力を維持する。
 /// 全組み込み拡張機能のマニフェストを返す
 pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
     vec![
@@ -120,6 +194,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
             capabilities: vec![],
+            ui_bundle: None,
             input_formats: vec!["sql".to_string()],
             output_formats: vec!["xlsx".to_string()],
             contributes: ExtensionContributes {
@@ -140,6 +215,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
             capabilities: vec![],
+            ui_bundle: None,
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["java".to_string()],
             contributes: ExtensionContributes {
@@ -160,6 +236,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
             capabilities: vec![],
+            ui_bundle: None,
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["ts".to_string()],
             contributes: ExtensionContributes {
@@ -172,39 +249,6 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             },
         },
         BuiltinExtensionManifest {
-            id: "db-connector".to_string(),
-            name: "DB 工作台".to_string(),
-            version: "1.0.0".to_string(),
-            description: "SQL 编写・执行・结果浏览・执行计划・危険 SQL 保護".to_string(),
-            kind: "builtin".to_string(),
-            category: ExtensionCategory::DbConnector,
-            capabilities: vec![
-                "db.connect".to_string(),
-                "db.query".to_string(),
-                "db.schema.read".to_string(),
-                "db.plan.read".to_string(),
-                "db.result.export".to_string(),
-                "db.data.edit".to_string(),
-                "db.data.sync".to_string(),
-            ],
-            input_formats: vec!["mysql".to_string(), "postgres".to_string()],
-            output_formats: vec!["diff".to_string(), "xlsx".to_string()],
-            contributes: ExtensionContributes {
-                navigation: vec![NavigationItem {
-                    id: "db-connector".to_string(),
-                    label: "数据库".to_string(),
-                    icon: Some("Database".to_string()),
-                    order: 10,
-                }],
-                workspace_panels: vec![WorkspacePanel {
-                    id: "db-connector-workspace".to_string(),
-                    title: "数据库工作台".to_string(),
-                    component: Some("DbConnectorWorkspace".to_string()),
-                }],
-                ..Default::default()
-            },
-        },
-        BuiltinExtensionManifest {
             id: "schema-diff".to_string(),
             name: "Schema Diff".to_string(),
             version: "1.0.0".to_string(),
@@ -212,6 +256,7 @@ pub fn get_builtin_extensions() -> Vec<BuiltinExtensionManifest> {
             kind: "builtin".to_string(),
             category: ExtensionCategory::Transformer,
             capabilities: vec![],
+            ui_bundle: None,
             input_formats: vec!["xlsx".to_string()],
             output_formats: vec!["sql".to_string()],
             contributes: ExtensionContributes {

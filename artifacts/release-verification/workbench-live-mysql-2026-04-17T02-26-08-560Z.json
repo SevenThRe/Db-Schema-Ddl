@@ -1,0 +1,59 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-mysql-2026-04-17T02-26-08-560Z",
+  "generatedAt": "2026-04-17T02:26:08.560Z",
+  "driver": "mysql",
+  "connectionLabel": "bootstrap mysql",
+  "flows": [
+    {
+      "id": "connect",
+      "status": "failed",
+      "note": "Live verification bootstrap connection did not resolve to a saved target."
+    },
+    {
+      "id": "query",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "paging",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "export",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "cancel",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "edit",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "readonly",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "inspection",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 1,
+    "warningCount": 0,
+    "skippedCount": 7,
+    "overallStatus": "failed"
+  },
+  "notes": [
+    "Live verification bootstrap connection did not resolve to a saved target."
+  ]
+}

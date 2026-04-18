@@ -28,12 +28,12 @@ import { cn } from "@/lib/utils";
 // 既知の外部拡張（GitHub から取得できる一覧）
 // ──────────────────────────────────────────────
 
-const OFFICIAL_EXTENSION_IDS: readonly string[] = [];
+const OFFICIAL_EXTENSION_IDS: readonly string[] = ["db-connector"];
 
 const OFFICIAL_EXTENSION_I18N: Record<string, { nameKey: string; descriptionKey: string }> = {
-  "db-management": {
-    nameKey: "extensions.officialExtensions.dbManagement.name",
-    descriptionKey: "extensions.officialExtensions.dbManagement.description",
+  "db-connector": {
+    nameKey: "extensions.officialExtensions.dbConnector.name",
+    descriptionKey: "extensions.officialExtensions.dbConnector.description",
   },
 };
 
@@ -197,6 +197,7 @@ export function ExtensionPanel({ open, onOpenChange }: ExtensionPanelProps) {
                   const extName = localizedKeys ? t(localizedKeys.nameKey, { defaultValue: extId }) : extId;
                   const extDesc = localizedKeys ? t(localizedKeys.descriptionKey, { defaultValue: "" }) : "";
                   const installed = installedMap.get(extId);
+                  const canStart = Boolean(installed?.entry_path);
                   const running = runningIds.has(extId);
                   const catalog = catalogMap[extId];
                   const busy = isBusy(extId);
@@ -215,8 +216,13 @@ export function ExtensionPanel({ open, onOpenChange }: ExtensionPanelProps) {
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-semibold text-foreground">{extName}</p>
                               {installed ? (
-                                <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                              <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                                   v{installed.manifest.version}
+                                </span>
+                              ) : null}
+                              {installed && !canStart ? (
+                                <span className="text-[11px] font-medium text-violet-700 dark:text-violet-400">
+                                  UI bundle
                                 </span>
                               ) : null}
                               {running ? (
@@ -241,29 +247,31 @@ export function ExtensionPanel({ open, onOpenChange }: ExtensionPanelProps) {
                               </Button>
                             ) : (
                               <>
-                                {running ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-8 gap-1.5 rounded-md px-3 text-xs"
-                                    onClick={() => handleStop(extId)}
-                                    disabled={busy}
-                                  >
-                                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-                                    {t("extensions.button.stop")}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-8 gap-1.5 rounded-md px-3 text-xs"
-                                    onClick={() => handleStart(extId)}
-                                    disabled={busy}
-                                  >
-                                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                                    {t("extensions.button.start")}
-                                  </Button>
-                                )}
+                                {canStart ? (
+                                  running ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 gap-1.5 rounded-md px-3 text-xs"
+                                      onClick={() => handleStop(extId)}
+                                      disabled={busy}
+                                    >
+                                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+                                      {t("extensions.button.stop")}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 gap-1.5 rounded-md px-3 text-xs"
+                                      onClick={() => handleStart(extId)}
+                                      disabled={busy}
+                                    >
+                                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                                      {t("extensions.button.start")}
+                                    </Button>
+                                  )
+                                ) : null}
 
                                 <Button
                                   size="sm"

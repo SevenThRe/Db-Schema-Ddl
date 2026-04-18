@@ -258,6 +258,13 @@ pub struct DbGridDeleteRowDraft {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct DbGridInsertedRowDraft {
+  pub row_draft_id: String,
+  pub values: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DbGridPrepareCommitRequest {
   pub connection_id: String,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,6 +275,8 @@ pub struct DbGridPrepareCommitRequest {
   pub patch_cells: Vec<DbGridEditPatchCell>,
   #[serde(default)]
   pub deleted_rows: Vec<DbGridDeleteRowDraft>,
+  #[serde(default)]
+  pub inserted_rows: Vec<DbGridInsertedRowDraft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -276,6 +285,7 @@ pub struct DbGridPrepareCommitResponse {
   pub plan_id: String,
   pub plan_hash: String,
   pub affected_rows: u64,
+  pub inserted_rows: u64,
   pub updated_rows: u64,
   pub deleted_rows: u64,
   #[serde(default)]
@@ -299,6 +309,7 @@ pub struct DbGridCommitResponse {
   pub plan_id: String,
   pub plan_hash: String,
   pub committed_rows: u64,
+  pub inserted_rows: u64,
   pub updated_rows: u64,
   pub deleted_rows: u64,
   #[serde(skip_serializing_if = "Option::is_none")]

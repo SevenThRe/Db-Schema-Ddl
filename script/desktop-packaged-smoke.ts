@@ -47,7 +47,7 @@ function readTauriConfig(cwd = process.cwd()): { productName: string; version: s
     version?: string;
   };
   return {
-    productName: config.productName?.trim() || "DBSchemaExcel2DDL",
+    productName: config.productName?.trim() || "DBTools",
     version: config.version?.trim() || "unknown",
   };
 }

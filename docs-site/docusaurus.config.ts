@@ -7,8 +7,8 @@ const projectName = 'Db-Schema-Ddl';
 const repoUrl = `https://github.com/${organizationName}/${projectName}`;
 
 const config: Config = {
-  title: 'Db-Schema-Ddl',
-  tagline: '中文使用文档',
+  title: 'DBTools',
+  tagline: 'DBTools 中文使用文档',
   favicon: 'img/favicon.ico',
 
   future: {
@@ -65,7 +65,7 @@ const config: Config = {
       respectPrefersColorScheme: false,
     },
     navbar: {
-      title: 'Db-Schema-Ddl 手册',
+      title: 'DBTools 手册',
       items: [
         {
           type: 'doc',

@@ -39,9 +39,7 @@ import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { TemplateCreateDialog } from "./templates/TemplateCreateDialog";
 import { desktopBridge } from "@/lib/desktop-bridge";
-import { useExtensionHost } from "@/extensions/host-context";
 import type { MainSurface } from "@/extensions/host-api";
-import * as LucideIcons from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface SidebarProps {
@@ -56,13 +54,6 @@ interface SidebarProps {
   activeSurface?: MainSurface;
   onNavigate?: (surface: MainSurface) => void;
   className?: string;
-}
-
-/** lucide-react アイコン名から動的にコンポーネントを取得 */
-function getLucideIcon(name?: string): LucideIcons.LucideIcon | null {
-  if (!name) return null;
-  const icon = (LucideIcons as Record<string, unknown>)[name];
-  return typeof icon === "function" ? (icon as LucideIcons.LucideIcon) : null;
 }
 
 export function Sidebar({
@@ -93,7 +84,6 @@ export function Sidebar({
   const [selectionMode, setSelectionMode] = useState(false);
   const [pendingBatchDeleteIds, setPendingBatchDeleteIds] = useState<number[] | null>(null);
   const desktopCapabilities = desktopBridge.getCapabilities();
-  const { navigation: extNavItems } = useExtensionHost();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const dragEnterDepthRef = useRef(0);
   const { data: workbookTemplates = [], isLoading: isTemplatesLoading } = useWorkbookTemplates();
@@ -542,58 +532,6 @@ export function Sidebar({
   };
 
   const selectedCount = effectiveSelectedFileIds.size;
-  const renderExtensionWorkspaceButton = (
-    item: (typeof extNavItems)[number],
-    compact: boolean,
-  ) => {
-    const Icon = getLucideIcon(item.icon) ?? Puzzle;
-    const isActive =
-      activeSurface?.kind === "extension" &&
-      activeSurface.extensionId === item.extensionId &&
-      activeSurface.panelId === item.panelId;
-
-    if (compact) {
-      return (
-        <Tooltip key={`${item.extensionId}:${item.id}`}>
-          <TooltipTrigger asChild>
-            <Button
-              variant={isActive ? "secondary" : "ghost"}
-              size="icon"
-              className="h-8 w-8 rounded-md"
-              onClick={() =>
-                onNavigate?.({
-                  kind: "extension",
-                  extensionId: item.extensionId,
-                  panelId: item.panelId,
-                })
-              }
-            >
-              <Icon className="w-3.5 h-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">{item.label}</TooltipContent>
-        </Tooltip>
-      );
-    }
-
-    return (
-      <Button
-        key={`${item.extensionId}:${item.id}`}
-        variant={isActive ? "secondary" : "ghost"}
-        className="h-8 w-full justify-start gap-2 rounded-md text-xs"
-        onClick={() =>
-          onNavigate?.({
-            kind: "extension",
-            extensionId: item.extensionId,
-            panelId: item.panelId,
-          })
-        }
-      >
-        <Icon className="w-3.5 h-3.5" />
-        {item.label}
-      </Button>
-    );
-  };
 
   const templateDialog = (
     <TemplateCreateDialog
@@ -735,8 +673,6 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1.5 border-t border-border px-2 py-2">
-          {/* 有効な拡張が Contribution で宣言したナビゲーション */}
-          {extNavItems.map((item) => renderExtensionWorkspaceButton(item, true))}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" onClick={openDocs}>
@@ -851,9 +787,7 @@ export function Sidebar({
               </div>
               <h2 className="truncate text-[16px] font-semibold leading-none text-slate-950 dark:text-[#cccccc]">{t("app.title")}</h2>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500 dark:text-[#888888]">
-              Excel schema in, review and DDL out.
-            </p>
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-[#888888]">{t("app.subtitle")}</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse} className="h-8 w-8 rounded-md text-muted-foreground" aria-label={t("sidebar.collapseSidebar")}>
             <PanelLeftClose className="w-4 h-4" />
@@ -1043,8 +977,6 @@ export function Sidebar({
 
       {/* ナビゲーション + ユーティリティ下部セクション */}
       <div className="space-y-1.5 border-t border-slate-200/80 bg-slate-50/80 p-2 dark:border-[#2d2d2d] dark:bg-[#1e1e1e]">
-        {/* 有効な拡張が Contribution で宣言したナビゲーション */}
-        {extNavItems.map((item) => renderExtensionWorkspaceButton(item, false))}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 rounded-md text-xs" onClick={openDocs}>
           <BookOpen className="w-3.5 h-3.5" />
           {t("sidebar.docs")}

@@ -10,6 +10,9 @@ export interface ReleaseVerificationLiveConfig {
   driver?: ReleaseVerificationLiveDriver;
   connectionId?: string;
   connectionName?: string;
+  connectionString?: string;
+  readonly?: boolean;
+  defaultSchema?: string;
 }
 
 export interface ReleaseVerificationWindowConfig {
@@ -56,6 +59,9 @@ export function readReleaseVerificationConfig(): ReleaseVerificationWindowConfig
               : undefined,
           connectionId: config.live.connectionId?.trim() || undefined,
           connectionName: config.live.connectionName?.trim() || undefined,
+          connectionString: config.live.connectionString?.trim() || undefined,
+          readonly: config.live.readonly === true ? true : undefined,
+          defaultSchema: config.live.defaultSchema?.trim() || undefined,
         }
       : undefined,
   };

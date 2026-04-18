@@ -155,6 +155,74 @@ export type ReleaseShipGateFinding = z.infer<
   typeof releaseShipGateFindingSchema
 >;
 
+export const releaseExitEvidenceKeySchema = z.enum([
+  "packaged-smoke",
+  "mysql-live",
+  "postgres-live",
+  "late-hardening",
+]);
+export type ReleaseExitEvidenceKey = z.infer<
+  typeof releaseExitEvidenceKeySchema
+>;
+
+export const releaseExitEvidenceStatusSchema = z.enum([
+  "current",
+  "warning",
+  "failed",
+  "missing",
+  "stale",
+]);
+export type ReleaseExitEvidenceStatus = z.infer<
+  typeof releaseExitEvidenceStatusSchema
+>;
+
+export const releaseExitEvidenceItemSchema = z.object({
+  key: releaseExitEvidenceKeySchema,
+  label: z.string().min(1),
+  required: z.boolean().default(true),
+  status: releaseExitEvidenceStatusSchema,
+  generatedAt: z.string().min(1).optional(),
+  artifactPath: z.string().min(1).optional(),
+  blockerCodes: z.array(z.string().min(1)).default([]),
+  notes: z.array(z.string().min(1)).default([]),
+});
+export type ReleaseExitEvidenceItem = z.infer<
+  typeof releaseExitEvidenceItemSchema
+>;
+
+export const lateHardeningVerificationArtifactSchema = z.object({
+  phase: z.string().min(1),
+  status: z.string().min(1),
+  verifiedAt: z.string().min(1),
+  verificationPath: z.string().min(1),
+});
+export type LateHardeningVerificationArtifact = z.infer<
+  typeof lateHardeningVerificationArtifactSchema
+>;
+
+export const releaseExitChecklistArtifactSchema = z.object({
+  artifactVersion: z.enum(["v1"]).default("v1"),
+  runId: z.string().min(1),
+  generatedAt: z.string().min(1),
+  installerPath: z.string().min(1).optional(),
+  installerMtime: z.string().min(1).optional(),
+  decision: releaseDecisionSchema,
+  blocked: z.boolean(),
+  evidence: z.object({
+    packagedSmoke: releaseExitEvidenceItemSchema,
+    mysqlLive: releaseExitEvidenceItemSchema,
+    postgresLive: releaseExitEvidenceItemSchema,
+    lateHardening: releaseExitEvidenceItemSchema,
+  }),
+  missingEvidence: z.array(releaseExitEvidenceKeySchema).default([]),
+  staleEvidence: z.array(releaseExitEvidenceKeySchema).default([]),
+  shipBlockers: z.array(releaseShipGateFindingSchema).default([]),
+  postReleaseBacklog: z.array(z.string().min(1)).default([]),
+});
+export type ReleaseExitChecklistArtifact = z.infer<
+  typeof releaseExitChecklistArtifactSchema
+>;
+
 export const releaseShipGateArtifactSchema = z.object({
   artifactVersion: z.enum(["v1", "v2"]).default("v1"),
   runId: z.string().min(1),
@@ -165,11 +233,18 @@ export const releaseShipGateArtifactSchema = z.object({
   warnings: z.array(releaseShipGateFindingSchema).default([]),
   packagedSmokeArtifactPath: z.string().min(1).optional(),
   liveArtifactPaths: z.array(z.string().min(1)).default([]),
+  lateHardeningArtifactPath: z.string().min(1).optional(),
   requiredEvidence: z.object({
     packagedSmokePresent: z.boolean(),
     mysqlLivePresent: z.boolean(),
     postgresLivePresent: z.boolean(),
+    lateHardeningPresent: z.boolean().default(false),
   }),
+  missingEvidence: z.array(releaseExitEvidenceKeySchema).default([]),
+  staleEvidence: z.array(releaseExitEvidenceKeySchema).default([]),
+  shipBlockers: z.array(releaseShipGateFindingSchema).default([]),
+  releaseExitChecklistPath: z.string().min(1).optional(),
+  releaseExitChecklist: releaseExitChecklistArtifactSchema.optional(),
 });
 
 export type ReleaseShipGateArtifact = z.infer<

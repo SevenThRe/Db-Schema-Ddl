@@ -1,0 +1,9 @@
+1776392900078 [checkpoint:tauri_setup_ready] {"productName":"DBTools"}
+1776392900101 [checkpoint:browser_window_loaded]
+1776392902996 [checkpoint:dashboard_ready] {"activeSurface":"extension"}
+1776392902998 [checkpoint:dashboard_ready] {"activeSurface":"workspace"}
+1776392903395 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"connections","selectedConnectionId":null}
+1776392904183 [checkpoint:db_workbench_recovery_classified] {"activeConnectionId":null,"classification":"none","requestedConnectionId":null}
+1776392904184 [checkpoint:db_workbench_surface_ready] {"activeTabValue":"sql","selectedConnectionId":"__release-verification__mysql"}
+1776392911204 [checkpoint:browser_window_loaded]
+1776392919233 [checkpoint:db_workbench_live_flow] {"connectionId":"__release-verification__mysql","connectionName":"bootstrap mysql","driver":"mysql","flowId":"connect","note":"MySQL 连接失败: pool timed out while waiting for an open connection","status":"failed"}

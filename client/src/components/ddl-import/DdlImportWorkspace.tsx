@@ -52,6 +52,9 @@ import { useHostApi } from "@/extensions/host-context";
 
 interface DdlImportWorkspaceProps {
   onActivateFile?: (fileId: number) => void;
+  onOpenDatabaseTool?: () => void;
+  databaseToolInstalled?: boolean;
+  databaseToolLabel?: string;
 }
 
 /** ライブ実行タブ — ステートメント単位の実行状態 */
@@ -177,6 +180,9 @@ function splitSqlStatements(sql: string): Array<{ sql: string; lineNumber: numbe
 
 export function DdlImportWorkspace({
   onActivateFile,
+  onOpenDatabaseTool,
+  databaseToolInstalled = false,
+  databaseToolLabel = "数据库工具",
 }: DdlImportWorkspaceProps) {
   // ── 既存 Export タブの状態 ──────────────────
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -579,8 +585,16 @@ export function DdlImportWorkspace({
           <Database className="h-12 w-12 text-muted-foreground/30" />
           <h3 className="text-base font-semibold text-muted-foreground">未连接数据库</h3>
           <p className="max-w-sm text-sm text-muted-foreground">
-            请先在 DB 工作台中配置并激活数据库连接，然后再使用 DDL 导入功能。
+            {databaseToolInstalled
+              ? `请先在 ${databaseToolLabel} 中配置并激活数据库连接，然后再使用 DDL 导入功能。`
+              : "请先安装并启用数据库工具，然后再使用 DDL 导入功能。"}
           </p>
+          {onOpenDatabaseTool ? (
+            <Button variant="outline" size="sm" onClick={onOpenDatabaseTool}>
+              <Database className="mr-1.5 h-3.5 w-3.5" />
+              {databaseToolInstalled ? `打开 ${databaseToolLabel}` : "前往工具管理"}
+            </Button>
+          ) : null}
         </div>
       );
     }

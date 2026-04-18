@@ -48,6 +48,9 @@ pub struct ReleaseVerificationLiveConfig {
   pub driver: Option<String>,
   pub connection_id: Option<String>,
   pub connection_name: Option<String>,
+  pub connection_string: Option<String>,
+  pub readonly: Option<bool>,
+  pub default_schema: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,6 +60,17 @@ pub struct ReleaseVerificationWindowConfig {
   pub log_path: Option<String>,
   pub auto_open_db_workbench: bool,
   pub live: Option<ReleaseVerificationLiveConfig>,
+}
+
+fn parse_bool_env(name: &str) -> Option<bool> {
+  env::var(name)
+    .ok()
+    .map(|value| value.trim().to_ascii_lowercase())
+    .and_then(|value| match value.as_str() {
+      "1" | "true" | "yes" => Some(true),
+      "0" | "false" | "no" => Some(false),
+      _ => None,
+    })
 }
 
 fn smoke_log_path_from_env() -> Option<PathBuf> {
@@ -80,13 +94,23 @@ pub fn read_release_verification_window_config() -> ReleaseVerificationWindowCon
     .ok()
     .map(|value| value.trim().to_string())
     .filter(|value| !value.is_empty());
+  let live_connection_string = env::var("DBSCHEMA_LIVE_VERIFY_CONNECTION_STRING")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+  let live_readonly = parse_bool_env("DBSCHEMA_LIVE_VERIFY_READONLY");
+  let live_default_schema = env::var("DBSCHEMA_LIVE_VERIFY_DEFAULT_SCHEMA")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
   let live_enabled = env::var("DBSCHEMA_LIVE_VERIFY_ENABLED")
     .ok()
     .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
     .unwrap_or(false)
     || live_driver.is_some()
     || live_connection_id.is_some()
-    || live_connection_name.is_some();
+    || live_connection_name.is_some()
+    || live_connection_string.is_some();
 
   ReleaseVerificationWindowConfig {
     enabled: smoke_log_path_from_env().is_some(),
@@ -102,6 +126,9 @@ pub fn read_release_verification_window_config() -> ReleaseVerificationWindowCon
         driver: live_driver,
         connection_id: live_connection_id,
         connection_name: live_connection_name,
+        connection_string: live_connection_string,
+        readonly: live_readonly,
+        default_schema: live_default_schema,
       })
     } else {
       None
@@ -188,7 +215,7 @@ async fn fetch_latest_release_fallback() -> Result<(String, String), String> {
 
   let response = client
     .get(RELEASES_LATEST_URL)
-    .header("User-Agent", "DBSchemaExcel2DDL")
+    .header("User-Agent", "DBTools")
     .send()
     .await
     .map_err(|error| error.to_string())?;

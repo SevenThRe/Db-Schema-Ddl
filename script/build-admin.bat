@@ -1,6 +1,6 @@
 @echo off
 echo =========================================
-echo   DBSchemaExcel2DDL Builder (Admin Mode)
+echo   DBTools Builder (Admin Mode)
 echo =========================================
 echo.
 echo This script will build the Electron app.
@@ -19,7 +19,7 @@ if %errorlevel% equ 0 (
     echo =========================================
     echo.
     echo Application location:
-    echo %~dp0..\dist-electron\win-unpacked\DBSchemaExcel2DDL.exe
+    echo %~dp0..\dist-electron\win-unpacked\DBTools.exe
     echo.
     echo You can now run the app using:
     echo npm run start:app

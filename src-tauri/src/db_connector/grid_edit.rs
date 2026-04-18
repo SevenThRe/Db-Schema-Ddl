@@ -11,8 +11,8 @@ use tauri::{AppHandle, State};
 use super::query::{get_or_create_pool, load_connection_config, resolve_active_schema};
 use super::{
   AnyPool, DbConnectionConfig, DbDriver, DbGridCommitRequest, DbGridCommitResponse,
-  DbGridDeleteRowDraft, DbGridEditPatchCell, DbGridEditSourceKind, DbGridPrepareCommitRequest,
-  DbGridPrepareCommitResponse, DbPoolRegistry,
+  DbGridDeleteRowDraft, DbGridEditPatchCell, DbGridEditSourceKind, DbGridInsertedRowDraft,
+  DbGridPrepareCommitRequest, DbGridPrepareCommitResponse, DbPoolRegistry,
 };
 
 pub const GRID_EDIT_PLAN_TTL_SECONDS: u64 = 300;
@@ -20,6 +20,7 @@ const SQL_PREVIEW_LIMIT: usize = 20;
 
 #[derive(Debug, Clone)]
 enum PreparedMutationKind {
+  Insert,
   Update,
   Delete,
 }
@@ -66,6 +67,12 @@ struct PreparedDeleteRow {
   row_primary_key: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedInsertRow {
+  row_draft_id: String,
+  values: BTreeMap<String, Value>,
+}
+
 #[tauri::command]
 pub async fn db_grid_prepare_commit(
   app: AppHandle,
@@ -79,6 +86,7 @@ pub async fn db_grid_prepare_commit(
 
   let prepared_rows = normalize_patch_cells(&request.patch_cells, &primary_key_columns)?;
   let prepared_deleted_rows = normalize_delete_rows(&request.deleted_rows, &primary_key_columns)?;
+  let prepared_inserted_rows = normalize_insert_rows(&request.inserted_rows)?;
   ensure_no_conflicting_row_mutations(&prepared_rows, &prepared_deleted_rows)?;
 
   let active_schema = resolve_active_schema(&config, request.schema.as_deref());
@@ -151,6 +159,39 @@ pub async fn db_grid_prepare_commit(
     });
   }
 
+  for inserted_row in &prepared_inserted_rows {
+    let insert_columns = inserted_row.values.keys().cloned().collect::<Vec<_>>();
+    let sql = build_insert_sql(
+      &config.driver,
+      active_schema.as_deref(),
+      &request.table_name,
+      &insert_columns,
+    )?;
+
+    let set_values = insert_columns
+      .iter()
+      .map(|column| {
+        inserted_row
+          .values
+          .get(column)
+          .cloned()
+          .ok_or_else(|| format!("missing_insert_value: {column}"))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+
+    for column in &insert_columns {
+      changed_columns.insert(column.clone());
+    }
+
+    prepared_statements.push(PreparedMutationStatement {
+      kind: PreparedMutationKind::Insert,
+      sql,
+      row_pk_tuple: format!("draft:{}", inserted_row.row_draft_id),
+      set_values,
+      where_values: vec![],
+    });
+  }
+
   let mut changed_columns_summary: Vec<String> = changed_columns.into_iter().collect();
   changed_columns_summary.sort();
 
@@ -191,6 +232,7 @@ pub async fn db_grid_prepare_commit(
     plan_id,
     plan_hash,
     affected_rows: prepared_statements.len() as u64,
+    inserted_rows: prepared_inserted_rows.len() as u64,
     updated_rows: prepared_rows.len() as u64,
     deleted_rows: prepared_deleted_rows.len() as u64,
     changed_columns_summary,
@@ -245,6 +287,11 @@ pub async fn db_grid_commit(
     .iter()
     .filter(|statement| matches!(statement.kind, PreparedMutationKind::Update))
     .count() as u64;
+  let planned_insert_rows = prepared
+    .statements
+    .iter()
+    .filter(|statement| matches!(statement.kind, PreparedMutationKind::Insert))
+    .count() as u64;
   let planned_delete_rows = prepared
     .statements
     .iter()
@@ -281,6 +328,7 @@ pub async fn db_grid_commit(
               plan_id: request.plan_id,
               plan_hash: request.plan_hash,
               committed_rows: 0,
+              inserted_rows: 0,
               updated_rows: 0,
               deleted_rows: 0,
               failed_sql_index: Some(index as u64),
@@ -299,6 +347,7 @@ pub async fn db_grid_commit(
             plan_id: request.plan_id,
             plan_hash: request.plan_hash,
             committed_rows: 0,
+            inserted_rows: 0,
             updated_rows: 0,
             deleted_rows: 0,
             failed_sql_index: Some(index as u64),
@@ -341,6 +390,7 @@ pub async fn db_grid_commit(
               plan_id: request.plan_id,
               plan_hash: request.plan_hash,
               committed_rows: 0,
+              inserted_rows: 0,
               updated_rows: 0,
               deleted_rows: 0,
               failed_sql_index: Some(index as u64),
@@ -359,6 +409,7 @@ pub async fn db_grid_commit(
             plan_id: request.plan_id,
             plan_hash: request.plan_hash,
             committed_rows: 0,
+            inserted_rows: 0,
             updated_rows: 0,
             deleted_rows: 0,
             failed_sql_index: Some(index as u64),
@@ -388,6 +439,7 @@ pub async fn db_grid_commit(
     plan_id: request.plan_id,
     plan_hash: request.plan_hash,
     committed_rows: commit_result,
+    inserted_rows: planned_insert_rows,
     updated_rows: planned_update_rows,
     deleted_rows: planned_delete_rows,
     failed_sql_index: None,
@@ -416,7 +468,10 @@ fn validate_prepare_request(
     return Err("missing_primary_key: no primary key columns provided".to_string());
   }
 
-  if request.patch_cells.is_empty() && request.deleted_rows.is_empty() {
+  if request.patch_cells.is_empty()
+    && request.deleted_rows.is_empty()
+    && request.inserted_rows.is_empty()
+  {
     return Err("No grid mutations were provided".to_string());
   }
 
@@ -535,6 +590,44 @@ fn normalize_delete_rows(
 
     if row_entry.row_primary_key != row_pk {
       return Err("duplicate_primary_key_tuple: inconsistent delete row key payload".to_string());
+    }
+  }
+
+  Ok(rows.into_values().collect())
+}
+
+fn normalize_insert_rows(
+  inserted_rows: &[DbGridInsertedRowDraft],
+) -> Result<Vec<PreparedInsertRow>, String> {
+  let mut rows = BTreeMap::<String, PreparedInsertRow>::new();
+
+  for inserted_row in inserted_rows {
+    let row_draft_id = inserted_row.row_draft_id.trim();
+    if row_draft_id.is_empty() {
+      return Err("insert_row_draft_id_missing".to_string());
+    }
+
+    let mut values = BTreeMap::new();
+    for (key, value) in &inserted_row.values {
+      ensure_safe_identifier(key)?;
+      values.insert(key.clone(), value.clone());
+    }
+
+    if values.is_empty() {
+      return Err(format!(
+        "insert_row_empty: {row_draft_id} has no explicit values"
+      ));
+    }
+
+    let row_entry = rows
+      .entry(row_draft_id.to_string())
+      .or_insert_with(|| PreparedInsertRow {
+        row_draft_id: row_draft_id.to_string(),
+        values: values.clone(),
+      });
+
+    if row_entry.values != values {
+      return Err("duplicate_insert_row_draft_id: inconsistent insert payload".to_string());
     }
   }
 
@@ -698,14 +791,68 @@ fn build_delete_sql(
   Ok(format!("DELETE FROM {qualified_table} WHERE {where_clause}"))
 }
 
+fn build_insert_sql(
+  driver: &DbDriver,
+  schema: Option<&str>,
+  table_name: &str,
+  insert_columns: &[String],
+) -> Result<String, String> {
+  ensure_safe_identifier(table_name)?;
+  if insert_columns.is_empty() {
+    return Err("insert_columns_missing: at least one insert column is required".to_string());
+  }
+  for column in insert_columns {
+    ensure_safe_identifier(column)?;
+  }
+
+  let qualified_table = match driver {
+    DbDriver::Mysql => quote_identifier(driver, table_name),
+    DbDriver::Postgres => {
+      let effective_schema = schema.unwrap_or("public");
+      ensure_safe_identifier(effective_schema)?;
+      format!(
+        "{}.{}",
+        quote_identifier(driver, effective_schema),
+        quote_identifier(driver, table_name)
+      )
+    }
+  };
+
+  let column_list = insert_columns
+    .iter()
+    .map(|column| quote_identifier(driver, column))
+    .collect::<Vec<_>>()
+    .join(", ");
+
+  let placeholder_list = if matches!(driver, DbDriver::Mysql) {
+    insert_columns
+      .iter()
+      .map(|_| "?".to_string())
+      .collect::<Vec<_>>()
+      .join(", ")
+  } else {
+    insert_columns
+      .iter()
+      .enumerate()
+      .map(|(index, _)| format!("${}", index + 1))
+      .collect::<Vec<_>>()
+      .join(", ")
+  };
+
+  Ok(format!(
+    "INSERT INTO {qualified_table} ({column_list}) VALUES ({placeholder_list})"
+  ))
+}
+
 fn ensure_supported_mutation_statements(statements: &[PreparedMutationStatement]) -> Result<(), String> {
   for statement in statements {
     let normalized = statement.sql.trim_start().to_ascii_uppercase();
     match statement.kind {
+      PreparedMutationKind::Insert if normalized.starts_with("INSERT INTO ") => {}
       PreparedMutationKind::Update if normalized.starts_with("UPDATE ") => {}
       PreparedMutationKind::Delete if normalized.starts_with("DELETE FROM ") => {}
       _ => {
-        return Err("Only UPDATE and DELETE mutation plans are supported".to_string());
+        return Err("Only INSERT, UPDATE, and DELETE mutation plans are supported".to_string());
       }
     }
   }
@@ -721,6 +868,7 @@ fn ensure_single_row_affected(
   }
 
   let mutation_kind = match statement.kind {
+    PreparedMutationKind::Insert => "insert",
     PreparedMutationKind::Update => "update",
     PreparedMutationKind::Delete => "delete",
   };
@@ -745,6 +893,7 @@ fn compute_plan_hash(
       .iter()
       .map(|statement| json!({
         "kind": match statement.kind {
+          PreparedMutationKind::Insert => "insert",
           PreparedMutationKind::Update => "update",
           PreparedMutationKind::Delete => "delete",
         },
@@ -927,6 +1076,7 @@ mod tests {
         next_value: Value::from("new"),
       }],
       deleted_rows: vec![],
+      inserted_rows: vec![],
     }
   }
 
@@ -1029,7 +1179,7 @@ mod tests {
     assert!(result
       .err()
       .unwrap_or_default()
-      .contains("Only UPDATE and DELETE mutation plans are supported"));
+      .contains("Only INSERT, UPDATE, and DELETE mutation plans are supported"));
   }
 
   #[test]
@@ -1048,5 +1198,33 @@ mod tests {
       .err()
       .unwrap_or_default()
       .contains("delete_row_count_mismatch"));
+  }
+
+  #[test]
+  fn test_normalize_insert_rows_rejects_empty_draft() {
+    let result = normalize_insert_rows(&[DbGridInsertedRowDraft {
+      row_draft_id: "draft-1".to_string(),
+      values: HashMap::new(),
+    }]);
+    assert!(result.is_err());
+    assert!(result
+      .err()
+      .unwrap_or_default()
+      .contains("insert_row_empty"));
+  }
+
+  #[test]
+  fn test_build_insert_sql_for_postgres() {
+    let sql = build_insert_sql(
+      &DbDriver::Postgres,
+      Some("public"),
+      "users",
+      &["id".to_string(), "name".to_string()],
+    )
+    .unwrap_or_default();
+    assert_eq!(
+      sql,
+      "INSERT INTO \"public\".\"users\" (\"id\", \"name\") VALUES ($1, $2)"
+    );
   }
 }

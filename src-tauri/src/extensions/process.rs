@@ -86,8 +86,13 @@ impl ProcessManager {
         let registry = ExtensionRegistry::new(&self.app_data_dir);
         let installed = registry.get(extension_id)?;
 
+        let entry_path = installed
+            .entry_path
+            .as_ref()
+            .ok_or_else(|| ExtensionError::NoSidecar(extension_id.to_string()))?;
+
         // サイドカーを spawn
-        let mut child = Command::new(&installed.entry_path)
+        let mut child = Command::new(entry_path)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(false) // ManualDrop で管理

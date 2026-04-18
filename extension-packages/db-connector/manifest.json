@@ -1,0 +1,74 @@
+{
+  "id": "db-connector",
+  "name": "DB 工作台",
+  "version": "1.0.0",
+  "api_version": 1,
+  "publisher": "SevenThRe",
+  "description": "安装后提供数据库连接、对象浏览、SQL 执行、结果查看和执行计划能力",
+  "capabilities": [
+    "db.connect",
+    "db.query",
+    "db.schema.read",
+    "db.plan.read",
+    "db.result.export",
+    "db.data.edit",
+    "db.data.sync"
+  ],
+  "uiBundle": {
+    "entry": "ui/db-connector-extension.html",
+    "mode": "iframe",
+    "apiVersion": 1
+  },
+  "contributes": {
+    "activityBar": [
+      {
+        "id": "db-connector-activity",
+        "label": "Database",
+        "icon": "Database",
+        "order": 10,
+        "defaultSidebarViewId": "db-connector-sidebar-connections",
+        "defaultWorkbenchViewId": "db-connector-workbench"
+      }
+    ],
+    "sidebarViews": [
+      {
+        "id": "db-connector-sidebar-connections",
+        "label": "Connections",
+        "activityItemId": "db-connector-activity",
+        "order": 10,
+        "icon": "Database",
+        "runtimeViewId": "db-connector.sidebar.connections"
+      },
+      {
+        "id": "db-connector-sidebar-explorer",
+        "label": "Explorer",
+        "activityItemId": "db-connector-activity",
+        "order": 20,
+        "icon": "Table2",
+        "runtimeViewId": "db-connector.sidebar.explorer"
+      }
+    ],
+    "workbenchViews": [
+      {
+        "id": "db-connector-workbench",
+        "title": "Database Workspace",
+        "activityItemId": "db-connector-activity",
+        "runtimeViewId": "db-connector.workbench.main"
+      }
+    ],
+    "navigation": [
+      {
+        "id": "db-connector",
+        "label": "数据库",
+        "icon": "Database",
+        "order": 10
+      }
+    ],
+    "workspacePanels": [
+      {
+        "id": "db-connector-workbench",
+        "title": "数据库工作台"
+      }
+    ]
+  }
+}

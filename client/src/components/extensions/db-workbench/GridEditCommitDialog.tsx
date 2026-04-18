@@ -7,17 +7,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import type { PendingDeleteRowSummary, PendingEditRowSummary } from "./grid-edit-summary";
+import type {
+  PendingDeleteRowSummary,
+  PendingEditRowSummary,
+  PendingInsertedRowSummary,
+} from "./grid-edit-summary";
 import { formatGridCellValue } from "./grid-edit-summary";
 
 export interface GridEditCommitDialogProps {
   open: boolean;
   affectedRows: number;
+  insertedRows: number;
   updatedRows: number;
   deletedRows: number;
   changedColumnsSummary: string[];
   pendingRows: PendingEditRowSummary[];
   pendingDeletedRows: PendingDeleteRowSummary[];
+  pendingInsertedRows: PendingInsertedRowSummary[];
   sqlPreviewLines: string[];
   previewTruncated: boolean;
   isConfirming?: boolean;
@@ -28,11 +34,13 @@ export interface GridEditCommitDialogProps {
 export function GridEditCommitDialog({
   open,
   affectedRows,
+  insertedRows,
   updatedRows,
   deletedRows,
   changedColumnsSummary,
   pendingRows,
   pendingDeletedRows,
+  pendingInsertedRows,
   sqlPreviewLines,
   previewTruncated,
   isConfirming = false,
@@ -50,12 +58,50 @@ export function GridEditCommitDialog({
                 <span className="font-semibold">Affected rows</span>: {affectedRows}
               </p>
               <p>
-                Updates: {updatedRows} · Deletes: {deletedRows}
+                Inserts: {insertedRows} · Updates: {updatedRows} · Deletes: {deletedRows}
               </p>
               {changedColumnsSummary.length > 0 ? (
                 <p>
                   Columns: {changedColumnsSummary.join(", ")}
                 </p>
+              ) : null}
+              {pendingInsertedRows.length > 0 ? (
+                <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sky-700 dark:text-sky-300">
+                    Pending Row Inserts
+                  </p>
+                  <div className="mt-2 max-h-40 space-y-2 overflow-auto pr-1">
+                    {pendingInsertedRows.map((row) => (
+                      <div
+                        key={row.rowDraftId}
+                        className="rounded-sm border border-sky-500/20 bg-background px-2 py-1.5"
+                      >
+                        <p className="font-mono text-xs font-semibold text-foreground">
+                          {row.rowLabel}
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {row.fieldCount} field{row.fieldCount === 1 ? "" : "s"} included
+                        </p>
+                        {row.cells.length > 0 ? (
+                          <div className="mt-1.5 space-y-1">
+                            {row.cells.map((cell) => (
+                              <p
+                                key={`${row.rowDraftId}:${cell.columnName}`}
+                                className="font-mono text-[11px] text-foreground"
+                              >
+                                {cell.columnName}: {formatGridCellValue(cell.value)}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[11px] text-muted-foreground">
+                            No explicit values yet. Omitted columns will use database defaults.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : null}
               {pendingRows.length > 0 ? (
                 <div className="rounded-md border border-border bg-muted/20 p-2">

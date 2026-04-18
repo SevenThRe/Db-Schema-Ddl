@@ -48,11 +48,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'DBSchemaExcel2DDL ${{ github.ref_name }}'
+          releaseName: 'DBTools ${{ github.ref_name }}'
           releaseBody: |
             ## 安装说明
 
-            下载 `DBSchemaExcel2DDL_*_x64-setup.exe` 安装即可，已安装的用户可通过应用内更新按钮自动升级。
+            下载 `DBTools_*_x64-setup.exe` 安装即可，已安装的用户可通过应用内更新按钮自动升级。
           releaseDraft: false
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           includeUpdaterJson: true

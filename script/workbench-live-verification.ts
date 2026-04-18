@@ -31,10 +31,17 @@ function summarizeFlows(flows: LiveVerificationFlow[]) {
   } as const;
 }
 
-function parseArgValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const direct = process.argv.find((arg) => arg.startsWith(prefix));
-  return direct ? direct.slice(prefix.length) : undefined;
+function parseArgValue(name: string, aliases: string[] = []): string | undefined {
+  const allNames = [name, ...aliases];
+  for (const candidate of allNames) {
+    const prefix = `--${candidate}=`;
+    const direct = process.argv.find((arg) => arg.startsWith(prefix));
+    if (direct) {
+      return direct.slice(prefix.length);
+    }
+  }
+
+  return undefined;
 }
 
 function parseDriverArg(): "mysql" | "postgres" {
@@ -49,6 +56,46 @@ function parseTimeoutMs(): number | undefined {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseBooleanArg(name: string): boolean | undefined {
+  if (process.argv.includes(`--${name}`)) {
+    return true;
+  }
+
+  const value = parseArgValue(name);
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  return undefined;
+}
+
+export function buildLiveVerificationEnvOverrides(input: {
+  driver: "mysql" | "postgres";
+  connectionId?: string;
+  connectionName?: string;
+  connectionString?: string;
+  readonly?: boolean;
+  defaultSchema?: string;
+}): Record<string, string | undefined> {
+  return {
+    DBSCHEMA_LIVE_VERIFY_ENABLED: "1",
+    DBSCHEMA_LIVE_VERIFY_DRIVER: input.driver,
+    DBSCHEMA_LIVE_VERIFY_CONNECTION_ID: input.connectionId,
+    DBSCHEMA_LIVE_VERIFY_CONNECTION_NAME: input.connectionName,
+    DBSCHEMA_LIVE_VERIFY_CONNECTION_STRING: input.connectionString,
+    DBSCHEMA_LIVE_VERIFY_READONLY:
+      input.readonly === undefined ? undefined : input.readonly ? "1" : "0",
+    DBSCHEMA_LIVE_VERIFY_DEFAULT_SCHEMA: input.defaultSchema,
+  };
 }
 
 export function parseFlowCheckpoints(
@@ -186,6 +233,7 @@ export function renderWorkbenchLiveVerificationMarkdown(
     "",
     `- Run id: ${artifact.runId}`,
     `- Generated at: ${artifact.generatedAt}`,
+    `- Evidence class: live-${artifact.driver}`,
     ...(artifact.connectionLabel ? [`- Connection: ${artifact.connectionLabel}`] : []),
     ...(artifact.database ? [`- Database: ${artifact.database}`] : []),
     ...(artifact.readonly !== undefined ? [`- Readonly: ${artifact.readonly}`] : []),
@@ -208,7 +256,10 @@ export function renderWorkbenchLiveVerificationMarkdown(
 export async function runWorkbenchLiveVerification(cwd = process.cwd()) {
   const driver = parseDriverArg();
   const connectionId = parseArgValue("connection-id");
-  const connectionName = parseArgValue("connection-name");
+  const connectionName = parseArgValue("connection-name", ["connection"]);
+  const connectionString = parseArgValue("connection-string", ["connection-url", "url"]);
+  const readonly = parseBooleanArg("readonly");
+  const defaultSchema = parseArgValue("default-schema");
   const timeoutMs = parseTimeoutMs();
   const outputDir = path.join(cwd, "artifacts", "release-verification");
   fs.mkdirSync(outputDir, { recursive: true });
@@ -224,12 +275,14 @@ export async function runWorkbenchLiveVerification(cwd = process.cwd()) {
     processLogPath,
     requiredCheckpoints: [...DEV_TAURI_READY_CHECKPOINTS, LIVE_COMPLETED_CHECKPOINT],
     timeoutMs,
-    extraEnv: {
-      DBSCHEMA_LIVE_VERIFY_ENABLED: "1",
-      DBSCHEMA_LIVE_VERIFY_DRIVER: driver,
-      DBSCHEMA_LIVE_VERIFY_CONNECTION_ID: connectionId,
-      DBSCHEMA_LIVE_VERIFY_CONNECTION_NAME: connectionName,
-    },
+    extraEnv: buildLiveVerificationEnvOverrides({
+      driver,
+      connectionId,
+      connectionName,
+      connectionString,
+      readonly,
+      defaultSchema,
+    }),
   });
 
   const flows = parseFlowCheckpoints(logPath, driver);

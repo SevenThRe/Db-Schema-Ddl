@@ -13,6 +13,8 @@ export interface ObjectInspectionPaneProps {
   isLoading: boolean;
   error?: string | null;
   className?: string;
+  onInspectObject?: (objectKind: DbObjectInspectionResponse["objectKind"], objectName: string) => void;
+  onOpenTable?: (tableName: string) => void;
 }
 
 function formatObjectKind(kind: DbObjectInspectionResponse["objectKind"]): string {
@@ -34,6 +36,8 @@ export function ObjectInspectionPane({
   isLoading,
   error,
   className,
+  onInspectObject,
+  onOpenTable,
 }: ObjectInspectionPaneProps) {
   const [activeView, setActiveView] = useState<"ddl" | "metadata">("ddl");
   const { toast } = useToast();
@@ -311,14 +315,38 @@ export function ObjectInspectionPane({
                       key={`inspect-fk-${foreignKey.name}`}
                       className="px-3 py-2"
                     >
-                      <div className="truncate font-mono text-xs text-foreground">
-                        {foreignKey.name}
-                      </div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {foreignKey.columns.join(", ")} {"->"} {foreignKey.referencedTable}
-                        {" ("}
-                        {foreignKey.referencedColumns.join(", ")}
-                        {")"}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-xs text-foreground">
+                            {foreignKey.name}
+                          </div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {foreignKey.columns.join(", ")} {"->"} {foreignKey.referencedTable}
+                            {" ("}
+                            {foreignKey.referencedColumns.join(", ")}
+                            {")"}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-[10px]"
+                            onClick={() => onInspectObject?.("table", foreignKey.referencedTable)}
+                          >
+                            Inspect ref
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-[10px]"
+                            onClick={() => onOpenTable?.(foreignKey.referencedTable)}
+                          >
+                            Open ref
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}

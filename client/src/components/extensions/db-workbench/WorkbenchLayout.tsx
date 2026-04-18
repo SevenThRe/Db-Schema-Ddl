@@ -40,6 +40,7 @@ import type {
   DangerousSqlPreview,
   DbGridEditPatchCell,
   DbGridDeleteRowDraft,
+  DbGridInsertedRowDraft,
   DbGridEditSource,
   DbGridEditEligibility,
   DbGridPrepareCommitResponse,
@@ -90,6 +91,7 @@ import { SqlScriptReviewDialog } from "./SqlScriptReviewDialog";
 import {
   buildPendingDeleteRowSummaries,
   buildPendingEditRowSummaries,
+  buildPendingInsertedRowSummaries,
 } from "./grid-edit-summary";
 import type { DataSyncRowDiffEntry } from "./data-sync-row-diff";
 import { buildAutocompleteContext } from "./sql-autocomplete";
@@ -595,6 +597,8 @@ export interface WorkbenchLayoutProps {
   onManageConnections: () => void;
   /** 工作台内で接続を切り替えるコールバック */
   onSwitchConnection: (connectionId: string) => void;
+  /** 新しい拡張シェルに左サイドバーを委譲するか */
+  sidebarMode?: "host" | "embedded";
 }
 
 interface PendingSqlParameterReview {
@@ -720,6 +724,7 @@ export function WorkbenchLayout({
   hostApi,
   onManageConnections,
   onSwitchConnection,
+  sidebarMode = "embedded",
 }: WorkbenchLayoutProps) {
   const releaseVerification = readReleaseVerificationConfig();
   // ──────────────────────────────────────────────
@@ -829,6 +834,7 @@ export function WorkbenchLayout({
   const [isExecutingApply, setIsExecutingApply] = useState(false);
   const [pendingEditCells, setPendingEditCells] = useState<Record<string, DbGridEditPatchCell>>({});
   const [pendingDeleteRows, setPendingDeleteRows] = useState<Record<string, DbGridDeleteRowDraft>>({});
+  const [pendingInsertedRows, setPendingInsertedRows] = useState<Record<string, DbGridInsertedRowDraft>>({});
   const [preparedGridPlan, setPreparedGridPlan] = useState<DbGridPrepareCommitResponse | null>(null);
   const [isPreparingGridCommit, setIsPreparingGridCommit] = useState(false);
   const [isCommittingGridEdit, setIsCommittingGridEdit] = useState(false);
@@ -1189,6 +1195,7 @@ export function WorkbenchLayout({
     setPendingScriptReview(null);
     setPendingEditCells({});
     setPendingDeleteRows({});
+    setPendingInsertedRows({});
     setPreparedGridPlan(null);
     setLastGridEditSource(null);
     setObjectInspection(null);
@@ -1570,23 +1577,6 @@ export function WorkbenchLayout({
         };
       }
 
-      if (batch.rows.length === 0) {
-        return {
-          eligibility: {
-            eligible: false,
-            reasons: [
-              {
-                code: "empty_result",
-                message: "No rows are loaded for editing.",
-              },
-            ],
-          },
-          primaryKeyColumns: [],
-          columns: batch.columns,
-          normalizedSource,
-        };
-      }
-
       const tableName = source.tableName?.trim();
       if (!tableName) {
         return {
@@ -1793,6 +1783,7 @@ export function WorkbenchLayout({
         setLastGridEditSource(source);
         setPendingEditCells({});
         setPendingDeleteRows({});
+        setPendingInsertedRows({});
         setPreparedGridPlan(null);
         setActiveBatchIndex(0);
         setResultTab("results");
@@ -2164,6 +2155,7 @@ export function WorkbenchLayout({
         setResultTab("results");
         setPendingEditCells({});
         setPendingDeleteRows({});
+        setPendingInsertedRows({});
         setPreparedGridPlan(null);
         setLastGridEditSource(null);
       } catch (error) {
@@ -2860,9 +2852,62 @@ export function WorkbenchLayout({
     setPreparedGridPlan(null);
   }, []);
 
+  const handleAddInsertedGridRow = useCallback(() => {
+    const rowDraftId = crypto.randomUUID();
+    setPendingInsertedRows((previous) => ({
+      ...previous,
+      [rowDraftId]: {
+        rowDraftId,
+        values: {},
+      },
+    }));
+    setPreparedGridPlan(null);
+  }, []);
+
+  const handleEditInsertedGridRowValue = useCallback(
+    (
+      rowDraftId: string,
+      columnName: string,
+      nextValue: string | number | boolean | null | undefined,
+    ) => {
+      setPendingInsertedRows((previous) => {
+        const current = previous[rowDraftId];
+        if (!current) return previous;
+
+        const nextValues = { ...current.values };
+        if (typeof nextValue === "undefined") {
+          delete nextValues[columnName];
+        } else {
+          nextValues[columnName] = nextValue;
+        }
+
+        return {
+          ...previous,
+          [rowDraftId]: {
+            ...current,
+            values: nextValues,
+          },
+        };
+      });
+      setPreparedGridPlan(null);
+    },
+    [],
+  );
+
+  const handleDiscardInsertedGridRow = useCallback((rowDraftId: string) => {
+    setPendingInsertedRows((previous) => {
+      if (!previous[rowDraftId]) return previous;
+      const next = { ...previous };
+      delete next[rowDraftId];
+      return next;
+    });
+    setPreparedGridPlan(null);
+  }, []);
+
   const handleDiscardGridEdits = useCallback(() => {
     setPendingEditCells({});
     setPendingDeleteRows({});
+    setPendingInsertedRows({});
     setPreparedGridPlan(null);
   }, []);
 
@@ -2968,10 +3013,14 @@ export function WorkbenchLayout({
       Object.values(pendingDeleteRows),
       (row) => row.rowPkTuple,
     );
-    if (patchCells.length === 0 && deletedRows.length === 0) {
+    const insertedRows = uniqueBy(
+      Object.values(pendingInsertedRows).filter((row) => Object.keys(row.values).length > 0),
+      (row) => row.rowDraftId,
+    );
+    if (patchCells.length === 0 && deletedRows.length === 0 && insertedRows.length === 0) {
       hostApi.notifications.show({
         title: "No pending changes",
-        description: "Stage at least one row edit or delete before preparing commit.",
+        description: "Stage at least one row edit, insert draft, or delete before preparing commit.",
         variant: "default",
       });
       return null;
@@ -2987,11 +3036,12 @@ export function WorkbenchLayout({
         primaryKeyColumns,
         patchCells,
         deletedRows,
+        insertedRows,
       });
       setPreparedGridPlan(prepared);
       hostApi.notifications.show({
         title: "Commit plan prepared",
-        description: `${prepared.updatedRows} updates and ${prepared.deletedRows} deletes ready for review.`,
+        description: `${prepared.insertedRows} inserts, ${prepared.updatedRows} updates, and ${prepared.deletedRows} deletes ready for review.`,
         variant: "success",
       });
       return prepared;
@@ -3014,6 +3064,7 @@ export function WorkbenchLayout({
     hostApi.connections,
     hostApi.notifications,
     lastGridEditSource,
+    pendingInsertedRows,
     pendingDeleteRows,
     pendingEditCells,
     results,
@@ -3045,6 +3096,7 @@ export function WorkbenchLayout({
 
       setPendingEditCells({});
       setPendingDeleteRows({});
+      setPendingInsertedRows({});
       setPreparedGridPlan(null);
 
       if (selectedTableName) {
@@ -3053,7 +3105,7 @@ export function WorkbenchLayout({
 
       hostApi.notifications.show({
         title: "Commit applied",
-        description: `${result.updatedRows} updates and ${result.deletedRows} deletes committed.`,
+        description: `${result.insertedRows} inserts, ${result.updatedRows} updates, and ${result.deletedRows} deletes committed.`,
         variant: "success",
       });
     } catch (error) {
@@ -3363,7 +3415,6 @@ export function WorkbenchLayout({
       status: "passed" | "failed" | "warning",
       note: string,
     ) => {
-      if (cancelled) return;
       await emitLiveVerificationCompleted({
         ...flowMetadata,
         status,
@@ -3617,6 +3668,7 @@ export function WorkbenchLayout({
   useEffect(() => {
     setPendingEditCells({});
     setPendingDeleteRows({});
+    setPendingInsertedRows({});
     setPreparedGridPlan(null);
   }, [activeBatchIndex, results?.requestId]);
 
@@ -3628,6 +3680,11 @@ export function WorkbenchLayout({
   const activeBatch = results?.batches[Math.min(activeBatchIndex, Math.max(0, (results?.batches.length ?? 1) - 1))];
   const pendingEditCount = Object.keys(pendingEditCells).length;
   const pendingDeleteCount = Object.keys(pendingDeleteRows).length;
+  const pendingInsertedCount = useMemo(
+    () =>
+      Object.values(pendingInsertedRows).filter((row) => Object.keys(row.values).length > 0).length,
+    [pendingInsertedRows],
+  );
   const pendingEditRows = useMemo(
     () => buildPendingEditRowSummaries(pendingEditCells),
     [pendingEditCells],
@@ -3635,6 +3692,10 @@ export function WorkbenchLayout({
   const pendingDeletedRows = useMemo(
     () => buildPendingDeleteRowSummaries(pendingDeleteRows),
     [pendingDeleteRows],
+  );
+  const pendingInsertedRowSummaries = useMemo(
+    () => buildPendingInsertedRowSummaries(pendingInsertedRows),
+    [pendingInsertedRows],
   );
   const willOverwriteSnippet = useMemo(() => {
     const normalizedName = pendingSnippetName.trim().toLowerCase();
@@ -3649,6 +3710,9 @@ export function WorkbenchLayout({
   const inspectedParentObjectName = objectInspection?.parentObjectName ?? null;
   const activeEditEligibility = activeBatch?.editEligibility;
   const activePrimaryKeyColumns = activeBatch?.primaryKeyColumns ?? [];
+  const activeEditSource = activeBatch?.editSource ?? lastGridEditSource;
+  const activeEditableTable =
+    schemaSnapshot?.tables.find((table) => table.name === activeEditSource?.tableName?.trim()) ?? null;
   const activeEditBlockReason =
     activeEditEligibility && !activeEditEligibility.eligible
       ? activeEditEligibility.reasons[0]?.message ?? "Current result is read-only."
@@ -3736,24 +3800,24 @@ export function WorkbenchLayout({
 
         {/* メインボディ: サイドバー + コンテンツエリア */}
         <div className="flex flex-1 overflow-hidden">
-          {/* 左サイドバー — ConnectionSidebar（200px 固定幅） */}
-          <ConnectionSidebar
-            connection={connection}
-            connections={connections}
-            onSwitchConnection={handleSwitchConnection}
-            activeSchema={runtimeSchema}
-            schemaOptions={schemaOptions}
-            isSchemaListLoading={isSchemaOptionsLoading}
-            onSchemaChange={handleSchemaChange}
-            schemaSnapshot={schemaSnapshot}
-            schemaError={schemaErrorMessage}
-            isSchemaLoading={isSchemaLoading}
-            onRefreshSchema={() => {
-              void refetchSchema();
-              if (connection.driver === "postgres") {
-                void refetchSchemaOptions();
-              }
-            }}
+          {sidebarMode === "host" ? null : (
+            <ConnectionSidebar
+              connection={connection}
+              connections={connections}
+              onSwitchConnection={handleSwitchConnection}
+              activeSchema={runtimeSchema}
+              schemaOptions={schemaOptions}
+              isSchemaListLoading={isSchemaOptionsLoading}
+              onSchemaChange={handleSchemaChange}
+              schemaSnapshot={schemaSnapshot}
+              schemaError={schemaErrorMessage}
+              isSchemaLoading={isSchemaLoading}
+              onRefreshSchema={() => {
+                void refetchSchema();
+                if (connection.driver === "postgres") {
+                  void refetchSchemaOptions();
+                }
+              }}
               selectedTableName={selectedTableName}
               inspectedObjectKind={inspectedObjectKind}
               inspectedObjectName={inspectedObjectName}
@@ -3762,8 +3826,9 @@ export function WorkbenchLayout({
               onSelectTable={handleSelectTable}
               onOpenTable={handleOpenTable}
               onInspectObject={handleInspectObject}
-            onRunStarterQuery={handleRunStarterQuery}
-          />
+              onRunStarterQuery={handleRunStarterQuery}
+            />
+          )}
 
           {/* コンテンツエリア — タブバー + エディター/結果 */}
           <div className="flex flex-1 flex-col overflow-hidden">
@@ -3938,16 +4003,22 @@ export function WorkbenchLayout({
                             stopOnError={stopOnError}
                             onStopOnErrorChange={setStopOnError}
                             editEligibility={activeEditEligibility}
+                            tableSchema={activeEditableTable}
                             primaryKeyColumns={activePrimaryKeyColumns}
                             pendingEditCells={pendingEditCells}
                             pendingEditRows={pendingEditRows}
+                            pendingInsertedRows={pendingInsertedRows}
                             pendingDeleteRows={pendingDeleteRows}
+                            pendingInsertedCount={pendingInsertedCount}
                             pendingDeletedRows={pendingDeletedRows}
                             pendingEditCount={pendingEditCount}
                             pendingDeleteCount={pendingDeleteCount}
                             onEditCell={handleEditCell}
                             onRevertCell={handleRevertGridCell}
                             onRevertRow={handleRevertGridRow}
+                            onAddInsertedRow={handleAddInsertedGridRow}
+                            onEditInsertedRowValue={handleEditInsertedGridRowValue}
+                            onDiscardInsertedRow={handleDiscardInsertedGridRow}
                             onStageDeleteRow={handleStageDeleteGridRow}
                             onRevertDeleteRow={handleRevertGridDelete}
                             onPrepareCommit={handlePrepareGridCommit}
@@ -3996,6 +4067,12 @@ export function WorkbenchLayout({
                         inspection={objectInspection}
                         isLoading={isInspectingObject}
                         error={inspectError}
+                        onInspectObject={(objectKind, objectName) => {
+                          void handleInspectObject(objectKind, objectName);
+                        }}
+                        onOpenTable={(tableName) => {
+                          void handleOpenTable(tableName);
+                        }}
                         className="h-full"
                       />
                     ) : resultTab === "jobs" ? (
@@ -4563,11 +4640,13 @@ export function WorkbenchLayout({
       <GridEditCommitDialog
         open={preparedGridPlan !== null}
         affectedRows={preparedGridPlan?.affectedRows ?? 0}
+        insertedRows={preparedGridPlan?.insertedRows ?? 0}
         updatedRows={preparedGridPlan?.updatedRows ?? 0}
         deletedRows={preparedGridPlan?.deletedRows ?? 0}
         changedColumnsSummary={preparedGridPlan?.changedColumnsSummary ?? []}
         pendingRows={pendingEditRows}
         pendingDeletedRows={pendingDeletedRows}
+        pendingInsertedRows={pendingInsertedRowSummaries}
         sqlPreviewLines={preparedGridPlan?.sqlPreviewLines ?? []}
         previewTruncated={preparedGridPlan?.previewTruncated ?? false}
         isConfirming={isCommittingGridEdit}

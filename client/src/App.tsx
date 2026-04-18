@@ -42,12 +42,12 @@ function App() {
     void (async () => {
       const runtime = desktopBridge.getCapabilities().runtime;
       setRuntimeProbe({ runtime, status: "idle" });
-      document.title = `DBSchemaExcel2DDL [${runtime}]`;
+      document.title = `DBTools [${runtime}]`;
       try {
         const diagnostics = await desktopBridge.getRuntimeDiagnostics();
         if (diagnostics) {
           window.__DB_SCHEMA_DDL_RUNTIME_INFO__ = diagnostics;
-          document.title = `DBSchemaExcel2DDL [${runtime}] [db:${diagnostics.dbExists ? "yes" : "no"}:${diagnostics.uploadedFileCount}]`;
+          document.title = `DBTools [${runtime}] [db:${diagnostics.dbExists ? "yes" : "no"}:${diagnostics.uploadedFileCount}]`;
           setRuntimeProbe({
             runtime,
             status: "ok",

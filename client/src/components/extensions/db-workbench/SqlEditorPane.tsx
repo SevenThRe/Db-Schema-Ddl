@@ -280,6 +280,8 @@ function mapCompletionKind(
   kind: SqlCompletionKind,
 ): languages.CompletionItemKind {
   switch (kind) {
+    case "function":
+      return monacoInstance.languages.CompletionItemKind.Function;
     case "keyword":
       return monacoInstance.languages.CompletionItemKind.Keyword;
     case "template":

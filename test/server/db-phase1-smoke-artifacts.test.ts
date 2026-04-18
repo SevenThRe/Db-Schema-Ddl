@@ -34,7 +34,7 @@ test("desktop smoke artifact captures reusable evidence for humans and automatio
     generatedAt: "2026-03-18T20:31:00.000Z",
     appVersion: "1.1.4",
     environment: "dev-electron",
-    logPath: "C:/Users/example/AppData/Roaming/DBSchemaExcel2DDL/logs/dbschemaexcel2ddl-bootstrap.log",
+    logPath: "C:/Users/example/AppData/Roaming/DBTools/logs/dbtools-bootstrap.log",
     summary: {
       passedCount: 4,
       failedCount: 0,

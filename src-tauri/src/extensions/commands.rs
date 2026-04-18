@@ -29,7 +29,7 @@ use super::lifecycle;
 use super::process::{ProcessManager, RunningProcess};
 use super::proxy;
 use super::registry::{ExtensionRegistry, InstalledExtension};
-use crate::builtin_extensions::{self, ExtensionContributes};
+use crate::builtin_extensions::{self, ExtensionContributes, UiBundle};
 
 // ──────────────────────────────────────────────
 // Managed State 型エイリアス
@@ -87,6 +87,14 @@ fn write_extensions_state(app: &AppHandle, state: &ExtensionsState) -> Result<()
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
+fn apply_enabled_state(state: &mut ExtensionsState, id: &str, enabled: bool) {
+    if enabled {
+        state.disabled_extensions.retain(|existing| existing != id);
+    } else if !state.disabled_extensions.iter().any(|existing| existing == id) {
+        state.disabled_extensions.push(id.to_string());
+    }
+}
+
 // ──────────────────────────────────────────────
 // コマンド
 // ──────────────────────────────────────────────
@@ -122,7 +130,14 @@ pub async fn ext_install(
     id: String,
 ) -> Result<InstalledExtension, ExtensionError> {
     let dir = app_data_dir(&app)?;
-    lifecycle::install(&id, &dir, None).await
+    let installed = lifecycle::install(&id, &dir, None).await?;
+
+    let mut state =
+        read_extensions_state(&app).map_err(ExtensionError::Internal)?;
+    apply_enabled_state(&mut state, &id, true);
+    write_extensions_state(&app, &state).map_err(ExtensionError::Internal)?;
+
+    Ok(installed)
 }
 
 /// 拡張機能をアンインストールする（実行中の場合は先に停止する）
@@ -137,7 +152,14 @@ pub async fn ext_uninstall(
         manager.stop(&id).await?;
     }
     let dir = app_data_dir(&app)?;
-    lifecycle::uninstall(&id, &dir)
+    lifecycle::uninstall(&id, &dir)?;
+
+    let mut state =
+        read_extensions_state(&app).map_err(ExtensionError::Internal)?;
+    apply_enabled_state(&mut state, &id, true);
+    write_extensions_state(&app, &state).map_err(ExtensionError::Internal)?;
+
+    Ok(())
 }
 
 /// サイドカーを起動する。既に起動済みであれば現在の RunningProcess を返す
@@ -183,6 +205,8 @@ pub async fn ext_call(
 // ──────────────────────────────────────────────
 
 /// フロントエンドへ返す統合マニフェスト（builtin/external 共通）
+/// contributes には activityBar / sidebarViews / workbenchViews と
+/// legacy navigation / workspacePanels の両方が含まれうる。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionManifestV2 {
@@ -194,11 +218,23 @@ pub struct ExtensionManifestV2 {
     pub category: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub ui_bundle: Option<UiBundle>,
     pub contributes: ExtensionContributes,
     #[serde(default)]
     pub input_formats: Vec<String>,
     #[serde(default)]
     pub output_formats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedUiMount {
+    pub mode: String,
+    pub status: String,
+    pub entry_path: Option<String>,
+    pub error: Option<String>,
+    pub api_version: Option<u32>,
 }
 
 /// フロントエンドへ返す解決済み拡張状態
@@ -211,6 +247,96 @@ pub struct ResolvedExtensionState {
     pub pid: Option<u32>,
     pub port: Option<u16>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub ui_mount: Option<ResolvedUiMount>,
+}
+
+const SUPPORTED_UI_BUNDLE_API_VERSION: u32 = 1;
+
+fn manifest_declares_runtime_views(contributes: &ExtensionContributes) -> bool {
+    contributes
+        .sidebar_views
+        .iter()
+        .any(|view| view.runtime_view_id.is_some())
+        || contributes
+            .workbench_views
+            .iter()
+            .any(|view| view.runtime_view_id.is_some())
+}
+
+fn resolve_ui_mount(
+    extension_root: Option<PathBuf>,
+    ui_bundle: Option<&UiBundle>,
+    contributes: &ExtensionContributes,
+) -> Option<ResolvedUiMount> {
+    let runtime_views_declared = manifest_declares_runtime_views(contributes);
+    match ui_bundle {
+        Some(bundle) => {
+            let mode = bundle.mode.clone();
+            if bundle.mode != "iframe" {
+                return Some(ResolvedUiMount {
+                    mode,
+                    status: "invalid".to_string(),
+                    entry_path: None,
+                    error: Some(format!("Unsupported uiBundle.mode: {}", bundle.mode)),
+                    api_version: Some(bundle.api_version),
+                });
+            }
+
+            if bundle.api_version != SUPPORTED_UI_BUNDLE_API_VERSION {
+                return Some(ResolvedUiMount {
+                    mode,
+                    status: "incompatible".to_string(),
+                    entry_path: None,
+                    error: Some(format!(
+                        "Unsupported uiBundle.apiVersion: {} (supported: {})",
+                        bundle.api_version, SUPPORTED_UI_BUNDLE_API_VERSION
+                    )),
+                    api_version: Some(bundle.api_version),
+                });
+            }
+
+            let Some(root) = extension_root else {
+                return Some(ResolvedUiMount {
+                    mode,
+                    status: "invalid".to_string(),
+                    entry_path: None,
+                    error: Some("Missing extension root for declared uiBundle".to_string()),
+                    api_version: Some(bundle.api_version),
+                });
+            };
+
+            let entry_path = root.join(&bundle.entry);
+            if !entry_path.exists() {
+                return Some(ResolvedUiMount {
+                    mode,
+                    status: "missing".to_string(),
+                    entry_path: None,
+                    error: Some(format!(
+                        "UI bundle entry was not found: {}",
+                        entry_path.display()
+                    )),
+                    api_version: Some(bundle.api_version),
+                });
+            }
+
+            Some(ResolvedUiMount {
+                mode,
+                status: "ready".to_string(),
+                entry_path: Some(entry_path.to_string_lossy().to_string()),
+                error: None,
+                api_version: Some(bundle.api_version),
+            })
+        }
+        None if runtime_views_declared => Some(ResolvedUiMount {
+            mode: "iframe".to_string(),
+            status: "invalid".to_string(),
+            entry_path: None,
+            error: Some("Runtime views were declared without a uiBundle".to_string()),
+            api_version: None,
+        }),
+        None => None,
+    }
 }
 
 /// builtin + external を統合した拡張一覧を返す
@@ -242,6 +368,7 @@ pub async fn ext_list_all(
                     .and_then(|v| v.as_str().map(String::from))
                     .unwrap_or_else(|| "Utility".to_string()),
                 capabilities: b.capabilities,
+                ui_bundle: b.ui_bundle,
                 contributes: b.contributes,
                 input_formats: b.input_formats,
                 output_formats: b.output_formats,
@@ -251,6 +378,7 @@ pub async fn ext_list_all(
             pid: None,
             port: None,
             error: None,
+            ui_mount: None,
         });
     }
 
@@ -258,10 +386,17 @@ pub async fn ext_list_all(
     let dir = app.path()
         .app_data_dir()
         .map_err(|e| e.to_string())?;
-    if let Ok(installed_list) = ExtensionRegistry::new(&dir).list() {
+    let registry = ExtensionRegistry::new(&dir);
+    if let Ok(installed_list) = registry.list() {
         for ext in installed_list {
             let enabled = !disabled_set.contains(ext.manifest.id.as_str());
             let running = manager.get_running(&ext.manifest.id).await;
+            let contributes = ext.manifest.contributes.clone().unwrap_or_default();
+            let ui_mount = resolve_ui_mount(
+                Some(registry.extension_dir(&ext.manifest.id)),
+                ext.manifest.ui_bundle.as_ref(),
+                &contributes,
+            );
             results.push(ResolvedExtensionState {
                 manifest: ExtensionManifestV2 {
                     id: ext.manifest.id.clone(),
@@ -271,7 +406,8 @@ pub async fn ext_list_all(
                     kind: "external".to_string(),
                     category: "Utility".to_string(),
                     capabilities: ext.manifest.capabilities,
-                    contributes: ext.manifest.contributes.unwrap_or_default(),
+                    ui_bundle: ext.manifest.ui_bundle.clone(),
+                    contributes,
                     input_formats: vec![],
                     output_formats: vec![],
                 },
@@ -280,6 +416,7 @@ pub async fn ext_list_all(
                 pid: running.as_ref().map(|r| r.pid),
                 port: running.as_ref().map(|r| r.port),
                 error: None,
+                ui_mount,
             });
         }
     }
@@ -298,16 +435,7 @@ pub async fn ext_list_all(
 #[tauri::command]
 pub async fn ext_set_enabled(app: AppHandle, id: String, enabled: bool) -> Result<(), String> {
     let mut state = read_extensions_state(&app)?;
-
-    if enabled {
-        // 有効化: 無効リストから除去する
-        state.disabled_extensions.retain(|existing| existing != &id);
-    } else {
-        // 無効化: 重複追加を防ぎながら無効リストへ追加する
-        if !state.disabled_extensions.contains(&id) {
-            state.disabled_extensions.push(id);
-        }
-    }
+    apply_enabled_state(&mut state, &id, enabled);
 
     write_extensions_state(&app, &state)
 }

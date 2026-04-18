@@ -34,7 +34,11 @@ function applyThemeToDocument(resolved: "light" | "dark") {
 export function ThemeProvider({ children, defaultTheme = "system" }: { children: ReactNode; defaultTheme?: Theme }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === "undefined") return defaultTheme;
-    return (localStorage.getItem(STORAGE_KEY) as Theme) || defaultTheme;
+    try {
+      return (localStorage.getItem(STORAGE_KEY) as Theme) || defaultTheme;
+    } catch {
+      return defaultTheme;
+    }
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() => {
@@ -63,7 +67,11 @@ export function ThemeProvider({ children, defaultTheme = "system" }: { children:
   }, [theme]);
 
   const setTheme = (newTheme: Theme) => {
-    localStorage.setItem(STORAGE_KEY, newTheme);
+    try {
+      localStorage.setItem(STORAGE_KEY, newTheme);
+    } catch {
+      // Ignore storage failures inside sandboxed runtime iframes.
+    }
     setThemeState(newTheme);
   };
 

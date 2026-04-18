@@ -55,13 +55,27 @@ pub async fn install(
     let manifest = ExtensionManifest::load_from_dir(&ext_dir)?;
 
     // エントリーポイントの実在確認
-    let entry_file = manifest.entry_for_current_platform()?;
-    let entry_path = ext_dir.join(entry_file);
-    if !entry_path.exists() {
-        return Err(ExtensionError::InvalidManifest(format!(
-            "エントリーポイントが存在しません: {}",
-            entry_path.display()
-        )));
+    let entry_path = if let Some(entry_file) = manifest.entry_for_current_platform()? {
+        let entry_path = ext_dir.join(entry_file);
+        if !entry_path.exists() {
+            return Err(ExtensionError::InvalidManifest(format!(
+                "エントリーポイントが存在しません: {}",
+                entry_path.display()
+            )));
+        }
+        Some(entry_path)
+    } else {
+        None
+    };
+
+    if let Some(bundle) = &manifest.ui_bundle {
+        let ui_entry_path = ext_dir.join(&bundle.entry);
+        if !ui_entry_path.exists() {
+            return Err(ExtensionError::InvalidManifest(format!(
+                "UI バンドルエントリが存在しません: {}",
+                ui_entry_path.display()
+            )));
+        }
     }
 
     // レジストリ登録

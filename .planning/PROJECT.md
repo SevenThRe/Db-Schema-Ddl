@@ -16,10 +16,13 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - ✅ Query/runtime/export/schema behavior now has a substantially stronger trust baseline than the original workbench prototype
 - ⚠️ DB Workbench is still not release-grade because credential storage, workflow coherence, inspection depth, and live verification standards are not yet at publishable quality
 - ⚠️ Remaining `v1.7` productivity work is deferred until release blockers are closed
+- 🗂️ Post-gate parity scope is now tracked as planned `v1.9`, and extension-platform work is tracked as planned `v2.0`
 
 ## Current Milestone: v1.8 Release-Grade DB Workbench
 
 **Goal:** Turn DB Workbench from a capable internal-style operator surface into a publishable daily-use product by closing release blockers in credential safety, runtime semantics, workflow coherence, inspection depth, and ship validation.
+
+**Planning note:** The roadmap can explicitly decompose post-gate parity and extension-platform work into later milestones, but those follow-on phases do not redefine the minimum publishability bar above.
 
 **Target features:**
 - Secure local credential handling with a migration path away from plaintext storage
@@ -56,12 +59,15 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - Connection-scoped script library, favorites, and quick-launch surfaces from `v1.7`
 - Richer data-browse presets and repeat-inspection accelerators from `v1.7`
 - Broader personalization and operator-memory niceties after publishability blockers are closed
+- Explicit parity backlog for secure transport, enterprise auth, ER graphing, visual schema design, and richer SQL asset workflows after the release gate is credible
+- Extension-platform backlog for activity bar hosting, installable frontend bundles, and optional DB workbench packaging after the core DB product is stable
 
 ### Out of Scope
 
-- Full parity with every Navicat feature in a single milestone
-- Expansion beyond MySQL/PostgreSQL to Oracle/SQL Server/SSH-tunnel/team features before the core product is publishable
-- Visual schema authoring or drag-to-design ER editing while release blockers remain open
+- Full parity with every Navicat-style feature in the initial publishability gate
+- Expansion beyond MySQL/PostgreSQL to Oracle/SQL Server/team features before the core product is publishable
+- Visual schema authoring or drag-to-design ER editing as part of the minimum release claim while release blockers remain open
+- Installable extension-platform extraction as part of the minimum release claim while the core DB workbench milestone is still open
 - Productivity niceties that do not materially improve product readiness
 
 ## Context
@@ -91,6 +97,8 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 | Make credential safety a first-order milestone requirement | A database tool cannot be considered publishable while local DB passwords remain plaintext by default | Accepted |
 | Require one canonical workbench route before calling the product ready | Split legacy/new entry points keep the user experience in prototype territory | Accepted |
 | Put live MySQL/PostgreSQL ship verification into milestone scope | Static tests are not enough evidence for a release-grade DB operator tool | Accepted |
+| Decompose the remaining parity backlog into explicit follow-on milestones | The product now needs a visible map for what still separates it from premium desktop DB tools after the release gate | Accepted |
+| Keep extension-platform ambitions outside the active release milestone | Shell modularity is strategically important, but it should not blur the publishability bar for the DB workbench itself | Accepted |
 
 ## Evolution
 
@@ -110,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-11 after opening v1.8 Release-Grade DB Workbench*
+*Last updated: 2026-04-17 after splitting release-grade scope from planned parity and extension-platform milestones*

@@ -3,7 +3,6 @@
 // アプリ起動時（App.tsx）に一度だけ呼ぶ。
 
 import { registerPanel, type ExtensionWorkspaceProps } from "../panel-registry";
-import { DbConnectorWorkspace } from "@/components/extensions/DbConnectorWorkspace";
 import { DdlToExcelWorkspace } from "@/components/extensions/DdlToExcelWorkspace";
 import { EnumGenWorkspace } from "@/components/extensions/EnumGenWorkspace";
 import { SchemaDiffPanel } from "@/components/SchemaDiffPanel";
@@ -33,7 +32,6 @@ export function registerBuiltinPanels(): void {
   if (registered) return;
   registered = true;
 
-  registerPanel("DbConnectorWorkspace", DbConnectorWorkspace as React.ComponentType<ExtensionWorkspaceProps>);
   registerPanel("DdlToExcelWorkspace", DdlToExcelWorkspace as React.ComponentType<ExtensionWorkspaceProps>);
   registerPanel("EnumGenWorkspace", EnumGenWorkspaceEntry);
   registerPanel("SchemaDiffPanel", SchemaDiffPanelEntry);

@@ -1,0 +1,61 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-mysql-2026-04-17T02-31-17-971Z",
+  "generatedAt": "2026-04-17T02:31:17.971Z",
+  "driver": "mysql",
+  "connectionLabel": "bootstrap mysql",
+  "database": "app",
+  "readonly": false,
+  "flows": [
+    {
+      "id": "connect",
+      "status": "failed",
+      "note": "MySQL 连接失败: pool timed out while waiting for an open connection"
+    },
+    {
+      "id": "query",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "paging",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "export",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "cancel",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "edit",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "readonly",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "inspection",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 1,
+    "warningCount": 0,
+    "skippedCount": 7,
+    "overallStatus": "failed"
+  },
+  "notes": [
+    "Live verification stopped before query flows because the connection could not be established."
+  ]
+}

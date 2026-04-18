@@ -26,6 +26,10 @@ export const extensionCapabilitySchema = z.enum([
   "db.query",
   "db.schema.read",
   "db.schema.apply",
+  "db.plan.read",
+  "db.result.export",
+  "db.data.edit",
+  "db.data.sync",
 ]);
 
 export type ExtensionCapability = z.infer<typeof extensionCapabilitySchema>;
@@ -42,6 +46,33 @@ export const extensionPlatformSchema = z.enum([
 ]);
 
 export type ExtensionPlatform = z.infer<typeof extensionPlatformSchema>;
+
+export const extensionUiBundleModeSchema = z.enum(["iframe"]);
+export type ExtensionUiBundleMode = z.infer<typeof extensionUiBundleModeSchema>;
+
+export const extensionUiBundleSchema = z.object({
+  entry: z.string().min(1),
+  mode: extensionUiBundleModeSchema.default("iframe"),
+  apiVersion: z.number().int().positive().default(1),
+});
+export type ExtensionUiBundle = z.infer<typeof extensionUiBundleSchema>;
+
+export const resolvedUiMountStatusSchema = z.enum([
+  "ready",
+  "missing",
+  "invalid",
+  "incompatible",
+]);
+export type ResolvedUiMountStatus = z.infer<typeof resolvedUiMountStatusSchema>;
+
+export const resolvedUiMountSchema = z.object({
+  mode: extensionUiBundleModeSchema,
+  status: resolvedUiMountStatusSchema,
+  entryPath: z.string().nullable().default(null),
+  error: z.string().nullable().default(null),
+  apiVersion: z.number().int().positive().nullable().default(null),
+});
+export type ResolvedUiMount = z.infer<typeof resolvedUiMountSchema>;
 
 // ──────────────────────────────────────────────
 // manifest.json スキーマ（ZIPに同梱）
@@ -65,11 +96,24 @@ export const extensionManifestSchema = z.object({
   /** 最低要求ホストバージョン */
   min_host_version: z.string().regex(/^\d+\.\d+\.\d+/).optional(),
   /** プラットフォーム別エントリーポイント */
-  entry: z.record(extensionPlatformSchema, z.string()),
+  entry: z.record(extensionPlatformSchema, z.string()).optional(),
   /** 要求する Capability 一覧 */
   capabilities: z.array(extensionCapabilitySchema).default([]),
+  /** 外部拡張が提供するフロントエンド UI バンドル */
+  uiBundle: extensionUiBundleSchema.optional(),
   /** V2: 拡張が宣言する Contribution（Rust manifest.rs と同期） */
   contributes: z.lazy(() => extensionContributesSchema).optional(),
+}).superRefine((manifest, ctx) => {
+  const hasEntry = manifest.entry != null && Object.keys(manifest.entry).length > 0;
+  const hasUiBundle = manifest.uiBundle != null;
+
+  if (!hasEntry && !hasUiBundle) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entry"],
+      message: "External extensions must declare at least one runtime artifact: entry or uiBundle.",
+    });
+  }
 });
 
 export type ExtensionManifest = z.infer<typeof extensionManifestSchema>;
@@ -144,7 +188,7 @@ export type ExtCallResponse = z.infer<typeof extCallResponseSchema>;
 // ──────────────────────────────────────────────
 
 export const OFFICIAL_EXTENSIONS = {
-  DB_MANAGEMENT: "db-management",
+  DB_CONNECTOR: "db-connector",
 } as const;
 
 export type OfficialExtensionId =
@@ -154,6 +198,39 @@ export type OfficialExtensionId =
 // Extension Manifest V2 — 統合型拡張モデル
 // builtin / external 共通の Contribution 宣言付き
 // ──────────────────────────────────────────────
+
+/** 拡張が提供するアクティビティバー項目 */
+export const activityBarItemSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  icon: z.string().optional(),
+  order: z.number().default(100),
+  defaultSidebarViewId: z.string(),
+  defaultWorkbenchViewId: z.string(),
+});
+export type ActivityBarItem = z.infer<typeof activityBarItemSchema>;
+
+/** 拡張が提供するセカンダリサイドバー項目 */
+export const sidebarViewSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  activityItemId: z.string().optional(),
+  order: z.number().default(100),
+  icon: z.string().optional(),
+  component: z.string().optional(),
+  runtimeViewId: z.string().optional(),
+});
+export type SidebarView = z.infer<typeof sidebarViewSchema>;
+
+/** 拡張が提供するメインワークベンチビュー */
+export const workbenchViewSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  activityItemId: z.string().optional(),
+  component: z.string().optional(),
+  runtimeViewId: z.string().optional(),
+});
+export type WorkbenchView = z.infer<typeof workbenchViewSchema>;
 
 /** 拡張が提供するナビゲーションエントリ */
 export const navigationItemSchema = z.object({
@@ -192,6 +269,10 @@ export type ContextAction = z.infer<typeof contextActionSchema>;
 
 /** 拡張の Contribution 宣言 */
 export const extensionContributesSchema = z.object({
+  activityBar: z.array(activityBarItemSchema).default([]),
+  sidebarViews: z.array(sidebarViewSchema).default([]),
+  workbenchViews: z.array(workbenchViewSchema).default([]),
+  // Legacy contribution fields kept during the shell migration window.
   navigation: z.array(navigationItemSchema).default([]),
   workspacePanels: z.array(workspacePanelSchema).default([]),
   settingsSections: z.array(settingsSectionSchema).default([]),
@@ -219,6 +300,7 @@ export const extensionManifestV2Schema = z.object({
   publisher: z.string().optional(),
   entry: z.record(z.string(), z.string()).optional(),
   capabilities: z.array(z.string()).default([]),
+  uiBundle: extensionUiBundleSchema.optional(),
   contributes: extensionContributesSchema.default({}),
   inputFormats: z.array(z.string()).default([]),
   outputFormats: z.array(z.string()).default([]),
@@ -233,5 +315,6 @@ export const resolvedExtensionSchema = z.object({
   pid: z.number().int().nullable().default(null),
   port: z.number().int().nullable().default(null),
   error: z.string().nullable().default(null),
+  uiMount: resolvedUiMountSchema.nullable().default(null),
 });
 export type ResolvedExtension = z.infer<typeof resolvedExtensionSchema>;

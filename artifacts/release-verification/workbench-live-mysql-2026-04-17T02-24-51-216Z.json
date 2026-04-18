@@ -1,0 +1,59 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-mysql-2026-04-17T02-24-51-216Z",
+  "generatedAt": "2026-04-17T02:24:51.216Z",
+  "driver": "mysql",
+  "connectionLabel": "bootstrap mysql",
+  "flows": [
+    {
+      "id": "connect",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "query",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "paging",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "export",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "cancel",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "edit",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "readonly",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    },
+    {
+      "id": "inspection",
+      "status": "skipped",
+      "note": "No explicit evidence recorded for this flow in the current run."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 0,
+    "warningCount": 0,
+    "skippedCount": 8,
+    "overallStatus": "warning"
+  },
+  "notes": [
+    "tauri dev exited before live verification completed. Missing checkpoints: tauri_setup_ready, browser_window_loaded, dashboard_ready, db_workbench_surface_ready, db_workbench_recovery_classified, db_workbench_live_completed"
+  ]
+}

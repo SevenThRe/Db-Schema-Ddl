@@ -1,0 +1,21 @@
+{
+  "unit_id": "32-discuss",
+  "phase": "32",
+  "unit": "discuss",
+  "status": "running",
+  "next_command": "/gsd:discuss-phase 32",
+  "updated_at": "2026-04-17T02:04:04.553Z",
+  "started_at": "2026-04-17T02:04:04.553Z",
+  "completed_at": null,
+  "failed_at": null,
+  "interrupted_at": null,
+  "attempts": 1,
+  "transitions": [
+    {
+      "event": "unit_started",
+      "status": "running",
+      "at": "2026-04-17T02:04:04.553Z"
+    }
+  ],
+  "notes": null
+}
