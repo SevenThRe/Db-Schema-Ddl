@@ -63,10 +63,12 @@
 
 ## 验证状态（代码级 vs 真实 DB）
 
-- **代码级验证（已完成）**：本轮所有拆分与 preflight 改动都跑过 `npm run check` 和全量 `npm run test:db-workbench`（160 个测试文件全绿），并补了对应架构边界测试。
-- **真实 DB 验证（未完成 / UNPROVEN）**：本机 `db-lab:preflight` 报告 `BLOCKED`（无 docker compose、3306/5432 不可达），所以**没有**跑保存连接、introspect schema、SELECT、危险 SQL 拦截、取消查询、EXPLAIN、结果分页等 Tauri 真实连接 smoke。
-- 任何交付说明都必须显式区分这两类，不得把“代码级验证通过”表述为“DB 工具核心已实机验证”。
-- 一旦本机出现可用 DB（装好 Docker 后 `npm run db-lab:up`，或用 `DBTOOLS_*_PORT` / `--connection-string` 指向外部库），先跑 `npm run db-lab:preflight` 确认 `State: reachable`，再按下方 live 命令补真实 DB 验证。
+- **代码级验证（TS，已完成）**：本轮所有拆分、preflight 改动与 TLS/SSL 前端改动都跑过 `npm run check` 和全量 `npm run test:db-workbench`（165 个测试文件全绿），并补了对应架构边界 / 配置往返测试。
+- **TLS/SSL 后续开发（本轮新增）**：已端到端接入连接传输加密——`DbConnectionConfig` 增加 `sslMode` + 根 CA / mTLS 证书路径（TS 与 Rust 双侧），sqlx 开启 `tls-rustls`，`introspect.rs` 的 `mysql_opts`/`pg_opts` 统一应用 ssl-mode 与证书，`query.rs::create_pool` 改为复用这两个 builder（test/introspect/runtime 三处一致），连接表单加 `ConnectionSecurityFields`。默认 `prefer`（旧连接自动机会性升级 TLS，向后兼容）。
+- **Rust 编译/单测（本机无法执行）**：本机 Rust 工具链是 VS 2026 预览版，pinned `cc` crate 无法驱动它——`cargo check`/`cargo test` 在编译**既有**原生依赖 `libsqlite3-sys` / `vswhom-sys`（`stdarg.h` / `msvcrt.lib` 找不到）时就失败，根本到不了本轮新增代码。这是**既有环境限制，与 TLS 改动无关**。新增的 Rust ssl-mode 映射单测（`introspect.rs` 内）与 TLS 接线均**已按 sqlx 0.8 API 人工复核，但尚未在本机编译/运行**，必须在开发者正常的 `cargo` / `tauri` 构建环境里编译 + 跑 `cargo test ssl` 确认。
+- **真实 DB 验证（未完成 / UNPROVEN）**：本机 `db-lab:preflight` 报告 `BLOCKED`（无 docker compose、3306/5432 不可达），所以**没有**跑保存连接、introspect schema、SELECT、危险 SQL 拦截、取消查询、EXPLAIN、结果分页，**也没有**对真实 TLS-required 服务器跑过握手 smoke。TLS 只能写成“已接线、TS 侧代码级验证、Rust 编译与真实握手未验证”。
+- 任何交付说明都必须显式区分这几类，不得把“TS 代码级验证通过”表述为“Rust 已编译”或“DB 工具核心已实机验证”。
+- 一旦本机出现可用 DB（装好 Docker 后 `npm run db-lab:up`，或用 `DBTOOLS_*_PORT` / `--connection-string` 指向外部库），先跑 `npm run db-lab:preflight` 确认 `State: reachable`，再按下方 live 命令补真实 DB 验证；TLS 需额外用一个强制 TLS 的服务器（如云数据库或带证书的本地实例）验证 `require` / `verify-full` 真能完成握手与证书校验。
 
 ## 验证要求
 

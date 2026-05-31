@@ -8,7 +8,7 @@ use futures_util::TryStreamExt;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::{MySqlDialect, PostgreSqlDialect};
 use sqlparser::parser::Parser;
-use sqlx::{Column, ConnectOptions as _, Row};
+use sqlx::{Column, Row};
 use tauri::{AppHandle, State};
 use tokio::select;
 
@@ -187,16 +187,12 @@ async fn create_pool(config: &DbConnectionConfig) -> Result<AnyPool, String> {
 
   const ACQUIRE_TIMEOUT_SECS: u64 = 15;
 
+  // 接続オプションは introspect.rs の共通ビルダーに一本化する。
+  // これにより TLS / ssl-mode / 証明書設定が「テスト接続・イントロスペクト・
+  // ランタイムプール」のすべてで同一に適用される。
   match config.driver {
     DbDriver::Mysql => {
-      use sqlx::mysql::MySqlConnectOptions;
-      let opts = MySqlConnectOptions::new()
-        .host(&config.host)
-        .port(config.port)
-        .database(&config.database)
-        .username(&config.username)
-        .password(&config.password)
-        .disable_statement_logging();
+      let opts = super::introspect::mysql_opts(config)?;
       let pool = MySqlPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(ACQUIRE_TIMEOUT_SECS))
@@ -206,14 +202,7 @@ async fn create_pool(config: &DbConnectionConfig) -> Result<AnyPool, String> {
       Ok(AnyPool::Mysql(pool))
     }
     DbDriver::Postgres => {
-      use sqlx::postgres::PgConnectOptions;
-      let opts = PgConnectOptions::new()
-        .host(&config.host)
-        .port(config.port)
-        .database(&config.database)
-        .username(&config.username)
-        .password(&config.password)
-        .disable_statement_logging();
+      let opts = super::introspect::pg_opts(config)?;
       let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(ACQUIRE_TIMEOUT_SECS))

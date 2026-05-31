@@ -8,10 +8,15 @@ import {
   buildConnectionSearchText,
   CONNECTION_GROUP_UNGROUPED,
   configFromDiscoveredEndpoint,
+  DB_SSL_MODES,
+  DEFAULT_SSL_MODE,
+  effectiveSslMode,
   emptyConnectionConfig,
   isAutoConnectionName,
   normalizeConnectionConfig,
   resolveLiveVerificationConnection,
+  sslModeAlwaysEncrypts,
+  sslModeRequiresRootCert,
 } from "../../client/src/components/extensions/db-workbench/workbench-connection-config-model";
 
 function connection(
@@ -83,6 +88,42 @@ test("connection config model preserves manual names and normalizes metadata", (
   assert.equal(normalized.notes, "daily driver");
   assert.equal(asColorInputValue("#abc"), "#abc");
   assert.equal(asColorInputValue("not-a-color"), "#3b82f6");
+});
+
+test("connection config model treats TLS as prefer-by-default and normalizes cert paths", () => {
+  // Old configs without sslMode behave as the backward-compatible "prefer".
+  assert.equal(DEFAULT_SSL_MODE, "prefer");
+  assert.equal(effectiveSslMode(connection()), "prefer");
+  assert.equal(effectiveSslMode(connection({ sslMode: "verify-full" })), "verify-full");
+
+  // require/verify-* are always-encrypted; disable/prefer are not guaranteed.
+  assert.equal(sslModeAlwaysEncrypts("disable"), false);
+  assert.equal(sslModeAlwaysEncrypts("prefer"), false);
+  assert.equal(sslModeAlwaysEncrypts("require"), true);
+  assert.equal(sslModeAlwaysEncrypts("verify-full"), true);
+
+  // Only verify-ca / verify-full require a root CA to validate the server.
+  assert.deepEqual(
+    DB_SSL_MODES.filter(sslModeRequiresRootCert),
+    ["verify-ca", "verify-full"],
+  );
+
+  const normalized = normalizeConnectionConfig(
+    connection({
+      sslMode: "require",
+      sslRootCert: "  /etc/ssl/ca.pem  ",
+      sslClientCert: "   ",
+      sslClientKey: undefined,
+    }),
+  );
+  assert.equal(normalized.sslMode, "require");
+  assert.equal(normalized.sslRootCert, "/etc/ssl/ca.pem");
+  assert.equal(normalized.sslClientCert, undefined);
+  assert.equal(normalized.sslClientKey, undefined);
+
+  // "prefer" is the implicit default and is dropped so saved configs stay minimal.
+  const preferNormalized = normalizeConnectionConfig(connection({ sslMode: "prefer" }));
+  assert.equal(preferNormalized.sslMode, undefined);
 });
 
 test("connection config model centralizes search and live verification selection", () => {

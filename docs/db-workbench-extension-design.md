@@ -128,9 +128,10 @@
 
 P0 产品承诺边界：
 
-- 当前只承诺 direct `MySQL / PostgreSQL` 连接
+- 当前承诺 direct `MySQL / PostgreSQL` 连接，并已接入 `TLS/SSL` 传输加密（`disable / prefer / require / verify-ca / verify-full` + 根 CA / mTLS 证书路径）
 - 可以承诺环境治理、只读保护、默认 schema、收藏/分组/备注等连接治理能力
-- 不能把 `SSH / TLS / 企业认证` 写成已交付产品能力，除非运行时真的完成接线与验证
+- `TLS/SSL` 已完成端到端接线并通过代码级验证（`cargo check` + ssl-mode 映射单测 + 配置往返测试），但**尚未对真实 TLS 服务器实测**，因此只能写成「已接线、代码级验证、真实握手未验证」
+- 不能把 `SSH 隧道 / 企业认证` 写成已交付产品能力，除非运行时真的完成接线与验证
 
 意义：
 

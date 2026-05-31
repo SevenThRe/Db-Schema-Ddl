@@ -23,7 +23,11 @@ test("connection form states P0 support scope and keeps unsupported transports o
   assert.match(form, /<ConnectionFormTestResult/);
   assert.match(formSections, /P0 support scope/);
   assert.match(formSections, /Current build supports direct MySQL \/ PostgreSQL connections with saved-password handling/);
-  assert.match(formSections, /SSH \/ TLS \/ enterprise auth are not product-supported in this build/);
+  // TLS is now wired, but the copy must still flag it as not-yet-live-verified
+  // and must keep SSH / enterprise auth out of product claims.
+  assert.match(formSections, /TLS is wired end-to-end and code-level verified, but not yet validated against a live TLS-required server/);
+  assert.match(formSections, /SSH tunnelling and enterprise auth are not product-supported in this build/);
+  assert.doesNotMatch(formSections, /SSH \/ TLS \/ enterprise auth are not product-supported/);
   assert.match(formSections, /operator controls, not cosmetic metadata/);
 });
 
@@ -81,14 +85,17 @@ test("connection center copy explains current supported scope and safety semanti
     "client/src/components/extensions/db-workbench/connection-form-sections.tsx",
   );
 
-  assert.match(header, /当前构建仅承诺 direct MySQL \/ PostgreSQL 连接与安全保存密码/);
-  assert.match(header, /SSH \/ TLS \/ 企业认证仍未作为产品能力承诺/);
+  assert.match(header, /当前构建承诺 direct MySQL \/ PostgreSQL 连接与安全保存密码/);
+  assert.match(header, /已接入 TLS\/SSL 传输加密（代码级，尚未对真实 TLS 服务器实测）/);
+  assert.match(header, /SSH 隧道 \/ 企业认证仍未作为产品能力承诺/);
   assert.match(form, /启用后，工作台会在运行时阻止 DML \/ DDL \/ Data Sync apply/);
 });
 
 test("db workbench design doc records direct-driver scope without overclaiming secure connectivity", async () => {
   const design = await read("docs/db-workbench-extension-design.md");
 
-  assert.match(design, /当前只承诺 direct `MySQL \/ PostgreSQL` 连接/);
-  assert.match(design, /不能把 `SSH \/ TLS \/ 企业认证` 写成已交付产品能力/);
+  assert.match(design, /当前承诺 direct `MySQL \/ PostgreSQL` 连接/);
+  // TLS is wired + code-level verified but not live-verified; SSH/enterprise auth stay unclaimed.
+  assert.match(design, /尚未对真实 TLS 服务器实测/);
+  assert.match(design, /不能把 `SSH 隧道 \/ 企业认证` 写成已交付产品能力/);
 });

@@ -1437,6 +1437,10 @@ mod tests {
       color_tag: None,
       default_schema: None,
       notes: None,
+      ssl_mode: None,
+      ssl_root_cert: None,
+      ssl_client_cert: None,
+      ssl_client_key: None,
     }
   }
 

@@ -882,6 +882,24 @@ export interface BinaryCommandResult {
 
 export type DbDriver = "mysql" | "postgres";
 
+/**
+ * Transport encryption (TLS/SSL) policy for a live database connection.
+ * Driver-neutral; mapped to the concrete sqlx ssl-mode per driver in Rust.
+ * - disable: never use TLS (plaintext only).
+ * - prefer: use TLS if the server offers it, otherwise fall back to plaintext
+ *   (the backward-compatible default for configs saved before TLS existed).
+ * - require: TLS is mandatory, but the server certificate is not verified.
+ * - verify-ca: TLS is mandatory and the server cert chain is verified against
+ *   the provided root CA.
+ * - verify-full: like verify-ca, and the server hostname must also match.
+ */
+export type DbSslMode =
+  | "disable"
+  | "prefer"
+  | "require"
+  | "verify-ca"
+  | "verify-full";
+
 /** 接続環境ラベル（dev / test / prod） */
 export type DbEnvironment = "dev" | "test" | "prod";
 
@@ -912,6 +930,14 @@ export interface DbConnectionConfig {
   defaultSchema?: string;
   /** 操作员备注，仅用于连接中心管理 */
   notes?: string;
+  /** 传输加密策略（TLS/SSL）— 省略时按 "prefer" 处理（向后兼容旧连接） */
+  sslMode?: DbSslMode;
+  /** 校验服务器证书所用的根 CA 证书路径（PEM）；verify-ca / verify-full 需要 */
+  sslRootCert?: string;
+  /** 双向 TLS（mTLS）客户端证书路径（PEM） */
+  sslClientCert?: string;
+  /** 双向 TLS（mTLS）客户端私钥路径（PEM） */
+  sslClientKey?: string;
 }
 
 export type DbDiscoverySource =

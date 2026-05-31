@@ -6,9 +6,49 @@ import type {
   DbConnectionConfig,
   DbDiscoveredEndpoint,
   DbDriver,
+  DbSslMode,
 } from "@shared/schema";
 
 export const CONNECTION_GROUP_UNGROUPED = "未分组";
+
+/** 未設定の旧連接按 "prefer" 处理：服务器支持就升级 TLS，不支持则回退明文。 */
+export const DEFAULT_SSL_MODE: DbSslMode = "prefer";
+
+/** 连接表单 TLS 下拉的可选项（按加密强度从弱到强）。 */
+export const DB_SSL_MODES: readonly DbSslMode[] = [
+  "disable",
+  "prefer",
+  "require",
+  "verify-ca",
+  "verify-full",
+];
+
+const SSL_MODE_LABELS: Record<DbSslMode, string> = {
+  disable: "禁用（仅明文）",
+  prefer: "优先（可用则加密，否则明文）",
+  require: "强制加密（不校验证书）",
+  "verify-ca": "强制加密 + 校验 CA",
+  "verify-full": "强制加密 + 校验 CA 与主机名",
+};
+
+export function sslModeLabel(mode: DbSslMode): string {
+  return SSL_MODE_LABELS[mode];
+}
+
+/** 未設定按默认（prefer）处理后的有效 TLS 策略。 */
+export function effectiveSslMode(config: DbConnectionConfig): DbSslMode {
+  return config.sslMode ?? DEFAULT_SSL_MODE;
+}
+
+/** verify-ca / verify-full 需要根 CA 证书才能完成校验。 */
+export function sslModeRequiresRootCert(mode: DbSslMode): boolean {
+  return mode === "verify-ca" || mode === "verify-full";
+}
+
+/** 该模式下连接是否一定加密（prefer 为机会性加密，不计入）。 */
+export function sslModeAlwaysEncrypts(mode: DbSslMode): boolean {
+  return mode === "require" || mode === "verify-ca" || mode === "verify-full";
+}
 
 export type ConnectionEnvironmentFilter = "all" | "dev" | "test" | "prod";
 
@@ -73,6 +113,12 @@ export function normalizeConnectionConfig(
     colorTag: normalizeOptionalText(config.colorTag),
     defaultSchema: normalizeOptionalText(config.defaultSchema),
     notes: normalizeOptionalText(config.notes),
+    // "prefer" is the implicit default; drop it so saved configs stay minimal
+    // and old/new configs round-trip identically.
+    sslMode: config.sslMode && config.sslMode !== DEFAULT_SSL_MODE ? config.sslMode : undefined,
+    sslRootCert: normalizeOptionalText(config.sslRootCert),
+    sslClientCert: normalizeOptionalText(config.sslClientCert),
+    sslClientKey: normalizeOptionalText(config.sslClientKey),
   };
 }
 

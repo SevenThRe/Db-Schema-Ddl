@@ -19,7 +19,7 @@ export function ConnectionCenterHeader({
           Connection Center is a primary support surface. 在这里配置、恢复或整理连接，然后回到统一的 Database Workspace daily-driver route；Schema 与 Diff 仅保留为 compatibility-only surfaces。
         </p>
         <p className="mt-1 text-[10px] text-muted-foreground">
-          当前构建仅承诺 direct MySQL / PostgreSQL 连接与安全保存密码；SSH / TLS / 企业认证仍未作为产品能力承诺。
+          当前构建承诺 direct MySQL / PostgreSQL 连接与安全保存密码，并已接入 TLS/SSL 传输加密（代码级，尚未对真实 TLS 服务器实测）；SSH 隧道 / 企业认证仍未作为产品能力承诺。
         </p>
       </div>
       <div className="flex items-center gap-2">

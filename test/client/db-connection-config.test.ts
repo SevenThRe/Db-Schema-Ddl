@@ -49,6 +49,27 @@ describe("DbConnectionConfig", () => {
     assert.equal(parsed.readonly, true);
   });
 
+  it("TLS/SSL フィールド（sslMode と証明書パス）のラウンドトリップが正しく動作する", () => {
+    const config: DbConnectionConfig = {
+      ...makeBaseConfig(),
+      sslMode: "verify-full",
+      sslRootCert: "/etc/ssl/ca.pem",
+      sslClientCert: "/etc/ssl/client-cert.pem",
+      sslClientKey: "/etc/ssl/client-key.pem",
+    };
+    const parsed: DbConnectionConfig = JSON.parse(JSON.stringify(config));
+    assert.equal(parsed.sslMode, "verify-full");
+    assert.equal(parsed.sslRootCert, "/etc/ssl/ca.pem");
+    assert.equal(parsed.sslClientCert, "/etc/ssl/client-cert.pem");
+    assert.equal(parsed.sslClientKey, "/etc/ssl/client-key.pem");
+  });
+
+  it("sslMode 未設定の旧設定はそのままラウンドトリップできる（後方互換）", () => {
+    const parsed: DbConnectionConfig = JSON.parse(JSON.stringify(makeBaseConfig()));
+    assert.equal(parsed.sslMode, undefined);
+    assert.equal(parsed.sslRootCert, undefined);
+  });
+
   it("colorTag フィールドのラウンドトリップが正しく動作する", () => {
     const config: DbConnectionConfig = {
       ...makeBaseConfig(),

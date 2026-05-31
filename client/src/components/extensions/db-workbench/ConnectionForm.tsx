@@ -16,6 +16,7 @@ import {
   ConnectionFormSupportScope,
   ConnectionFormTestResult,
   ConnectionGovernanceFields,
+  ConnectionSecurityFields,
   ConnectionStringImportPanel,
 } from "./connection-form-sections";
 import {
@@ -222,6 +223,8 @@ export function ConnectionForm({
             </label>
           </div>
         ) : null}
+
+        <ConnectionSecurityFields formId={formId} form={form} set={set} />
 
         <ConnectionGovernanceFields formId={formId} form={form} set={set} />
       </div>

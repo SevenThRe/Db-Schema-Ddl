@@ -2,15 +2,15 @@
 // MySQL / PostgreSQL の INFORMATION_SCHEMA からテーブル・カラム情報を取得する
 
 use sqlx::{
-  mysql::{MySqlConnectOptions, MySqlPoolOptions},
-  postgres::{PgConnectOptions, PgPoolOptions},
+  mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode},
+  postgres::{PgConnectOptions, PgPoolOptions, PgSslMode},
   ConnectOptions as _, Row,
 };
 use std::time::Duration;
 
 use super::{
   DbColumnSchema, DbConnectionConfig, DbDriver, DbForeignKeySchema, DbIndexSchema,
-  DbRoutineKind, DbRoutineSchema, DbSchemaSnapshot, DbSequenceSchema, DbTableSchema,
+  DbRoutineKind, DbRoutineSchema, DbSchemaSnapshot, DbSequenceSchema, DbSslMode, DbTableSchema,
   DbTriggerSchema, DbViewSchema,
 };
 
@@ -184,25 +184,72 @@ pub async fn introspect_schema(config: &DbConnectionConfig) -> Result<DbSchemaSn
 
 // ── 接続オプションビルダー ─────────────────────
 
-fn mysql_opts(config: &DbConnectionConfig) -> Result<MySqlConnectOptions, String> {
-  let opts = MySqlConnectOptions::new()
+/// DbSslMode（未設定は Prefer 扱い）を MySQL の ssl-mode へマッピングする。
+pub(crate) fn mysql_ssl_mode(mode: Option<DbSslMode>) -> MySqlSslMode {
+  match mode.unwrap_or_default() {
+    DbSslMode::Disable => MySqlSslMode::Disabled,
+    DbSslMode::Prefer => MySqlSslMode::Preferred,
+    DbSslMode::Require => MySqlSslMode::Required,
+    DbSslMode::VerifyCa => MySqlSslMode::VerifyCa,
+    // MySQL は「ホスト名検証込み」を VerifyIdentity と呼ぶ
+    DbSslMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+  }
+}
+
+/// DbSslMode（未設定は Prefer 扱い）を PostgreSQL の ssl-mode へマッピングする。
+pub(crate) fn pg_ssl_mode(mode: Option<DbSslMode>) -> PgSslMode {
+  match mode.unwrap_or_default() {
+    DbSslMode::Disable => PgSslMode::Disable,
+    DbSslMode::Prefer => PgSslMode::Prefer,
+    DbSslMode::Require => PgSslMode::Require,
+    DbSslMode::VerifyCa => PgSslMode::VerifyCa,
+    DbSslMode::VerifyFull => PgSslMode::VerifyFull,
+  }
+}
+
+fn non_empty(value: &Option<String>) -> Option<&str> {
+  value.as_deref().map(str::trim).filter(|trimmed| !trimmed.is_empty())
+}
+
+pub(crate) fn mysql_opts(config: &DbConnectionConfig) -> Result<MySqlConnectOptions, String> {
+  let mut opts = MySqlConnectOptions::new()
     .host(&config.host)
     .port(config.port)
     .database(&config.database)
     .username(&config.username)
     .password(&config.password)
+    .ssl_mode(mysql_ssl_mode(config.ssl_mode))
     .disable_statement_logging();
+  if let Some(ca) = non_empty(&config.ssl_root_cert) {
+    opts = opts.ssl_ca(ca);
+  }
+  if let Some(cert) = non_empty(&config.ssl_client_cert) {
+    opts = opts.ssl_client_cert(cert);
+  }
+  if let Some(key) = non_empty(&config.ssl_client_key) {
+    opts = opts.ssl_client_key(key);
+  }
   Ok(opts)
 }
 
-fn pg_opts(config: &DbConnectionConfig) -> Result<PgConnectOptions, String> {
-  let opts = PgConnectOptions::new()
+pub(crate) fn pg_opts(config: &DbConnectionConfig) -> Result<PgConnectOptions, String> {
+  let mut opts = PgConnectOptions::new()
     .host(&config.host)
     .port(config.port)
     .database(&config.database)
     .username(&config.username)
     .password(&config.password)
+    .ssl_mode(pg_ssl_mode(config.ssl_mode))
     .disable_statement_logging();
+  if let Some(ca) = non_empty(&config.ssl_root_cert) {
+    opts = opts.ssl_root_cert(ca);
+  }
+  if let Some(cert) = non_empty(&config.ssl_client_cert) {
+    opts = opts.ssl_client_cert(cert);
+  }
+  if let Some(key) = non_empty(&config.ssl_client_key) {
+    opts = opts.ssl_client_key(key);
+  }
   Ok(opts)
 }
 
@@ -709,5 +756,69 @@ mod tests {
         "index SQL must avoid hardcoded public literal: {sql}"
       );
     }
+  }
+
+  fn ssl_test_config(driver: DbDriver, ssl_mode: Option<DbSslMode>) -> DbConnectionConfig {
+    DbConnectionConfig {
+      id: "ssl".to_string(),
+      name: "ssl".to_string(),
+      driver,
+      host: "localhost".to_string(),
+      port: 5432,
+      database: "app".to_string(),
+      username: "u".to_string(),
+      password: "p".to_string(),
+      has_stored_password: false,
+      clear_stored_password: false,
+      environment: None,
+      readonly: false,
+      favorite: false,
+      group_name: None,
+      color_tag: None,
+      default_schema: None,
+      notes: None,
+      ssl_mode,
+      ssl_root_cert: None,
+      ssl_client_cert: None,
+      ssl_client_key: None,
+    }
+  }
+
+  #[test]
+  fn ssl_mode_maps_to_driver_specific_modes() {
+    assert!(matches!(mysql_ssl_mode(Some(DbSslMode::Disable)), MySqlSslMode::Disabled));
+    assert!(matches!(mysql_ssl_mode(Some(DbSslMode::Require)), MySqlSslMode::Required));
+    assert!(matches!(mysql_ssl_mode(Some(DbSslMode::VerifyCa)), MySqlSslMode::VerifyCa));
+    // MySQL は full 検証を VerifyIdentity と呼ぶ
+    assert!(matches!(
+      mysql_ssl_mode(Some(DbSslMode::VerifyFull)),
+      MySqlSslMode::VerifyIdentity
+    ));
+
+    assert!(matches!(pg_ssl_mode(Some(DbSslMode::Disable)), PgSslMode::Disable));
+    assert!(matches!(pg_ssl_mode(Some(DbSslMode::Require)), PgSslMode::Require));
+    assert!(matches!(pg_ssl_mode(Some(DbSslMode::VerifyFull)), PgSslMode::VerifyFull));
+  }
+
+  #[test]
+  fn ssl_mode_defaults_to_prefer_when_unset() {
+    // 旧設定（ssl_mode 未設定）は安全側の Prefer 扱い：サーバーが対応すれば
+    // TLS にアップグレードし、非対応なら平文へフォールバックする。
+    assert!(matches!(mysql_ssl_mode(None), MySqlSslMode::Preferred));
+    assert!(matches!(pg_ssl_mode(None), PgSslMode::Prefer));
+  }
+
+  #[test]
+  fn option_builders_apply_ssl_without_certs() {
+    // 証明書未指定でもオプション構築は失敗しない（verify-* はランタイムで検証）
+    assert!(mysql_opts(&ssl_test_config(DbDriver::Mysql, Some(DbSslMode::Require))).is_ok());
+    assert!(pg_opts(&ssl_test_config(DbDriver::Postgres, Some(DbSslMode::VerifyFull))).is_ok());
+  }
+
+  #[test]
+  fn non_empty_filters_blank_cert_paths() {
+    assert_eq!(non_empty(&None), None);
+    assert_eq!(non_empty(&Some("   ".to_string())), None);
+    assert_eq!(non_empty(&Some(" /etc/ca.pem ".to_string())), Some("/etc/ca.pem"));
   }
 }

@@ -7,8 +7,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { DbConnectionConfig } from "@shared/schema";
-import { asColorInputValue } from "./workbench-connection-config-model";
+import type { DbConnectionConfig, DbSslMode } from "@shared/schema";
+import {
+  asColorInputValue,
+  DB_SSL_MODES,
+  effectiveSslMode,
+  sslModeLabel,
+  sslModeRequiresRootCert,
+} from "./workbench-connection-config-model";
 
 type SetConnectionField = <K extends keyof DbConnectionConfig>(
   key: K,
@@ -22,10 +28,10 @@ export function ConnectionFormSupportScope() {
         P0 support scope
       </p>
       <p className="mt-1 text-[11px] text-foreground">
-        Current build supports direct MySQL / PostgreSQL connections with saved-password handling.
+        Current build supports direct MySQL / PostgreSQL connections with saved-password handling and TLS/SSL transport (prefer / require / verify-ca / verify-full).
       </p>
       <p className="mt-1 text-[10px] text-muted-foreground">
-        SSH / TLS / enterprise auth are not product-supported in this build. Environment, readonly, default schema, favorite, group, color tag, and notes are operator controls, not cosmetic metadata.
+        TLS is wired end-to-end and code-level verified, but not yet validated against a live TLS-required server. SSH tunnelling and enterprise auth are not product-supported in this build. Environment, readonly, default schema, favorite, group, color tag, and notes are operator controls, not cosmetic metadata.
       </p>
     </div>
   );
@@ -222,6 +228,99 @@ export function ConnectionGovernanceFields({
             rows={3}
             placeholder="例如：BI 只读账号 / 走跳板机 / 每晚同步后再查"
             className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ConnectionSecurityFields({
+  formId,
+  form,
+  set,
+}: {
+  formId: string;
+  form: DbConnectionConfig;
+  set: SetConnectionField;
+}) {
+  const mode = effectiveSslMode(form);
+  const needsRootCert = sslModeRequiresRootCert(mode);
+  const missingRootCert = needsRootCert && !form.sslRootCert?.trim();
+
+  return (
+    <div className="col-span-2 mt-1 rounded-md border border-border/60 bg-muted/10 p-3">
+      <div className="mb-2">
+        <p className="text-xs font-medium text-foreground">传输加密 (TLS/SSL)</p>
+        <p className="text-[10px] text-muted-foreground">
+          控制连接是否走 TLS,以及是否校验服务器证书。连接到云数据库 / 跳板机后端通常需要 require 或以上。
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2 space-y-1">
+          <label htmlFor={`${formId}-ssl-mode`} className="text-xs text-muted-foreground">
+            加密模式
+          </label>
+          <select
+            id={`${formId}-ssl-mode`}
+            name="ssl-mode"
+            value={mode}
+            onChange={(event) => set("sslMode", event.target.value as DbSslMode)}
+            className="h-7 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+          >
+            {DB_SSL_MODES.map((option) => (
+              <option key={option} value={option}>
+                {sslModeLabel(option)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="col-span-2 space-y-1">
+          <label htmlFor={`${formId}-ssl-root-cert`} className="text-xs text-muted-foreground">
+            根 CA 证书路径{needsRootCert ? "（必填）" : "（可选）"}
+          </label>
+          <Input
+            id={`${formId}-ssl-root-cert`}
+            name="ssl-root-cert"
+            value={form.sslRootCert ?? ""}
+            onChange={(event) => set("sslRootCert", event.target.value)}
+            placeholder="/path/to/ca.pem"
+            className={cn("h-7 text-xs", missingRootCert && "border-destructive")}
+          />
+          {missingRootCert ? (
+            <p className="text-[10px] text-destructive">
+              verify-ca / verify-full 需要根 CA 证书才能校验服务器身份。
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor={`${formId}-ssl-client-cert`} className="text-xs text-muted-foreground">
+            客户端证书（mTLS，可选）
+          </label>
+          <Input
+            id={`${formId}-ssl-client-cert`}
+            name="ssl-client-cert"
+            value={form.sslClientCert ?? ""}
+            onChange={(event) => set("sslClientCert", event.target.value)}
+            placeholder="/path/to/client-cert.pem"
+            className="h-7 text-xs"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor={`${formId}-ssl-client-key`} className="text-xs text-muted-foreground">
+            客户端私钥（mTLS，可选）
+          </label>
+          <Input
+            id={`${formId}-ssl-client-key`}
+            name="ssl-client-key"
+            value={form.sslClientKey ?? ""}
+            onChange={(event) => set("sslClientKey", event.target.value)}
+            placeholder="/path/to/client-key.pem"
+            className="h-7 text-xs"
           />
         </div>
       </div>

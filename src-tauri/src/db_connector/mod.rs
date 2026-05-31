@@ -43,6 +43,24 @@ pub enum DbEnvironment {
   Prod,
 }
 
+/// 伝送暗号化（TLS/SSL）ポリシー。ドライバー非依存で保持し、接続時に
+/// ドライバー固有の sqlx ssl-mode へマッピングする。未設定は `Prefer` 扱い。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DbSslMode {
+  Disable,
+  Prefer,
+  Require,
+  VerifyCa,
+  VerifyFull,
+}
+
+impl Default for DbSslMode {
+  fn default() -> Self {
+    DbSslMode::Prefer
+  }
+}
+
 /// DB 接続設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +100,18 @@ pub struct DbConnectionConfig {
   /// 操作员备注
   #[serde(skip_serializing_if = "Option::is_none")]
   pub notes: Option<String>,
+  /// 伝送暗号化（TLS/SSL）ポリシー — 旧設定には存在しないため None は Prefer 扱い
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub ssl_mode: Option<DbSslMode>,
+  /// サーバー証明書検証に使うルート CA 証明書パス（PEM）。verify-ca / verify-full で必須
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub ssl_root_cert: Option<String>,
+  /// 双方向 TLS（mTLS）クライアント証明書パス（PEM）
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub ssl_client_cert: Option<String>,
+  /// 双方向 TLS（mTLS）クライアント秘密鍵パス（PEM）
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub ssl_client_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
