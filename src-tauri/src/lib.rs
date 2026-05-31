@@ -57,9 +57,12 @@ pub fn run() {
         tokens: Mutex::new(HashMap::new()),
       });
       let grid_edit_plan_registry = Arc::new(db_connector::grid_edit::GridEditPlanRegistry::new());
+      let sql_copilot_runtime_registry =
+        Arc::new(db_connector::sql_copilot::SqlCopilotRuntimeRegistry::new());
       app.manage(pool_registry);
       app.manage(cancel_registry);
       app.manage(grid_edit_plan_registry);
+      app.manage(sql_copilot_runtime_registry);
       let _ = commands::emit_smoke_checkpoint(
         "tauri_setup_ready",
         Some(serde_json::Map::from_iter([(
@@ -133,6 +136,8 @@ pub fn run() {
       db_connector::commands::db_data_apply_execute,
       db_connector::commands::db_data_apply_job_detail,
       db_connector::commands::db_background_job_list,
+      db_connector::commands::db_sql_copilot_runtime_state,
+      db_connector::commands::db_sql_copilot_probe,
       db_connector::grid_edit::db_grid_prepare_commit,
       db_connector::grid_edit::db_grid_commit,
       db_connector::query::db_query_execute,

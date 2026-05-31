@@ -78,6 +78,15 @@ export const DEFAULT_DDL_SETTINGS_VALUES = {
   allowOverwriteInElectron: APP_DEFAULTS.nameFix.allowOverwriteInElectron,
   allowExternalPathWrite: APP_DEFAULTS.nameFix.allowExternalPathWrite,
   statusBarItems: ["activity", "memory"],
+  sqlCopilotEnabled: false,
+  sqlCopilotProvider: "ollama",
+  sqlCopilotOllamaBaseUrl: "http://127.0.0.1:11434",
+  sqlCopilotMaxOutputTokens: 256,
+  sqlCopilotTemperature: 0.2,
+  sqlCopilotGroundingMaxTables: 12,
+  sqlCopilotGroundingMaxPatterns: 8,
+  sqlCopilotGroundingMaxValueProfiles: 8,
+  sqlCopilotRequestTimeoutMs: 45000,
 } as const;
 
 export function createDefaultDdlSettings() {
@@ -88,6 +97,9 @@ export function createDefaultDdlSettings() {
     downloadPath: undefined,
     excelReadPath: undefined,
     customHeaderTemplate: undefined,
+    sqlCopilotOllamaModel: undefined,
+    sqlCopilotLlamaCliPath: undefined,
+    sqlCopilotLlamaModelPath: undefined,
     hideSheetsWithoutDefinitions: DEFAULT_DDL_SETTINGS_VALUES.hideSheetsWithoutDefinitions,
     statusBarItems: [...DEFAULT_DDL_SETTINGS_VALUES.statusBarItems],
   };

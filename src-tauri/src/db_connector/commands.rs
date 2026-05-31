@@ -23,7 +23,9 @@ use super::{
   DbDataDiffDetailResponse, DbDataDiffPreviewRequest, DbDataDiffPreviewResponse, DbDriver,
   DbDiscoveredEndpoint, DbObjectInspectionRequest, DbObjectInspectionResponse, DbPoolRegistry, DbQueryColumn,
   DbQueryPagingMode, DbQueryRow, DbSchemaDiffResult, DbSchemaListResponse, DbSchemaSnapshot,
-  ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
+  DbSqlCopilotProbeRequest, DbSqlCopilotProbeResponse, DbSqlCopilotRuntimeState,
+  DbSqlCopilotRuntimeStatusRequest, ExportRowsRequest, ExportRowsResponse, ExportRowsScope,
+  sql_copilot::SqlCopilotRuntimeRegistry,
 };
 use crate::storage;
 
@@ -623,4 +625,22 @@ pub async fn db_background_job_list(
   request: DbBackgroundJobListRequest,
 ) -> Result<DbBackgroundJobListResponse, String> {
   super::data_apply::db_background_job_list(&app, request).await
+}
+
+#[tauri::command]
+pub async fn db_sql_copilot_runtime_state(
+  app: AppHandle,
+  runtime_registry: State<'_, Arc<SqlCopilotRuntimeRegistry>>,
+  request: DbSqlCopilotRuntimeStatusRequest,
+) -> Result<DbSqlCopilotRuntimeState, String> {
+  super::sql_copilot::db_sql_copilot_runtime_state(&app, runtime_registry.inner(), request).await
+}
+
+#[tauri::command]
+pub async fn db_sql_copilot_probe(
+  app: AppHandle,
+  runtime_registry: State<'_, Arc<SqlCopilotRuntimeRegistry>>,
+  request: DbSqlCopilotProbeRequest,
+) -> Result<DbSqlCopilotProbeResponse, String> {
+  super::sql_copilot::db_sql_copilot_probe(&app, runtime_registry.inner(), request).await
 }

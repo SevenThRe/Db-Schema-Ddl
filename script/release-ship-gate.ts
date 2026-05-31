@@ -25,7 +25,7 @@ const LATE_HARDENING_VERIFICATION_PATH = path.join(
 );
 
 const POST_RELEASE_BACKLOG = [
-  "Data Sync / Job Center still need dedicated runtime proof before promotion beyond Preview.",
+  "Data Sync still needs dedicated runtime proof before promotion beyond Preview.",
 ] as const;
 
 function readJson<T>(filePath: string): T {
@@ -126,6 +126,34 @@ function pickLatestByGeneratedAt<T extends { artifact: { generatedAt: string } }
     (left, right) =>
       timestampOrMin(right.artifact.generatedAt) - timestampOrMin(left.artifact.generatedAt),
   )[0]!;
+}
+
+export function collectReleaseVerificationArtifacts(cwd = process.cwd()) {
+  const artifactDir = path.join(cwd, "artifacts", "release-verification");
+  const packagedCandidates = listJsonArtifacts(artifactDir)
+    .map((filePath) => ({
+      path: filePath,
+      artifact: tryParsePackagedSmoke(filePath),
+    }))
+    .filter((entry): entry is { path: string; artifact: DesktopSmokeArtifact } => entry.artifact !== null);
+  const liveArtifacts = listJsonArtifacts(artifactDir)
+    .map((filePath) => ({
+      path: filePath,
+      artifact: tryParseLiveArtifact(filePath),
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is { path: string; artifact: WorkbenchLiveVerificationArtifact } =>
+        entry.artifact !== null,
+    );
+
+  return {
+    artifactDir,
+    packagedCandidates,
+    liveArtifacts,
+    lateHardening: readLateHardeningVerification(cwd),
+  };
 }
 
 function readLateHardeningVerification(cwd = process.cwd()): LateHardeningVerificationArtifact | null {
@@ -481,29 +509,13 @@ export function evaluateReleaseShipGate(input: {
 }
 
 function writeShipGate(cwd = process.cwd()) {
-  const artifactDir = path.join(cwd, "artifacts", "release-verification");
-  const packagedCandidates = listJsonArtifacts(artifactDir)
-    .map((filePath) => ({
-      path: filePath,
-      artifact: tryParsePackagedSmoke(filePath),
-    }))
-    .filter((entry): entry is { path: string; artifact: DesktopSmokeArtifact } => entry.artifact !== null);
-  const liveArtifacts = listJsonArtifacts(artifactDir)
-    .map((filePath) => ({
-      path: filePath,
-      artifact: tryParseLiveArtifact(filePath),
-    }))
-    .filter(
-      (
-        entry,
-      ): entry is { path: string; artifact: WorkbenchLiveVerificationArtifact } =>
-        entry.artifact !== null,
-    );
+  const { artifactDir, packagedCandidates, liveArtifacts, lateHardening } =
+    collectReleaseVerificationArtifacts(cwd);
 
   const shipGate = evaluateReleaseShipGate({
     packagedSmoke: pickLatestByGeneratedAt(packagedCandidates),
     liveArtifacts,
-    lateHardening: readLateHardeningVerification(cwd),
+    lateHardening,
   });
 
   const checklist = shipGate.releaseExitChecklist!;

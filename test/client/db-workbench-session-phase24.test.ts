@@ -6,6 +6,9 @@ import {
   loadSessionForConnection,
   saveSessionForConnection,
 } from "../../client/src/components/extensions/db-workbench/workbench-session.ts";
+import {
+  hydrateConnectionSession,
+} from "../../client/src/components/extensions/db-workbench/workbench-session-hydration.ts";
 
 const ROOT = process.cwd();
 
@@ -107,11 +110,48 @@ test("inspect pane falls back to results when no inspection target is stored", (
   });
 });
 
+test("session hydration normalizes tabs to the active connection and repairs active tab", () => {
+  withWindowStorage(() => {
+    saveSessionForConnection("conn-a", {
+      tabs: [
+        {
+          id: "tab-1",
+          label: "Restored",
+          sql: "SELECT * FROM users;",
+          connectionId: "stale-connection",
+        },
+      ],
+      activeTabId: "missing-tab",
+      selectedJobId: "job-1",
+    });
+
+    const hydrated = hydrateConnectionSession("conn-a");
+
+    assert.equal(hydrated.tabs.length, 1);
+    assert.equal(hydrated.tabs[0]?.connectionId, "conn-a");
+    assert.equal(hydrated.activeTabId, "tab-1");
+    assert.equal(hydrated.selectedJobId, "job-1");
+  });
+});
+
 test("db connector shell contains explicit recovery notice for missing remembered connection", async () => {
+  const shell = await read(
+    "client/src/components/extensions/db-workbench/DbConnectorWorkspaceShell.tsx",
+  );
   const workspace = await read(
     "client/src/components/extensions/DbConnectorWorkspace.tsx",
   );
+  const controller = await read(
+    "client/src/components/extensions/db-workbench/use-db-connector-workspace-controller.ts",
+  );
+  const runtimeEffects = await read(
+    "client/src/components/extensions/db-workbench/use-db-connector-workspace-runtime-effects.ts",
+  );
 
-  assert.match(workspace, /Connection recovery/);
-  assert.match(workspace, /未能恢复上次活动连接/);
+  assert.match(workspace, /useDbConnectorWorkspaceController/);
+  assert.match(controller, /resumeRecoveryNotice/);
+  assert.match(controller, /useDbConnectorWorkspaceRuntimeEffects/);
+  assert.match(shell, /Connection recovery/);
+  assert.match(runtimeEffects, /db_workbench_recovery_classified/);
+  assert.match(runtimeEffects, /未能恢复上次活动连接/);
 });

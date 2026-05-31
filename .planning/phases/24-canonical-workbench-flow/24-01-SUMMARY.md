@@ -18,6 +18,7 @@ key-files:
   modified:
     - client/src/components/extensions/DbConnectorWorkspace.tsx
     - client/src/components/extensions/db-workbench/WorkbenchLayout.tsx
+requirements-completed: [FLOW-01, FLOW-02]
 completed: 2026-04-12T15:30:00+08:00
 ---
 

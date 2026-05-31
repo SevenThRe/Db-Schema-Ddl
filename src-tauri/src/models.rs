@@ -253,6 +253,21 @@ pub struct DdlSettings {
   pub name_fix_max_batch_concurrency: i64,
   pub allow_overwrite_in_electron: bool,
   pub allow_external_path_write: bool,
+  pub sql_copilot_enabled: bool,
+  pub sql_copilot_provider: String,
+  pub sql_copilot_ollama_base_url: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub sql_copilot_ollama_model: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub sql_copilot_llama_cli_path: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub sql_copilot_llama_model_path: Option<String>,
+  pub sql_copilot_max_output_tokens: i64,
+  pub sql_copilot_temperature: f64,
+  pub sql_copilot_grounding_max_tables: i64,
+  pub sql_copilot_grounding_max_patterns: i64,
+  pub sql_copilot_grounding_max_value_profiles: i64,
+  pub sql_copilot_request_timeout_ms: i64,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub ddl_import_template_preference: Option<String>,
 }
@@ -303,6 +318,18 @@ impl Default for DdlSettings {
       name_fix_max_batch_concurrency: 4,
       allow_overwrite_in_electron: true,
       allow_external_path_write: false,
+      sql_copilot_enabled: false,
+      sql_copilot_provider: "ollama".into(),
+      sql_copilot_ollama_base_url: "http://127.0.0.1:11434".into(),
+      sql_copilot_ollama_model: None,
+      sql_copilot_llama_cli_path: None,
+      sql_copilot_llama_model_path: None,
+      sql_copilot_max_output_tokens: 256,
+      sql_copilot_temperature: 0.2,
+      sql_copilot_grounding_max_tables: 12,
+      sql_copilot_grounding_max_patterns: 8,
+      sql_copilot_grounding_max_value_profiles: 8,
+      sql_copilot_request_timeout_ms: 45_000,
       ddl_import_template_preference: None,
     }
   }

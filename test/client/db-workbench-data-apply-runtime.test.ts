@@ -2,9 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildDataApplyExecuteRequest,
   buildDataApplyNotification,
+  formatDataApplyExecuteError,
+  getDataApplyJobPollDelayMs,
+  getDataApplyJobRetryDelayMs,
   isDataApplyJobActive,
   mergeDataApplyExecutionDetail,
+  validateDataApplyExecutionReadiness,
 } from "../../client/src/components/extensions/db-workbench/data-apply-runtime";
 
 test("data apply active status only keeps pending and running jobs polling", () => {
@@ -14,6 +19,10 @@ test("data apply active status only keeps pending and running jobs polling", () 
   assert.equal(isDataApplyJobActive("partial"), false);
   assert.equal(isDataApplyJobActive("failed"), false);
   assert.equal(isDataApplyJobActive(null), false);
+  assert.equal(getDataApplyJobPollDelayMs("pending"), 1500);
+  assert.equal(getDataApplyJobPollDelayMs("running"), 1500);
+  assert.equal(getDataApplyJobPollDelayMs("completed"), null);
+  assert.equal(getDataApplyJobRetryDelayMs(), 3000);
 });
 
 test("data apply notification copy is centralized by status", () => {
@@ -48,6 +57,85 @@ test("data apply notification copy is centralized by status", () => {
     description: "The apply transaction did not fully commit. Review job detail for failure context.",
     variant: "destructive",
   });
+});
+
+test("data apply execute runtime validates readiness and builds backend request", () => {
+  const selection = {
+    tableName: "users",
+    rowKey: { id: 1 },
+    action: "update" as const,
+  };
+  const diffPreview = {
+    compareId: "compare-1",
+    sourceConnectionId: "source-1",
+    targetConnectionId: "target-1",
+    targetSnapshotHash: "target-hash",
+    createdAt: "2026-05-31T00:00:00.000Z",
+    expiresAt: "2026-05-31T01:00:00.000Z",
+    tableSummaries: [],
+    statusCounts: { insert: 1, update: 0, delete: 0, unchanged: 0 },
+    blockers: [],
+  };
+  const applyPreview = {
+    compareId: "compare-1",
+    targetSnapshotHash: "target-hash",
+    currentTargetSnapshotHash: "target-current",
+    statusCounts: { insert: 1, update: 0, delete: 0, unchanged: 0 },
+    sqlPreviewLines: [],
+    previewTruncated: false,
+    blockers: [],
+    executable: true,
+  };
+
+  assert.equal(
+    validateDataApplyExecutionReadiness({
+      diffPreview: null,
+      applyPreview,
+      selections: [selection],
+    }),
+    "Run compare preview and apply preview before execute.",
+  );
+  assert.equal(
+    validateDataApplyExecutionReadiness({
+      diffPreview,
+      applyPreview,
+      selections: [],
+    }),
+    "No row actions are selected for apply execution.",
+  );
+  assert.equal(
+    validateDataApplyExecutionReadiness({
+      diffPreview,
+      applyPreview,
+      selections: [selection],
+    }),
+    null,
+  );
+
+  assert.deepEqual(
+    buildDataApplyExecuteRequest({
+      diffPreview,
+      applyPreview,
+      sourceConnectionId: "source-1",
+      targetConnectionId: "target-1",
+      selections: [selection],
+      deleteWarningThreshold: 500,
+      confirmUnsafeDelete: true,
+      targetDatabaseConfirmation: " prod_db ",
+    }),
+    {
+      compareId: "compare-1",
+      sourceConnectionId: "source-1",
+      targetConnectionId: "target-1",
+      targetSnapshotHash: "target-hash",
+      currentTargetSnapshotHash: "target-current",
+      selections: [selection],
+      deleteWarningThreshold: 500,
+      confirmUnsafeDelete: true,
+      targetDatabaseConfirmation: "prod_db",
+    },
+  );
+  assert.equal(formatDataApplyExecuteError(new Error("apply failed")), "apply failed");
 });
 
 test("data apply execute responses merge matching job detail without losing snapshot fallback", () => {

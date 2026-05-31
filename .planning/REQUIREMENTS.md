@@ -14,11 +14,11 @@ Turn DB Workbench from a capable prototype into a publishable daily-use desktop 
 
 ### Category: Credential & Runtime Safety (SAFE)
 
-- [ ] **SAFE-01**: User credentials are stored using OS-backed secure storage or an equivalently protected local mechanism instead of plaintext app settings.
-- [ ] **SAFE-02**: Existing saved connections have a safe migration path so upgrades do not silently lose access or keep plaintext secrets without explicit operator knowledge.
-- [ ] **SAFE-03**: Read-only connections block all mutating statements and side-effecting runtime paths, including export/apply re-execution paths, in Rust command handlers.
-- [ ] **SAFE-04**: Dangerous or destructive actions require consistent confirmation behavior and explicit operator-visible outcome messages across execute, export, edit, and sync flows.
-- [ ] **SAFE-05**: Workbench UI labels and runtime behavior stay semantically aligned so "current page", "loaded rows", stop-on-error, cancel, and similar controls never promise behavior different from what actually runs.
+- [x] **SAFE-01**: User credentials are stored using OS-backed secure storage or an equivalently protected local mechanism instead of plaintext app settings.
+- [x] **SAFE-02**: Existing saved connections have a safe migration path so upgrades do not silently lose access or keep plaintext secrets without explicit operator knowledge.
+- [x] **SAFE-03**: Read-only connections block all mutating statements and side-effecting runtime paths, including export/apply re-execution paths, in Rust command handlers.
+- [x] **SAFE-04**: Dangerous or destructive actions require consistent confirmation behavior and explicit operator-visible outcome messages across execute, export, edit, and sync flows.
+- [x] **SAFE-05**: Workbench UI labels and runtime behavior stay semantically aligned so "current page", "loaded rows", stop-on-error, cancel, and similar controls never promise behavior different from what actually runs.
 
 ### Category: Canonical Product Workflow (FLOW)
 
@@ -87,4 +87,4 @@ Turn DB Workbench from a capable prototype into a publishable daily-use desktop 
 ---
 
 *Requirements defined: 2026-04-11*
-*Last updated: 2026-04-12 after implementing Phase 26 verification infrastructure and packaged smoke evidence*
+*Last updated: 2026-04-18 after milestone audit sync and Phase 28 evidence reconciliation*

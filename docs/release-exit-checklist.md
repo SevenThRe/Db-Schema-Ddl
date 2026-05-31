@@ -31,7 +31,9 @@ Run these in order:
 ```powershell
 npm run verify:desktop:preflight
 npm run verify:desktop:smoke:packaged
+npm run verify:desktop:live:prereq -- --driver=mysql --connection-string="mysql://USER:PASSWORD@HOST:3306/DB"
 npm run verify:desktop:live -- --driver=mysql --connection-name="local mysql"
+npm run verify:desktop:live:prereq -- --driver=postgres --connection-string="postgres://USER:PASSWORD@HOST:5432/DB"
 npm run verify:desktop:live -- --driver=postgres --connection-name="local postgres"
 npm run verify:desktop:ship-gate
 ```
@@ -40,6 +42,7 @@ Why this order matters:
 
 - preflight confirms the verification seam still exists
 - packaged smoke defines the current installer candidate
+- prereq probe helps catch bootstrap parse or TCP reachability problems before the full Tauri live run
 - live verification must be newer than that packaged smoke run
 - ship gate aggregates everything into one release-exit decision
 
@@ -72,7 +75,7 @@ The release-exit checklist also keeps explicit non-blocking backlog items so the
 
 Current post-release backlog:
 
-- `Data Sync / Job Center` still need dedicated runtime proof before promotion beyond `Preview`
+- `Data Sync` still needs dedicated runtime proof before promotion beyond `Preview`
 
 ## Artifact outputs
 
@@ -83,3 +86,7 @@ The ship gate writes:
 - `ship-gate-*.json`
 
 Use the checklist Markdown for human review and the JSON artifacts for regression tests or automation.
+
+For the current `v1.8` blocker handoff and exact rerun sequence, see:
+
+- `.planning/phases/32-close-live-release-verification-and-ship-gate-evidence/32-LIVE-EVIDENCE-HANDOFF.md`

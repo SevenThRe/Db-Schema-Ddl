@@ -17,6 +17,8 @@ total_requirements: 15
 - 🚧 **v1.8 Release-Grade DB Workbench** - active phases 23-28, 31-32
 - 🧭 **v1.9 Premium Capability Parity** - planned phases 29-30, 33-42
 - ✅ **v2.0 Installable Extension Platform** - Phases 43-48 complete (implemented 2026-04-18)
+- 🧠 **v2.1 SQL Intelligence And AI Assistance** - Phases 49-53 complete
+- ✅ **v2.2 DB Workbench Product-Truth Convergence** - Phases 54-56 complete (implemented 2026-04-18)
 
 ## Milestone Goal
 
@@ -36,7 +38,7 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 - [x] **Phase 25: Deep Inspection Coverage** - Expand explorer and definition coverage so daily object inspection is credible beyond toy schemas (completed 2026-04-12)
 - [ ] **Phase 26: Release Candidate Verification** - Prove the packaged product against live MySQL/PostgreSQL workflows and enforce a real ship gate
 - [x] **Phase 27: Job Center And Execution History** - Turn long-running sync, verification, and export work into a first-class job surface with history and replay context (completed 2026-04-12)
-- [ ] **Phase 28: Advanced Data Editing And Review Workflows** - Push grid editing from safe single-table changes toward reviewable, higher-throughput daily operator workflows
+- [x] **Phase 28: Advanced Data Editing And Review Workflows** - Push grid editing from safe single-table changes toward reviewable, higher-throughput daily operator workflows (completed 2026-04-18)
 - [x] **Phase 31: DB Workbench Runtime And Sync Hardening** - Make sync compare/apply behavior truthful to the selected source and target connections, and expose the runtime key/filter contract operators need to compare real tables safely (completed 2026-04-15)
 - [ ] **Phase 32: Close Live Release Verification And Ship-Gate Evidence** - Package final live evidence, late hardening proof, and explicit ship-or-no-ship criteria into one release-exit gate (implementation landed 2026-04-17; current release-exit checklist remains blocked on live DB proof)
 
@@ -108,6 +110,10 @@ Turn DB Workbench from a capable internal-style operator surface into a publisha
 **Plans**: 28-01, 28-02
 **UI hint**: yes
 
+Plans:
+- [x] 28-01 Delete staging, mixed review, and single-row guardrails
+- [x] 28-02 Insert-row drafting and mixed insert/update/delete review
+
 ### Phase 31: DB Workbench Runtime And Sync Hardening
 **Goal**: Make sync compare/apply behavior truthful to the selected source and target connections, and expose the runtime key/filter contract operators need to compare real tables safely
 **Requirements**: TBD
@@ -129,10 +135,13 @@ Plans:
   1. Live verification, packaged smoke, and late hardening evidence are linked from one release-exit checklist tied to the current installer build
   2. Remaining issues are explicitly classified as ship blockers versus post-release backlog, with no ambiguous "probably good enough" state
   3. The product cannot be called publishable until this evidence package is current and passes the release-exit review
-**Plans**: 32-01
+**Plans**: 4/4 plans complete
 
 Plans:
 - [x] 32-01 Release-exit evidence consolidation and publish gate (implemented 2026-04-17; current checklist blocked on live evidence)
+- [x] 32-02 Live-verification prereq probe and blocker handoff clarity (completed 2026-05-10)
+- [x] 32-03 Prereq-artifact exclusion regression guard for ship-gate evidence discovery (completed 2026-05-10)
+- [x] 32-04 Prereq-probe exit semantics for unattended verification workflows (completed 2026-05-10)
 
 ---
 
@@ -422,6 +431,156 @@ Plans:
 
 ---
 
+## Planned Later Milestone: v2.1 SQL Intelligence And AI Assistance
+
+**Goal:** Raise SQL authoring from a strong schema-aware editor into a professional DB IDE surface with AST-grade semantics, privacy-preserving query memory, and optional local-AI assistance that never bypasses runtime safety.
+
+**Planned phases:**
+- [x] **Phase 49: Build AST-Backed SQL Context Engine And Scope Resolution** - Replace heuristic cursor interpretation with a reusable semantic context engine (completed 2026-04-18)
+- [x] **Phase 50: Add FK-Aware SQL Semantics, Join Completion, And Semantic Diagnostics** - Deepen authoring quality with driver-aware ranking, join synthesis, and editor diagnostics (completed 2026-04-18)
+- [x] **Phase 51: Build Query Memory, Schema/Value Grounding, And Adaptive SQL Ranking** - Add privacy-preserving operator memory and grounding for smarter suggestions (completed 2026-04-18)
+- [x] **Phase 52: Add Local Model Runtime And Offline SQL Copilot Infrastructure** - Support grounded on-device SQL assistance without depending on remote model calls (completed 2026-04-18)
+- [x] **Phase 53: Ship Natural-Language-To-SQL And Generated SQL Completion With Safety Gates** - Turn local assistance into reviewable generated SQL workflows with evaluation evidence (completed 2026-04-18)
+
+### Phase 49: Build AST-Backed SQL Context Engine And Scope Resolution
+**Goal**: Replace heuristic token scanning with a reusable semantic engine that understands SQL statement structure, cursor position, and nested scope well enough for professional editing workflows
+**Requirements**:
+  - typed local runtime settings and host contracts for provider selection, model configuration, timeout, and grounding limits
+  - Tauri runtime discovery and grounded local probe execution for supported offline providers
+  - reachable workbench UI for runtime state, prompt preview, warmup, and advisory probe output
+**Depends on**: Phase 29 and Phase 48
+**Success Criteria** (what must be TRUE):
+  1. Cursor context resolves the active statement, clause, and syntactic slot for common MySQL/PostgreSQL `SELECT`, `INSERT`, `UPDATE`, `DELETE`, and `WITH` forms
+  2. Alias, CTE, and nested subquery scopes produce accurate relation and projected-column visibility without relying on regex-only inference
+  3. Monaco completion, hover, and future diagnostic consumers all read from one shared semantic-context contract instead of each reparsing SQL ad hoc
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 49-01 Shared SQL semantic context engine, Monaco hover wiring, and regression coverage
+
+### Phase 50: Add FK-Aware SQL Semantics, Join Completion, And Semantic Diagnostics
+**Goal**: Lift SQL editing from basic semantic completion to professional IDE-grade guidance with driver-aware catalogs, join synthesis, and preflight diagnostics
+**Requirements**: TBD
+**Depends on**: Phase 49
+**Success Criteria** (what must be TRUE):
+  1. MySQL and PostgreSQL builtins, types, system schemas, and relation catalogs rank according to the active clause and driver
+  2. FK-aware join suggestions can synthesize candidate tables and `ON` clauses from the real schema graph while respecting aliases and current scope
+  3. Unknown tables or columns, alias breaks, incompatible clause usage, and risky DML patterns surface as lightweight editor diagnostics before execution
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 50-01 Driver-aware SQL catalogs, ON-clause FK join guidance, and semantic diagnostics
+
+### Phase 51: Build Query Memory, Schema/Value Grounding, And Adaptive SQL Ranking
+**Goal**: Add a privacy-preserving memory layer so SQL assistance can learn from operator history and safe database summaries without storing raw sensitive result sets by default
+**Requirements**:
+  - Persist accepted SQL completions, reusable query patterns, and safe value-shape summaries per connection
+  - Use this memory to bias SQL ranking without replacing the Phase 49-50 semantic engine
+  - Expose inspect, retention, and clear controls from the reachable workbench UI
+**Depends on**: Phase 50
+**Success Criteria** (what must be TRUE):
+  1. The workbench records reusable query history, accepted suggestions, and repeatable statement patterns per connection or schema with explicit retention controls
+  2. Assistance can rank or draft suggestions using schema graph context, column or value summaries, and approved history rather than raw prompt guessing alone
+  3. Operators can inspect, clear, and scope this memory so personalization never turns into opaque hidden state
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 51-01 SQL memory, schema or value grounding, adaptive ranking, and operator controls
+
+### Phase 52: Add Local Model Runtime And Offline SQL Copilot Infrastructure
+**Goal**: Provide a first-class local model runtime and prompt-grounding layer so SQL assistance can run in privacy-preserving offline mode inside the desktop product
+**Requirements**:
+  - typed local runtime settings and host contracts for provider selection, model configuration, timeout, and grounding limits
+  - Tauri runtime discovery and grounded local probe execution for supported offline providers
+  - reachable workbench UI for runtime state, prompt preview, warmup, and advisory probe output
+**Depends on**: Phase 51
+**Success Criteria** (what must be TRUE):
+  1. The desktop runtime can discover, configure, and execute supported on-device SQL-assist models with explicit availability, warmup, and resource state
+  2. Prompt orchestration grounds the model in current schema context, safe memory summaries, and driver rules instead of freeform ungrounded chat
+  3. Model failure, latency, and privacy posture are visible enough that AI assistance never masquerades as deterministic engine behavior
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 52-01 Local runtime contracts, grounded prompt packaging, workbench copilot dialog, and regression coverage
+
+### Phase 53: Ship Natural-Language-To-SQL And Generated SQL Completion With Safety Gates
+**Goal**: Turn the local copilot foundation into reviewable generated-SQL workflows that speed authoring without bypassing the workbench's existing safety model
+**Requirements**:
+  - generated prompt packaging must declare a structured draft contract and mode-specific behavior for natural language, refinement, and partial completion
+  - accepted drafts must reuse the existing workbench execution safety path instead of bypassing parameter review, script review, dangerous-SQL confirmation, or readonly guards
+  - representative evaluation artifacts must exist for MySQL and PostgreSQL generation quality
+**Depends on**: Phase 52
+**Success Criteria** (what must be TRUE):
+  1. Operators can request SQL from natural language, inline intent prompts, or partial statements and receive grounded draft SQL with visible assumptions
+  2. Generated SQL flows through parameter review, dangerous-SQL confirmation, readonly guards, and explicit human acceptance before execution
+  3. Evaluation artifacts track generation quality, hallucination rate, and safety regressions against representative MySQL and PostgreSQL tasks
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 53-01 Generated SQL prompt packaging, review flow, safety-gated execution reuse, and evaluation evidence
+
+**Capability blocks:**
+- AST and semantic SQL foundation: `Phases 49-50`
+- Query memory and grounding: `Phase 51`
+- Local model runtime and generated SQL assistance: `Phases 52-53`
+
+---
+
+## Completed Later Milestone: v2.2 DB Workbench Product-Truth Convergence
+
+**Goal:** Close the remaining operator-coherence defects that no longer block `v1.8` publishability, but still leave the DB workbench broader, noisier, and less self-verifying than an operator-grade desktop tool should be.
+
+**Completed phases:**
+- [x] **Phase 54: Consolidate Canonical DB Workbench Surfaces And Legacy Retirement Criteria** - Reduced migration ambiguity by classifying canonical, support, and compatibility surfaces (completed 2026-04-18)
+- [x] **Phase 55: Audit And Normalize Product-Truth Labels, Comments, And Preview Semantics** - Aligned shipped runtime behavior and operator-facing language across UI, docs, and comments (completed 2026-04-18)
+- [x] **Phase 56: Anchor Release Verification To One End-To-End Operator Journey** - Centered release evidence on one real daily-driver flow and the current extension-shell seam (completed 2026-04-18)
+
+### Phase 54: Consolidate Canonical DB Workbench Surfaces And Legacy Retirement Criteria
+**Goal**: Turn the current coexistence of primary and legacy DB paths into an explicit compatibility strategy with one canonical operator route and clear retirement criteria
+**Requirements**: CONV-01, CONV-02, CONV-03
+**Depends on**: Phase 48 and Phase 53
+**Success Criteria** (what must be TRUE):
+  1. Every reachable DB workbench entry point is classified as canonical, compatibility-only, or retirement-targeted, with no ambiguous "maybe primary" surface left in shell navigation or extension handoff flows
+  2. Operators can complete the main daily path through one canonical workbench route while any still-needed legacy surface declares its narrower purpose and limitations explicitly
+  3. Remaining legacy surfaces have explicit removal criteria, regression checks, and parity proof so future retirement work is gated by truth instead of intuition
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 54-01 Canonical surface inventory, compatibility labeling, and retirement handoff
+
+### Phase 55: Audit And Normalize Product-Truth Labels, Comments, And Preview Semantics
+**Goal**: Make UI copy, runtime status labels, comments, and agent-facing guidance reflect what is actually shipped so the product does not undersell or misdescribe live DB workflows
+**Requirements**: TRUTH-01, TRUTH-02, TRUTH-03
+**Depends on**: Phase 54
+**Success Criteria** (what must be TRUE):
+  1. Operator-facing labels, badges, empty states, warnings, and secondary copy distinguish supported workflows, compatibility-only paths, and true preview surfaces consistently across the workbench
+  2. Comments, docs, and agent guidance that influence future implementation no longer describe reachable runtime flows as merely planned, preview-only, or migration-era scaffolding when the behavior is already live
+  3. Review or regression checks exist for high-signal product-truth language so stale preview wording is less likely to re-enter core DB workbench surfaces
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 55-01 Product-truth copy, preview-semantics normalization, and wording regression guardrails
+
+### Phase 56: Anchor Release Verification To One End-To-End Operator Journey
+**Goal**: Keep release confidence tied to one packaged daily-driver workflow so ship-gate evidence reflects the real operator journey instead of disconnected feature slices
+**Requirements**: VERIFY-01, VERIFY-02, VERIFY-03
+**Depends on**: Phase 32 and Phase 55
+**Success Criteria** (what must be TRUE):
+  1. One reproducible packaged-desktop journey such as connect -> inspect -> query -> edit/apply -> audit is defined per supported driver and exercised with evidence against the current release candidate
+  2. Release gates fail when this journey regresses at any critical step, even if isolated unit or feature tests still pass
+  3. Evidence artifacts tie the tested installer build, environment assumptions, blocker classification, and final go/no-go decision back to the same operator journey
+**Plans**: 1/1 plans complete
+
+Plans:
+- [x] 56-01 Canonical operator-journey contract, extension-shell preflight seam, and journey-first gate coverage
+
+**Capability blocks:**
+- Canonical surface convergence and legacy retirement: `Phase 54`
+- Product-truth language and preview-semantics cleanup: `Phase 55`
+- Journey-first release verification cohesion: `Phase 56`
+
+---
+
 ## Progress (v1.8 Active Milestone)
 
 | Phase | Plans Complete | Status | Completed |
@@ -431,7 +590,7 @@ Plans:
 | 25. Deep Inspection Coverage | 1/1 | Complete | 2026-04-12 |
 | 26. Release Candidate Verification | 2/2 | Blocked on live evidence | - |
 | 27. Job Center And Execution History | 2/2 | Complete | 2026-04-12 |
-| 28. Advanced Data Editing And Review Workflows | 1/2 | In progress | - |
+| 28. Advanced Data Editing And Review Workflows | 2/2 | Complete | 2026-04-18 |
 | 31. DB Workbench Runtime And Sync Hardening | 1/1 | Complete | 2026-04-15 |
 | 32. Close Live Release Verification And Ship-Gate Evidence | 1/1 | Blocked on current live evidence | - |
 
@@ -471,4 +630,4 @@ Plans:
 
 ---
 
-*Last updated: 2026-04-18 after completing Phase 46 and advancing the installable extension platform to Phase 47*
+*Last updated: 2026-05-10 after adding Phase 32 prereq-probe follow-up for live release-evidence handoff*

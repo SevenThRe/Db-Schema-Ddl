@@ -62,13 +62,46 @@ test("shared connection-string parser still accepts env-style inputs for verific
 
 test("live verification completion checkpoint is still emitted from WorkbenchLayout terminal paths", async () => {
   const workbench = await read(
-    "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
+    "client/src/components/extensions/db-workbench/use-workbench-layout-shell-model.ts",
+  );
+  const liveEffects = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-live-verification-effects.ts",
+  );
+  const layoutEffects = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-effects.ts",
+  );
+  const sessionRunner = await read(
+    "client/src/components/extensions/db-workbench/live-verification-session-runner.ts",
   );
 
-  assert.match(workbench, /const complete = async \(/);
-  assert.match(workbench, /await emitLiveVerificationCompleted\(/);
+  assert.match(workbench, /useWorkbenchLayoutEffects\(\{/);
+  assert.match(layoutEffects, /useWorkbenchLiveVerificationEffects\(\{/);
+  assert.match(liveEffects, /startWorkbenchLiveVerificationSession\(\{/);
+  assert.match(sessionRunner, /const complete = async \(/);
+  assert.match(sessionRunner, /await input\.emitCompletedCheckpoint\(/);
   assert.doesNotMatch(
-    workbench,
-    /const complete = async \([\s\S]*?if \(cancelled\) return;[\s\S]*?await emitLiveVerificationCompleted\(/,
+    sessionRunner,
+    /const complete = async \([\s\S]*?if \(cancelled\) return;[\s\S]*?await input\.emitCompletedCheckpoint\(/,
   );
+});
+
+test("db connector runtime hook owns live verification connection bootstrap", async () => {
+  const workspace = await read(
+    "client/src/components/extensions/DbConnectorWorkspace.tsx",
+  );
+  const controller = await read(
+    "client/src/components/extensions/db-workbench/use-db-connector-workspace-controller.ts",
+  );
+  const runtimeEffects = await read(
+    "client/src/components/extensions/db-workbench/use-db-connector-workspace-runtime-effects.ts",
+  );
+
+  assert.match(workspace, /useDbConnectorWorkspaceController\(\{/);
+  assert.match(controller, /useDbConnectorWorkspaceRuntimeEffects\(\{/);
+  assert.match(runtimeEffects, /buildReleaseVerificationBootstrapConfig/);
+  assert.match(runtimeEffects, /resolveLiveVerificationConnection/);
+  assert.match(runtimeEffects, /saveConnectionAsync\(normalizeConnectionConfig\(liveVerificationBootstrap\.config\)\)/);
+  assert.match(runtimeEffects, /emitLiveVerificationFlow\("connect", "failed"/);
+  assert.doesNotMatch(workspace, /buildReleaseVerificationBootstrapConfig/);
+  assert.doesNotMatch(workspace, /emitLiveVerificationCompleted/);
 });

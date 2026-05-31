@@ -14,9 +14,10 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - ✅ Milestone `v1.6` (Reliability & Validation Hardening) shipped on `2026-04-11`
 - ✅ Phase 19 in `v1.7` closed trusted execution continuity gaps around supported non-pageable statements and recent-query continuity
 - ✅ Query/runtime/export/schema behavior now has a substantially stronger trust baseline than the original workbench prototype
-- ⚠️ DB Workbench is still not release-grade because credential storage, workflow coherence, inspection depth, and live verification standards are not yet at publishable quality
+- ⚠️ DB Workbench is still not release-grade because current packaged-candidate live MySQL/PostgreSQL evidence is not yet complete
 - ⚠️ Remaining `v1.7` productivity work is deferred until release blockers are closed
 - 🗂️ Post-gate parity scope is now tracked as planned `v1.9`, and extension-platform work is tracked as planned `v2.0`
+- 🧠 SQL intelligence and local-AI assistance are now tracked in `v2.1`, with Phases 49-53 complete
 
 ## Current Milestone: v1.8 Release-Grade DB Workbench
 
@@ -45,13 +46,12 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - ✓ Safe single-table editing loop is complete with SQL preview and transactional commit/rollback (`v1.5`)
 - ✓ Live DB-to-DB compare/sync is first-class with snapshot guards and execution auditability (`v1.5`)
 - ✓ Supported non-pageable statements now execute visibly without pretending paging exists, and recent-query continuity survives restart (`v1.7` Phase 19)
+- ✓ Saved DB credentials now migrate to secure local storage with runtime safety guardrails (`v1.8` Phase 23)
+- ✓ One canonical DB workspace path, explicit recovery behavior, and deeper object inspection are now part of the release-grade baseline (`v1.8` Phases 24-25)
+- ✓ Reviewable mixed insert/update/delete grid-edit flow is now complete for the scoped release-grade editing goal (`v1.8` Phase 28)
 
 ### Active
 
-- [ ] Credentials must be stored and migrated in a release-safe way instead of relying on plaintext local storage
-- [ ] Workbench runtime semantics must remain consistent across execute/export/edit/cancel/readonly paths
-- [ ] Operators must have one canonical product workflow rather than split modern-vs-legacy entry paths
-- [ ] Object inspection depth must cover the daily database surfaces expected from a publishable tool
 - [ ] Release readiness must be backed by live verification evidence, not only source-level tests
 
 ### Future Requirements
@@ -61,6 +61,7 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - Broader personalization and operator-memory niceties after publishability blockers are closed
 - Explicit parity backlog for secure transport, enterprise auth, ER graphing, visual schema design, and richer SQL asset workflows after the release gate is credible
 - Extension-platform backlog for activity bar hosting, installable frontend bundles, and optional DB workbench packaging after the core DB product is stable
+- Professional SQL-intelligence backlog for generated SQL assistance, evaluation, and deeper local-AI workflows after the extension shell is stable
 
 ### Out of Scope
 
@@ -68,6 +69,7 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 - Expansion beyond MySQL/PostgreSQL to Oracle/SQL Server/team features before the core product is publishable
 - Visual schema authoring or drag-to-design ER editing as part of the minimum release claim while release blockers remain open
 - Installable extension-platform extraction as part of the minimum release claim while the core DB workbench milestone is still open
+- LLM-driven SQL generation or local model packaging as part of the minimum release claim while release blockers remain open
 - Productivity niceties that do not materially improve product readiness
 
 ## Context
@@ -99,6 +101,7 @@ Users can stay inside one trustworthy workbench to inspect, query, edit, compare
 | Put live MySQL/PostgreSQL ship verification into milestone scope | Static tests are not enough evidence for a release-grade DB operator tool | Accepted |
 | Decompose the remaining parity backlog into explicit follow-on milestones | The product now needs a visible map for what still separates it from premium desktop DB tools after the release gate | Accepted |
 | Keep extension-platform ambitions outside the active release milestone | Shell modularity is strategically important, but it should not blur the publishability bar for the DB workbench itself | Accepted |
+| Track SQL intelligence and local AI assistance as an explicit post-platform milestone | Professional SQL authoring and generated assistance need a visible roadmap without pretending they belong to the release gate | Accepted |
 
 ## Evolution
 
@@ -118,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-17 after splitting release-grade scope from planned parity and extension-platform milestones*
+*Last updated: 2026-04-18 after completing Phase 53 and closing the v2.1 SQL-intelligence track*

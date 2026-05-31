@@ -17,17 +17,22 @@ test("release gate docs map primary surfaces to real verification assets", async
     ".specify/specs/020-db-workbench-productization/contracts/runtime-reliability-gates.md",
   );
   const releaseDoc = await read("docs/release-candidate-verification.md");
+  const journeyDoc = await read("docs/db-workbench-operator-journey.md");
 
   assert.match(contract, /Connection Center \(`Primary Support`\)/);
   assert.match(contract, /SQL Daily-Driver \(`Primary`\)/);
   assert.match(contract, /Results \/ Inspection \/ Edit Guardrails \(`Primary`\)/);
+  assert.match(contract, /operator journey/i);
   assert.match(contract, /test\/client\/db-workbench-runtime-phase26\.test\.ts/);
   assert.match(contract, /npm run verify:desktop:live -- --driver=mysql/);
-  assert.match(contract, /Data Sync \/ Job Center/);
+  assert.match(contract, /### Data Sync/);
   assert.match(releaseDoc, /Connection Center/);
   assert.match(releaseDoc, /SQL Daily Driver/);
-  assert.match(releaseDoc, /Data Sync \/ Job Center/);
+  assert.match(releaseDoc, /db-workbench-operator-journey\.md/);
+  assert.match(releaseDoc, /Data Sync/);
   assert.match(releaseDoc, /stale-response protection/);
+  assert.match(journeyDoc, /Connection Center -> Database Workspace/);
+  assert.match(journeyDoc, /guarded edit\/apply -> audit/);
 
   for (const flowId of liveVerificationFlowIdSchema.options) {
     assert.match(releaseDoc, new RegExp(flowId));

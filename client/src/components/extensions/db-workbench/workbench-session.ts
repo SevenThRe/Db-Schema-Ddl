@@ -1,4 +1,19 @@
-import type { DbObjectKind } from "@shared/schema";
+import type { DbObjectKind, QueryExecutionResponse } from "@shared/schema";
+import {
+  clearSqlWorkbenchMemory,
+  createEmptySqlWorkbenchMemory,
+  recordAcceptedSuggestion,
+  recordQueryPattern,
+  recordValueProfiles,
+  sanitizeSqlWorkbenchMemory,
+  updateSqlWorkbenchMemoryRetention,
+  type SqlMemoryAcceptedSuggestionInput,
+  type SqlMemoryClearOptions,
+  type SqlMemoryQueryPatternInput,
+  type SqlMemoryRetentionSettings,
+  type SqlMemoryValueProfileInput,
+  type SqlWorkbenchMemoryState,
+} from "./sql-memory";
 
 export const MAX_RECENT_QUERIES = 30;
 export const MAX_SNIPPETS = 50;
@@ -56,6 +71,7 @@ export interface WorkbenchSessionState {
   activeTabId: string | null;
   recentQueries: string[];
   queryHistory: QueryRunHistoryEntry[];
+  sqlMemory: SqlWorkbenchMemoryState;
   snippets: SavedSqlSnippet[];
   selectedTableName: string | null;
   activeSchema: string | null;
@@ -72,6 +88,7 @@ const EMPTY_SESSION: WorkbenchSessionState = {
   activeTabId: null,
   recentQueries: [],
   queryHistory: [],
+  sqlMemory: createEmptySqlWorkbenchMemory(),
   snippets: [],
   selectedTableName: null,
   activeSchema: null,
@@ -316,6 +333,7 @@ function sanitizeSession(
     activeTabId,
     recentQueries: uniqueRecentQueries(session.recentQueries),
     queryHistory: sanitizeQueryHistory(session.queryHistory),
+    sqlMemory: sanitizeSqlWorkbenchMemory(session.sqlMemory),
     snippets: sanitizeSnippets(session.snippets),
     selectedTableName,
     activeSchema: sanitizeOptionalText(session.activeSchema),
@@ -389,7 +407,7 @@ export function appendRecentQuery(
   });
 }
 
-interface RecordQueryRunInput {
+export interface RecordQueryRunInput {
   sql: string;
   mode: QueryRunMode;
   status: QueryRunStatus;
@@ -400,6 +418,40 @@ interface RecordQueryRunInput {
   failedStatementIndex?: number | null;
   errorMessage?: string | null;
   executedAt?: string;
+  memoryPattern?: SqlMemoryQueryPatternInput | null;
+  valueProfiles?: SqlMemoryValueProfileInput[];
+}
+
+export function buildQueryRunEntryFromResponse(
+  sql: string,
+  mode: QueryRunMode,
+  response: QueryExecutionResponse,
+): RecordQueryRunInput {
+  const failedIndexes = response.batches.flatMap((batch, index) =>
+    batch.error ? [index] : [],
+  );
+  const status: QueryRunStatus =
+    failedIndexes.length === 0
+      ? "success"
+      : failedIndexes.length === response.batches.length
+        ? "failed"
+        : "partial";
+
+  return {
+    sql,
+    mode,
+    status,
+    statementCount: Math.max(1, response.batches.length),
+    returnedRows: response.batches.reduce((sum, batch) => sum + batch.returnedRows, 0),
+    affectedRows: response.batches.reduce(
+      (sum, batch) => sum + (typeof batch.affectedRows === "number" ? batch.affectedRows : 0),
+      0,
+    ),
+    elapsedMs: response.batches.reduce((sum, batch) => sum + batch.elapsedMs, 0),
+    failedStatementIndex: failedIndexes[0] ?? null,
+    errorMessage:
+      failedIndexes.length > 0 ? response.batches[failedIndexes[0]]?.error ?? null : null,
+  };
 }
 
 export function recordQueryRun(
@@ -435,10 +487,18 @@ export function recordQueryRun(
     errorMessage: sanitizeOptionalText(run.errorMessage),
   };
 
+  const nextMemory = recordValueProfiles(
+    run.memoryPattern
+      ? recordQueryPattern(session.sqlMemory, run.memoryPattern)
+      : session.sqlMemory,
+    run.valueProfiles ?? [],
+  );
+
   return saveSessionForConnection(connectionId, {
     ...session,
     recentQueries: nextRecentQueries,
     queryHistory: [nextHistoryEntry, ...session.queryHistory].slice(0, MAX_QUERY_HISTORY),
+    sqlMemory: nextMemory,
   });
 }
 
@@ -495,5 +555,38 @@ export function deleteSnippet(
   return saveSessionForConnection(connectionId, {
     ...session,
     snippets: session.snippets.filter((snippet) => snippet.id !== normalizedSnippetId),
+  });
+}
+
+export function recordAcceptedSqlSuggestion(
+  connectionId: string,
+  suggestion: SqlMemoryAcceptedSuggestionInput,
+): WorkbenchSessionState {
+  const session = loadSessionForConnection(connectionId);
+  return saveSessionForConnection(connectionId, {
+    ...session,
+    sqlMemory: recordAcceptedSuggestion(session.sqlMemory, suggestion),
+  });
+}
+
+export function updateSqlMemoryRetentionSettings(
+  connectionId: string,
+  patch: Partial<SqlMemoryRetentionSettings>,
+): WorkbenchSessionState {
+  const session = loadSessionForConnection(connectionId);
+  return saveSessionForConnection(connectionId, {
+    ...session,
+    sqlMemory: updateSqlWorkbenchMemoryRetention(session.sqlMemory, patch),
+  });
+}
+
+export function clearSqlMemory(
+  connectionId: string,
+  options: SqlMemoryClearOptions = {},
+): WorkbenchSessionState {
+  const session = loadSessionForConnection(connectionId);
+  return saveSessionForConnection(connectionId, {
+    ...session,
+    sqlMemory: clearSqlWorkbenchMemory(session.sqlMemory, options),
   });
 }

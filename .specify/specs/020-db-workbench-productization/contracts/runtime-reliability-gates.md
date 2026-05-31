@@ -10,6 +10,8 @@ Reliability is part of the product, not a post-feature cleanup track.
 
 A workbench surface cannot be treated as `Primary` unless its runtime behavior is bounded, recoverable, and observable.
 
+Release verification should stay anchored to one operator journey through the current extension shell, not to stale direct-route assumptions.
+
 ## Gate Categories
 
 ### G1. Reachability And Wiring
@@ -85,7 +87,7 @@ No `Primary` or `Primary With Constraints` surface is release-ready unless all o
   - `npm run verify:desktop:preflight`
 - runtime truth being gated:
   - canonical shell route still exposes Connection Center instead of duplicating product entry points
-  - dashboard/workbench smoke hooks still point at the real `db-connector` workspace
+  - dashboard still resolves the official DB tool through the extension shell and verification auto-open seam
 
 ### SQL Daily-Driver (`Primary`)
 
@@ -118,9 +120,9 @@ No `Primary` or `Primary With Constraints` surface is release-ready unless all o
 
 ## Preview Promotion Criteria
 
-### Data Sync / Job Center
+### Data Sync
 
-These surfaces remain `Preview` until all of the following are true:
+This surface remains `Preview` until all of the following are true:
 
 - preview labeling can be removed without hiding material operator risk
 - release verification includes a real runtime flow for compare, preview apply, execute, and job reopen
@@ -136,3 +138,11 @@ A `Preview` surface may only be promoted to `Primary` when:
 - product docs no longer need cautionary scope language
 
 Until then, the feature may stay shipped, but it must remain labeled as preview.
+
+## Operator Journey Anchor
+
+The current release gate is anchored to this operator journey:
+
+`Connection Center -> Database Workspace -> inspect/query -> guarded edit/apply -> audit`
+
+Every primary-surface gate should map back to one stage in that journey.

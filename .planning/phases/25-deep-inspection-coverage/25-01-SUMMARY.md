@@ -17,6 +17,7 @@ key-files:
     - test/client/db-workbench-inspection-phase25.test.ts
   modified:
     - client/src/components/extensions/db-workbench/ObjectInspectionPane.tsx
+requirements-completed: [INSP-01, INSP-02, INSP-03]
 completed: 2026-04-12T16:00:00+08:00
 ---
 

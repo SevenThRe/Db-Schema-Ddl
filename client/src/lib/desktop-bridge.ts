@@ -56,6 +56,10 @@ import type {
   DbDataApplyJobDetailResponse,
   DbBackgroundJobListRequest,
   DbBackgroundJobListResponse,
+  DbSqlCopilotRuntimeStatusRequest,
+  DbSqlCopilotRuntimeState,
+  DbSqlCopilotProbeRequest,
+  DbSqlCopilotProbeResponse,
 } from "@shared/schema";
 import { getDesktopCapabilities } from "@/lib/desktop-capabilities";
 
@@ -491,6 +495,16 @@ export const desktopBridge = {
       request: DbBackgroundJobListRequest,
     ): Promise<DbBackgroundJobListResponse> {
       return await invoke<DbBackgroundJobListResponse>("db_background_job_list", { request });
+    },
+    async getSqlCopilotRuntimeState(
+      request: DbSqlCopilotRuntimeStatusRequest = {},
+    ): Promise<DbSqlCopilotRuntimeState> {
+      return await invoke<DbSqlCopilotRuntimeState>("db_sql_copilot_runtime_state", { request });
+    },
+    async runSqlCopilotProbe(
+      request: DbSqlCopilotProbeRequest,
+    ): Promise<DbSqlCopilotProbeResponse> {
+      return await invoke<DbSqlCopilotProbeResponse>("db_sql_copilot_probe", { request });
     },
   },
 

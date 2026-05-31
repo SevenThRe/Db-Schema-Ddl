@@ -142,6 +142,41 @@ export type WorkbenchLiveVerificationArtifact = z.infer<
   typeof workbenchLiveVerificationArtifactSchema
 >;
 
+export const liveVerificationPrereqCheckIdSchema = z.enum([
+  "connection-input",
+  "bootstrap-config",
+  "tcp-connectivity",
+]);
+
+export const liveVerificationPrereqCheckSchema = z.object({
+  id: liveVerificationPrereqCheckIdSchema,
+  status: desktopSmokeStepStatusSchema,
+  note: z.string().optional(),
+});
+
+export type LiveVerificationPrereqCheck = z.infer<
+  typeof liveVerificationPrereqCheckSchema
+>;
+
+export const workbenchLiveVerificationPrereqArtifactSchema = z.object({
+  artifactVersion: z.enum(["v1"]).default("v1"),
+  runId: z.string().min(1),
+  generatedAt: z.string().min(1),
+  driver: z.enum(["mysql", "postgres"]),
+  connectionLabel: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+  port: z.number().int().positive().optional(),
+  database: z.string().min(1).optional(),
+  readonly: z.boolean().optional(),
+  checks: z.array(liveVerificationPrereqCheckSchema).min(1),
+  summary: desktopSmokeSummarySchema,
+  notes: z.array(z.string().min(1)).default([]),
+});
+
+export type WorkbenchLiveVerificationPrereqArtifact = z.infer<
+  typeof workbenchLiveVerificationPrereqArtifactSchema
+>;
+
 export const releaseDecisionSchema = z.enum(["ready", "blocked"]);
 
 export const releaseShipGateFindingSchema = z.object({

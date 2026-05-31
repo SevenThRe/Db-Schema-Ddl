@@ -1,0 +1,26 @@
+{
+  "unit_id": "52-discuss",
+  "phase": "52",
+  "unit": "discuss",
+  "status": "completed",
+  "next_command": "/gsd:discuss-phase 53",
+  "updated_at": "2026-04-18T12:52:30.871Z",
+  "started_at": "2026-04-18T11:55:13.341Z",
+  "completed_at": "2026-04-18T12:52:30.871Z",
+  "failed_at": null,
+  "interrupted_at": null,
+  "attempts": 1,
+  "transitions": [
+    {
+      "event": "unit_started",
+      "status": "running",
+      "at": "2026-04-18T11:55:13.341Z"
+    },
+    {
+      "event": "unit_completed",
+      "status": "completed",
+      "at": "2026-04-18T12:52:30.871Z"
+    }
+  ],
+  "notes": null
+}

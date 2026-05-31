@@ -13,8 +13,17 @@ test("sql daily-driver copy keeps library, review, and session cues in one coher
   const workbench = await read(
     "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
   );
+  const operatorChrome = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchOperatorChrome.tsx",
+  );
+  const workspaceBodyProps = await read(
+    "client/src/components/extensions/db-workbench/workbench-layout-workspace-body-props.ts",
+  );
   const editor = await read(
     "client/src/components/extensions/db-workbench/SqlEditorPane.tsx",
+  );
+  const editorToolbar = await read(
+    "client/src/components/extensions/db-workbench/sql-editor-toolbar.tsx",
   );
   const library = await read(
     "client/src/components/extensions/db-workbench/SqlLibraryDialog.tsx",
@@ -28,13 +37,19 @@ test("sql daily-driver copy keeps library, review, and session cues in one coher
   const resultGrid = await read(
     "client/src/components/extensions/db-workbench/ResultGridPane.tsx",
   );
+  const resultGridChrome = await read(
+    "client/src/components/extensions/db-workbench/result-grid-pane-chrome.tsx",
+  );
   const design = await read("docs/db-workbench-extension-design.md");
 
-  assert.match(workbench, /queryHistory\.length/);
-  assert.match(workbench, /connection-scoped tabs,\s*drafts, history, and snippets/);
-  assert.match(editor, /Run statement/);
-  assert.match(editor, /Run script \(Shift\+Ctrl\+Enter\) and continue through the execution-review path/);
-  assert.match(editor, /Stop active query or export/);
+  assert.match(workbench, /<WorkbenchWorkspaceBody \{\.\.\.workspaceBodyProps\} \/>/);
+  assert.match(workspaceBodyProps, /queryHistoryCount: input\.queryHistory\.length/);
+  assert.match(operatorChrome, /connection-scoped tabs,\s*drafts, history, snippets,/);
+  assert.match(operatorChrome, /SQL memory, and local copilot prompt grounding/);
+  assert.match(editor, /<SqlEditorToolbar/);
+  assert.match(editorToolbar, /Run statement/);
+  assert.match(editorToolbar, /Run script \(Shift\+Ctrl\+Enter\) and continue through the execution-review path/);
+  assert.match(editorToolbar, /Stop active query or export/);
   assert.match(library, /connection-scoped workspace/);
   assert.match(library, /opening a new tab in this connection session/);
   assert.match(scriptReview, /standardized execution-review path/);
@@ -44,7 +59,8 @@ test("sql daily-driver copy keeps library, review, and session cues in one coher
     parameterReview,
     /dangerous-SQL confirmation and\s+execution flow for the active connection/,
   );
-  assert.match(resultGrid, /connection-scoped session/);
+  assert.match(resultGrid, /<ResultGridEmptyState/);
+  assert.match(resultGridChrome, /connection-scoped session/);
   assert.match(design, /tabs、drafts、history、snippets 是连接级会话资产/);
   assert.match(design, /script review、parameter review、dangerous SQL review 属于统一执行复核路径/);
 });

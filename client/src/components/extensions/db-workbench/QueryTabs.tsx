@@ -1,200 +1,24 @@
-// DB 工作台 — クエリタブ管理
+// DB Workbench query tab bar.
 //
-// 複数クエリタブのライフサイクル管理（追加・削除・リネーム・切替）と
-// バージョン管理付き localStorage 永続化を提供する。
-// バージョン不一致 / JSON 破損時は警告ログ出力 + デフォルトタブにリセット（防御的回復）。
+// Renders tab selection, keyboard navigation, close, add, and inline rename.
+// Storage and migration live in query-tabs-storage.ts.
 
 import { useState, useRef } from "react";
 import { X, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import {
-  loadSessionForConnection,
-  saveSessionForConnection,
-} from "./workbench-session";
+import type { QueryTab } from "./query-tabs-storage";
 
-// ──────────────────────────────────────────────
-// localStorage 定数（バージョン管理）
-// ──────────────────────────────────────────────
-
-/** バージョン変更時は古いキーのデータを自動削除し新キーで再初期化する */
-export const QUERY_TABS_STORAGE_VERSION = "v1";
-
-/** バージョン付き localStorage キー */
-export const QUERY_TABS_STORAGE_KEY = `db-workbench:query-tabs:${QUERY_TABS_STORAGE_VERSION}`;
-
-/** 旧バージョン（バージョン無し）のキー — 追加の後方互換用 */
-const PRE_VERSION_STORAGE_KEY = "db-workbench:query-tabs";
-
-// ──────────────────────────────────────────────
-// 型定義
-// ──────────────────────────────────────────────
-
-/** 単一クエリタブの状態 */
-export interface QueryTab {
-  id: string;
-  label: string;
-  sql: string;
-  /** タブを作成した接続 ID（null = 接続未割当） */
-  connectionId: string | null;
-}
-
-// ──────────────────────────────────────────────
-// localStorage ヘルパー関数
-// ──────────────────────────────────────────────
-
-/** デフォルトタブを生成する（常に新 UUID を使用） */
-export function defaultTab(connectionId: string | null = null): QueryTab {
-  return {
-    id: crypto.randomUUID(),
-    label: "Query 1",
-    sql: "",
-    connectionId,
-  };
-}
-
-function withConnectionId(tab: QueryTab, connectionId: string): QueryTab {
-  return { ...tab, connectionId };
-}
-
-function migrateLegacyTabsForConnection(connectionId: string): QueryTab[] | null {
-  if (typeof window === "undefined") return null;
-
-  const versionedRaw = window.localStorage.getItem(QUERY_TABS_STORAGE_KEY);
-  if (versionedRaw) {
-    const migrated = parseTabsFromJson(versionedRaw, "legacy-v1").map((tab) =>
-      withConnectionId(tab, connectionId),
-    );
-    window.localStorage.removeItem(QUERY_TABS_STORAGE_KEY);
-    window.localStorage.removeItem(PRE_VERSION_STORAGE_KEY);
-    return migrated;
-  }
-
-  const preVersionRaw = window.localStorage.getItem(PRE_VERSION_STORAGE_KEY);
-  if (preVersionRaw) {
-    const migrated = parseTabsFromJson(preVersionRaw, "legacy-pre-v1").map((tab) =>
-      withConnectionId(tab, connectionId),
-    );
-    window.localStorage.removeItem(PRE_VERSION_STORAGE_KEY);
-    return migrated;
-  }
-
-  return null;
-}
-
-export function loadTabsForConnection(connectionId: string): QueryTab[] {
-  const normalizedConnectionId = connectionId.trim();
-  if (!normalizedConnectionId) {
-    return [defaultTab()];
-  }
-
-  const session = loadSessionForConnection(normalizedConnectionId);
-  if (session.tabs.length > 0) {
-    return session.tabs.map((tab) => withConnectionId(tab, normalizedConnectionId));
-  }
-
-  // 既存セッションがない場合のみ、旧 v1 キーを 1 回読み込んで移行する。
-  const migratedTabs = migrateLegacyTabsForConnection(normalizedConnectionId);
-  if (migratedTabs && migratedTabs.length > 0) {
-    saveSessionForConnection(normalizedConnectionId, {
-      ...session,
-      tabs: migratedTabs,
-      activeTabId: migratedTabs[0]?.id ?? null,
-    });
-    return migratedTabs;
-  }
-
-  return [defaultTab(normalizedConnectionId)];
-}
-
-export function saveTabsForConnection(connectionId: string, tabs: QueryTab[]): void {
-  const normalizedConnectionId = connectionId.trim();
-  if (!normalizedConnectionId) return;
-
-  const session = loadSessionForConnection(normalizedConnectionId);
-  const normalizedTabs = (tabs.length > 0
-    ? tabs
-    : [defaultTab(normalizedConnectionId)]
-  ).map((tab) => withConnectionId(tab, normalizedConnectionId));
-
-  const activeTabId =
-    typeof session.activeTabId === "string" &&
-    normalizedTabs.some((tab) => tab.id === session.activeTabId)
-      ? session.activeTabId
-      : normalizedTabs[0]?.id ?? null;
-
-  saveSessionForConnection(normalizedConnectionId, {
-    ...session,
-    tabs: normalizedTabs,
-    activeTabId,
-  });
-}
-
-/**
- * localStorage からタブ状態を読み込む。
- *
- * 読み込みロジック:
- * 現在は後方互換のために "global" 接続として v2 セッションへ読み込む。
- */
-export function loadTabs(): QueryTab[] {
-  return loadTabsForConnection("global");
-}
-
-/**
- * JSON 文字列を QueryTab[] としてパースし、スキーマ検証を行う。
- * parse エラーまたはスキーマ不一致の場合は警告ログ + デフォルトタブを返す。
- */
-function parseTabsFromJson(
-  raw: string,
-  source: "legacy-v1" | "legacy-pre-v1",
-): QueryTab[] {
-  try {
-    const parsed = JSON.parse(raw);
-
-    // 必須フィールド検証（スキーマ不一致時はリセット）
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      console.warn(`[QueryTabs] ${source} storage: invalid structure, resetting to default`);
-      return [defaultTab()];
-    }
-
-    const validated: QueryTab[] = [];
-    for (const item of parsed) {
-      if (
-        typeof item !== "object" ||
-        item === null ||
-        typeof item.id !== "string" ||
-        typeof item.label !== "string" ||
-        typeof item.sql !== "string"
-      ) {
-        // 不正なエントリをスキップして警告
-        console.warn("[QueryTabs] Skipping corrupted tab entry:", item);
-        continue;
-      }
-      validated.push({
-        id: item.id,
-        label: item.label,
-        sql: item.sql,
-        connectionId: typeof item.connectionId === "string" ? item.connectionId : null,
-      });
-    }
-
-    if (validated.length === 0) {
-      console.warn(`[QueryTabs] ${source} storage: all entries corrupted, resetting to default`);
-      return [defaultTab()];
-    }
-
-    return validated;
-  } catch (err) {
-    // JSON.parse エラー
-    console.warn(`[QueryTabs] Failed to parse ${source} storage, resetting to default:`, err);
-    return [defaultTab()];
-  }
-}
-
-/** タブ状態を localStorage にバージョン付きキーで保存する */
-export function saveTabs(tabs: QueryTab[]): void {
-  saveTabsForConnection("global", tabs);
-}
+export type { QueryTab } from "./query-tabs-storage";
+export {
+  QUERY_TABS_STORAGE_KEY,
+  QUERY_TABS_STORAGE_VERSION,
+  defaultTab,
+  loadTabs,
+  loadTabsForConnection,
+  saveTabs,
+  saveTabsForConnection,
+} from "./query-tabs-storage";
 
 // ──────────────────────────────────────────────
 // プロップ型

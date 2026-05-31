@@ -3,34 +3,34 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Release-Grade DB Workbench
 status: in_progress
-stopped_at: Phase 48 completed; all extension-platform phases are done and lifecycle review is next
-last_updated: "2026-04-18T19:35:00+08:00"
+stopped_at: Phase 32-04 completed; v1.8 is still blocked on external live DB evidence, and prereq-probe failures now stop unattended workflows earlier without blocking advisory warnings
+last_updated: "2026-05-10T21:18:00+08:00"
 progress:
-  total_phases: 26
-  completed_phases: 13
-  total_plans: 39
-  completed_plans: 28
+  total_phases: 34
+  completed_phases: 20
+  total_plans: 42
+  completed_plans: 32
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-17)
+See: `.planning/PROJECT.md` (updated 2026-04-18)
 
 **Core value:** Users can stay inside one trustworthy workbench to inspect, query, edit, compare, and safely synchronize real databases without bouncing to a second DB tool.
-**Current focus:** Extension-platform phases complete — lifecycle review pending
+**Current focus:** v1.8 release evidence is still the publishability blocker; the latest local improvements are the prereq probe, clearer handoff, strict helper-artifact exclusion, and unattended-friendly prereq exit semantics
 
 ## Current Position
 
-Phase: Extension-platform phases complete
-Plan: Audit / complete / cleanup decision pending
+Phase: v1.8 release-evidence closure with v2.2 defect-closure follow-up complete
+Plan: Capture MySQL/PostgreSQL live verification for v1.8, using the prereq probe for early failure detection while keeping ship-gate evidence discovery fail-closed and automation-friendly
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 22
+- Total plans completed: 32
 - Average duration: not tracked yet
 - Total execution time: not tracked yet
 
@@ -44,21 +44,27 @@ Plan: Audit / complete / cleanup decision pending
 | 25 | 1 | Complete | not tracked |
 | 26 | 2 | Implemented, evidence blocked | not tracked |
 | 27 | 2 | Complete | not tracked |
-| 28 | 1 | In progress | not tracked |
+| 28 | 2 | Complete | not tracked |
 | 29-30, 33-42 | 0 | Planned for v1.9 | - |
 | 31 | 1 | Complete | not tracked |
-| 32 | 1 | Implemented, release exit blocked | - |
+| 32 | 4 | Implemented, release exit blocked | - |
 | 43 | 2 | Complete | not tracked |
 | 44 | 3 | Complete | not tracked |
 | 45 | 3 | Complete | not tracked |
 | 46 | 3 | Complete | not tracked |
 | 47 | 3 | Complete | not tracked |
 | 48 | 3 | Complete | not tracked |
+| 49 | 1 | Complete | not tracked |
+| 50 | 1 | Complete | not tracked |
+| 51 | 1 | Complete | not tracked |
+| 52 | 1 | Complete | not tracked |
+| 53 | 1 | Complete | not tracked |
+| 54-56 | 3 | Complete | not tracked |
 
 **Recent Trend:**
 
-- Last completed plan: 48-03
-- Trend: host leakage cleanup is now done; the remaining question is whether lifecycle closure should target the same milestone metadata or stop for manual milestone alignment
+- Last completed plan: 32-04
+- Trend: the release blocker is still live DB evidence, but the maintainer path is now lower-friction, more fail-closed, and better suited for unattended runs through prereq probing, helper-artifact exclusion, and explicit exit semantics
 
 ## Accumulated Context
 
@@ -80,6 +86,11 @@ Plan: Audit / complete / cleanup decision pending
 - External extensions can now declare `uiBundle` and `runtimeViewId`, while builtin surfaces still resolve through local registries
 - The shell now mounts external runtime UI through Tauri asset protocol plus a sandboxed iframe, with explicit `ready/missing/invalid/incompatible` bundle states
 - Phase 46 made `db-connector` a UI-only installable package path, added iframe host RPC, and removed host-bundled DB workbench registration from the main build
+- Phase 49 establishes a shared SQL semantic-context module so completion and hover can evolve from the same statement-analysis contract
+- Phase 50 builds on that semantic context with driver-aware SQL catalogs, ON-clause FK guidance, and semantic diagnostics before execution
+- Phase 51 makes SQL memory explicit and operator-visible: accepted completions, grounded query patterns, and safe value-shape summaries now drive adaptive ranking with inspect and clear controls
+- Phase 52 keeps the local SQL copilot strictly offline-first, with explicit provider state, grounded prompt packaging, and advisory probe output instead of implicit generated-SQL claims
+- The remaining workbench coherence defects should be queued as explicit follow-up phases, not silently folded back into the current `v1.8` publishability bar
 
 ### Roadmap Evolution
 
@@ -105,15 +116,37 @@ Plan: Audit / complete / cleanup decision pending
 - Phase 46 added: Extract DB Workbench into an on-demand installable extension package
 - Phase 47 added: Build extension install, activation, and persisted enablement flow
 - Phase 48 added: Migrate non-core DB surfaces behind extension boundaries and retire host leakage
+- Phase 49 added: Build AST-backed SQL context engine and scope resolution
+- Phase 50 added: Add FK-aware SQL semantics, join completion, and semantic diagnostics
+- Phase 51 added: Build query memory, schema/value grounding, and adaptive SQL ranking
+- Phase 52 added: Add local model runtime and offline SQL copilot infrastructure
+- Phase 53 added: Ship natural-language-to-SQL and generated SQL completion with safety gates
+- Phase 54 added: Consolidate canonical DB workbench surfaces and legacy retirement criteria
+- Phase 55 added: Audit and normalize product-truth labels, comments, and preview semantics
+- Phase 56 added: Anchor release verification to one end-to-end operator journey
 - Planning cleanup: v1.8 narrowed to release-grade scope; phases 29-30 and 33-42 moved into planned v1.9, while phases 43-48 remain planned for v2.0
+- Planning cleanup: v2.1 now tracks SQL intelligence and local AI assistance in phases 49-53
+- Planning cleanup: v2.2 now tracks post-release workbench convergence, product-truth cleanup, and journey-first verification cohesion in phases 54-56
 - Phase 31 completed: DB Workbench Runtime And Sync Hardening
 - Phase 32 implemented: release-exit checklist and checklist-first ship gate now exist, but the current gate is blocked by live driver evidence
+- Phase 32 follow-up completed: a prereq-only live-verification probe now checks bootstrap parseability and TCP reachability before a full Tauri live run
+- Phase 32 follow-up completed: prereq-only helper artifacts are now explicitly excluded from release ship-gate live-evidence discovery by regression test coverage
+- Phase 32 follow-up completed: prereq-only failure states now produce a non-zero exit path suitable for unattended verification workflows
 - Phase 43 completed: canonical extension shell contributions and frontend resolver normalization now exist for the future installable extension host
 - Phase 44 completed: visible extension shell chrome, DB connector adoption, and regression guards now exist ahead of runtime bundle loading work
 - Phase 45 completed: runtime UI bundle declaration, backend validation, asset-protocol loading, and iframe shell fallbacks now exist for future external extension packages
 - Phase 46 completed: db-connector now builds as a separate installable extension package, the shell no longer hardcodes it as builtin, and runtime UI now talks to host APIs through explicit messaging
 - Phase 47 completed: the reachable extension center now installs and manages official tools, lifecycle persistence no longer strands disabled-state residue, and the dashboard recovers cleanly when active extensions disappear
 - Phase 48 completed: host route state no longer leaks panel ids, DDL import now hands users to the DB tool boundary explicitly, and boundary docs now match the canonical shell contract
+- Phase 49 completed: the workbench editor now has a shared semantic context engine, Monaco hover consumes it, and direct semantic regression tests cover common DML plus `WITH`
+- Phase 50 completed: the editor now exposes driver-aware SQL catalogs, ON-clause FK join suggestions, and semantic diagnostics for high-signal mistakes before execution
+- Phase 51 completed: SQL memory, safe value grounding, adaptive completion ranking, and operator memory controls now exist as a reachable workbench capability
+- Phase 52 completed: the workbench now exposes a local SQL-copilot runtime dialog, grounded prompt packaging, and Tauri-backed offline runtime discovery and probe execution
+- Phase 53 completed: the workbench now supports generated SQL drafts with visible assumptions, acceptance into the editor, safety-gated execution reuse, and evaluation artifacts
+- Phase 54 completed: the DB shell now classifies canonical, support, and compatibility routes explicitly, and retained surfaces are tied to written retirement criteria
+- Phase 55 completed: shipped, compatibility-only, and preview-grade wording now align across current workbench code, high-signal docs, and regression tests
+- Phase 56 completed: release verification now anchors to one extension-shell-aware operator journey, and desktop preflight guards the modern DB entry seam
+- Phase 28 completed: advanced grid-edit flow now covers mixed insert/update/delete review and runtime insert planning for the scoped release-grade editing goal
 
 ### Pending Todos
 
@@ -121,13 +154,14 @@ None yet.
 
 ### Blockers/Concerns
 
-- Extension-platform implementation is complete. Remaining concern: the autonomous lifecycle step still points at milestone metadata that remains centered on the separate v1.8 release track.
+- The remaining blocker for closing v1.8 is external live DB evidence, not additional local feature implementation.
+- Nyquist validation artifacts are still missing for v1.8 milestone phases.
 
 ## Session Continuity
 
-Last session: 2026-04-18 19:35 SGT
-Stopped at: Phase 48 completed with host leakage cleanup, DB-tool handoff cleanup, and final extension-platform regression evidence
-Resume file: .planning/phases/48-migrate-non-core-db-surfaces-behind-extension-boundaries-and-retire-host-leakage/48-VERIFICATION.md
+Last session: 2026-05-10 21:18 SGT
+Stopped at: Phase 32-04 completed with automation-friendly prereq exit semantics
+Resume file: .planning/phases/32-close-live-release-verification-and-ship-gate-evidence/32-VERIFICATION.md
 
 ---
-*Last updated: 2026-04-18 after completing Phase 48 and preparing for lifecycle review*
+*Last updated: 2026-05-10 after adding a Phase 32 prereq-probe follow-up while v1.8 remains blocked on external live DB evidence*

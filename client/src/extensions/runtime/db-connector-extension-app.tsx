@@ -46,6 +46,9 @@ function createRuntimeHostApi(bridge: ReturnType<typeof createExtensionRuntimeBr
       fetchDataApplyJobDetail: (request) =>
         bridge.requestHost("connections.fetchDataApplyJobDetail", request),
       listBackgroundJobs: (request) => bridge.requestHost("connections.listBackgroundJobs", request),
+      getSqlCopilotRuntimeState: (request) =>
+        bridge.requestHost("connections.getSqlCopilotRuntimeState", request),
+      runSqlCopilotProbe: (request) => bridge.requestHost("connections.runSqlCopilotProbe", request),
     },
     statusBar: {
       set: (entry) => {

@@ -40,6 +40,24 @@ export function runDesktopPreflight(cwd = process.cwd()): DesktopPreflightResult
     "extensions",
     "DbConnectorWorkspace.tsx",
   );
+  const workspaceRuntimeEffectsPath = path.join(
+    cwd,
+    "client",
+    "src",
+    "components",
+    "extensions",
+    "db-workbench",
+    "use-db-connector-workspace-runtime-effects.ts",
+  );
+  const workspaceControllerPath = path.join(
+    cwd,
+    "client",
+    "src",
+    "components",
+    "extensions",
+    "db-workbench",
+    "use-db-connector-workspace-controller.ts",
+  );
 
   const pkg = readJson<{ scripts?: Record<string, string> }>(packageJsonPath);
   const tauriConfig = readJson<{
@@ -50,6 +68,8 @@ export function runDesktopPreflight(cwd = process.cwd()): DesktopPreflightResult
   const commandSource = fs.readFileSync(commandsPath, "utf8");
   const dashboardSource = fs.readFileSync(dashboardPath, "utf8");
   const workspaceSource = fs.readFileSync(workspacePath, "utf8");
+  const workspaceRuntimeEffectsSource = fs.readFileSync(workspaceRuntimeEffectsPath, "utf8");
+  const workspaceControllerSource = fs.readFileSync(workspaceControllerPath, "utf8");
 
   const checks: DesktopPreflightCheck[] = [];
 
@@ -93,10 +113,15 @@ export function runDesktopPreflight(cwd = process.cwd()): DesktopPreflightResult
     id: "frontend-smoke-entry",
     ok:
       dashboardSource.includes("readReleaseVerificationConfig") &&
-      dashboardSource.includes('extensionId: "db-connector"') &&
-      workspaceSource.includes("db_workbench_surface_ready") &&
-      workspaceSource.includes("db_workbench_recovery_classified"),
-    message: "Dashboard and DB workspace must emit real Tauri smoke checkpoints for workspace entry and recovery.",
+      dashboardSource.includes("OFFICIAL_EXTENSIONS.DB_CONNECTOR") &&
+      dashboardSource.includes("autoOpenDbWorkbench") &&
+      dashboardSource.includes("ExtensionWorkspaceHost") &&
+      workspaceSource.includes("useDbConnectorWorkspaceController") &&
+      workspaceControllerSource.includes("useDbConnectorWorkspaceRuntimeEffects") &&
+      workspaceRuntimeEffectsSource.includes("db_workbench_surface_ready") &&
+      workspaceRuntimeEffectsSource.includes("db_workbench_recovery_classified"),
+    message:
+      "Dashboard and DB workspace must keep the extension-shell DB entry seam plus workspace recovery checkpoints wired for release verification.",
   });
 
   return {

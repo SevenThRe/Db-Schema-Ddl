@@ -113,6 +113,49 @@ export const ddlSettingsSchema = z.object({
   nameFixMaxBatchConcurrency: z.number().int().min(1).max(16).default(APP_DEFAULTS.nameFix.maxBatchConcurrency),
   allowOverwriteInElectron: z.boolean().default(APP_DEFAULTS.nameFix.allowOverwriteInElectron),
   allowExternalPathWrite: z.boolean().default(APP_DEFAULTS.nameFix.allowExternalPathWrite),
+  sqlCopilotEnabled: z.boolean().default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotEnabled),
+  sqlCopilotProvider: z
+    .enum(["ollama", "llama_cpp_cli"])
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotProvider),
+  sqlCopilotOllamaBaseUrl: z.string().default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotOllamaBaseUrl),
+  sqlCopilotOllamaModel: z.string().optional(),
+  sqlCopilotLlamaCliPath: z.string().optional(),
+  sqlCopilotLlamaModelPath: z.string().optional(),
+  sqlCopilotMaxOutputTokens: z
+    .number()
+    .int()
+    .min(32)
+    .max(4096)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotMaxOutputTokens),
+  sqlCopilotTemperature: z
+    .number()
+    .min(0)
+    .max(2)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotTemperature),
+  sqlCopilotGroundingMaxTables: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotGroundingMaxTables),
+  sqlCopilotGroundingMaxPatterns: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotGroundingMaxPatterns),
+  sqlCopilotGroundingMaxValueProfiles: z
+    .number()
+    .int()
+    .min(0)
+    .max(50)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotGroundingMaxValueProfiles),
+  sqlCopilotRequestTimeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .default(DEFAULT_DDL_SETTINGS_VALUES.sqlCopilotRequestTimeoutMs),
   ddlImportTemplatePreference: workbookTemplateVariantIdSchema.optional(),
 });
 
@@ -1253,6 +1296,93 @@ export interface DbDataApplyJobDetailResponse {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+}
+
+export type DbSqlCopilotProvider = "ollama" | "llama_cpp_cli";
+
+export type DbSqlCopilotAvailability =
+  | "disabled"
+  | "not_configured"
+  | "not_found"
+  | "available"
+  | "error";
+
+export type DbSqlCopilotWarmupState = "idle" | "warming" | "ready" | "failed";
+
+export type DbSqlCopilotResourceState = "unknown" | "ready" | "missing" | "error";
+
+export interface DbSqlCopilotDiscoveredRuntime {
+  provider: DbSqlCopilotProvider;
+  label: string;
+  available: boolean;
+  configured: boolean;
+  availability: DbSqlCopilotAvailability;
+  resourceState: DbSqlCopilotResourceState;
+  executablePath?: string;
+  endpoint?: string;
+  modelId?: string;
+  discoveredModels: string[];
+  message?: string;
+}
+
+export interface DbSqlCopilotRuntimeStatusRequest {
+  refresh?: boolean;
+}
+
+export interface DbSqlCopilotRuntimeState {
+  enabled: boolean;
+  provider: DbSqlCopilotProvider;
+  availability: DbSqlCopilotAvailability;
+  warmupState: DbSqlCopilotWarmupState;
+  privacyMode: "offline_local_only";
+  supportsProbe: boolean;
+  configuredModelId?: string;
+  statusSummary: string;
+  lastLatencyMs?: number;
+  lastProbeAt?: string;
+  lastError?: string;
+  discoveredRuntimes: DbSqlCopilotDiscoveredRuntime[];
+}
+
+export interface DbSqlCopilotPromptSection {
+  title: string;
+  body: string;
+}
+
+export interface DbSqlCopilotGroundingSummary {
+  driver: DbDriver;
+  activeSchema?: string;
+  sectionCount: number;
+  relationCount: number;
+  memoryPatternCount: number;
+  valueProfileCount: number;
+  promptCharCount: number;
+}
+
+export interface DbSqlCopilotPromptPackage {
+  provider: DbSqlCopilotProvider;
+  systemPrompt: string;
+  userPrompt: string;
+  sections: DbSqlCopilotPromptSection[];
+  promptPreview: string;
+  groundingSummary: DbSqlCopilotGroundingSummary;
+}
+
+export interface DbSqlCopilotProbeRequest {
+  promptPackage: DbSqlCopilotPromptPackage;
+  warmupOnly?: boolean;
+}
+
+export interface DbSqlCopilotProbeResponse {
+  provider: DbSqlCopilotProvider;
+  modelId?: string;
+  outputText: string;
+  latencyMs: number;
+  promptCharCount: number;
+  completionCharCount: number;
+  executedAt: string;
+  offline: true;
+  warnings: string[];
 }
 
 // ──────────────────────────────────────────────

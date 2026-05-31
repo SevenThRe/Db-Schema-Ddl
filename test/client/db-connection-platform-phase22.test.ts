@@ -10,24 +10,80 @@ async function read(relativePath: string): Promise<string> {
 }
 
 test("connection form states P0 support scope and keeps unsupported transports out of product claims", async () => {
+  const form = await read(
+    "client/src/components/extensions/db-workbench/ConnectionForm.tsx",
+  );
+  const formSections = await read(
+    "client/src/components/extensions/db-workbench/connection-form-sections.tsx",
+  );
+
+  assert.match(form, /<ConnectionFormSupportScope/);
+  assert.match(form, /<ConnectionStringImportPanel/);
+  assert.match(form, /<ConnectionGovernanceFields/);
+  assert.match(form, /<ConnectionFormTestResult/);
+  assert.match(formSections, /P0 support scope/);
+  assert.match(formSections, /Current build supports direct MySQL \/ PostgreSQL connections with saved-password handling/);
+  assert.match(formSections, /SSH \/ TLS \/ enterprise auth are not product-supported in this build/);
+  assert.match(formSections, /operator controls, not cosmetic metadata/);
+});
+
+test("connection center delegates editing to the extracted connection form", async () => {
   const workspace = await read(
     "client/src/components/extensions/DbConnectorWorkspace.tsx",
   );
+  const workspaceTabs = await read(
+    "client/src/components/extensions/db-workbench/DbConnectorWorkspaceTabs.tsx",
+  );
 
-  assert.match(workspace, /P0 support scope/);
-  assert.match(workspace, /Current build supports direct MySQL \/ PostgreSQL connections with saved-password handling/);
-  assert.match(workspace, /SSH \/ TLS \/ enterprise auth are not product-supported in this build/);
-  assert.match(workspace, /operator controls, not cosmetic metadata/);
+  assert.match(workspace, /<DbConnectorWorkspaceTabs/);
+  assert.match(workspaceTabs, /import \{ ConnectionForm \} from "\.\/ConnectionForm"/);
+  assert.match(workspaceTabs, /<ConnectionForm/);
+  assert.match(workspaceTabs, /connectionState\.saveConnection\(normalizeConnectionConfig\(config\)\)/);
+});
+
+test("connection center delegates discovery filters and grouped list to focused sections", async () => {
+  const center = await read(
+    "client/src/components/extensions/db-workbench/ConnectionCenterView.tsx",
+  );
+  const sections = await read(
+    "client/src/components/extensions/db-workbench/connection-center-sections.tsx",
+  );
+  const localDiscovery = await read(
+    "client/src/components/extensions/db-workbench/connection-center-local-discovery.tsx",
+  );
+  const filterBar = await read(
+    "client/src/components/extensions/db-workbench/connection-center-filter-bar.tsx",
+  );
+  const groupList = await read(
+    "client/src/components/extensions/db-workbench/connection-center-group-list.tsx",
+  );
+
+  assert.match(center, /<ConnectionCenterHeader/);
+  assert.match(center, /<LocalDiscoveryPanel/);
+  assert.match(center, /<ConnectionCenterFilterBar/);
+  assert.match(center, /<ConnectionGroupList/);
+  assert.doesNotMatch(center, /发现的本地数据库/);
+  assert.doesNotMatch(center, /搜索名称、主机、数据库、分组或备注/);
+  assert.doesNotMatch(center, /暂无连接，先添加一个数据库连接来启动工作台/);
+  assert.match(sections, /connection-center-local-discovery/);
+  assert.match(sections, /connection-center-filter-bar/);
+  assert.match(sections, /connection-center-group-list/);
+  assert.match(localDiscovery, /发现的本地数据库/);
+  assert.match(filterBar, /搜索名称、主机、数据库、分组或备注/);
+  assert.match(groupList, /暂无连接，先添加一个数据库连接来启动工作台/);
 });
 
 test("connection center copy explains current supported scope and safety semantics", async () => {
-  const workspace = await read(
-    "client/src/components/extensions/DbConnectorWorkspace.tsx",
+  const header = await read(
+    "client/src/components/extensions/db-workbench/connection-center-header.tsx",
+  );
+  const form = await read(
+    "client/src/components/extensions/db-workbench/connection-form-sections.tsx",
   );
 
-  assert.match(workspace, /当前构建仅承诺 direct MySQL \/ PostgreSQL 连接与安全保存密码/);
-  assert.match(workspace, /SSH \/ TLS \/ 企业认证仍未作为产品能力承诺/);
-  assert.match(workspace, /启用后，工作台会在运行时阻止 DML \/ DDL \/ Data Sync apply/);
+  assert.match(header, /当前构建仅承诺 direct MySQL \/ PostgreSQL 连接与安全保存密码/);
+  assert.match(header, /SSH \/ TLS \/ 企业认证仍未作为产品能力承诺/);
+  assert.match(form, /启用后，工作台会在运行时阻止 DML \/ DDL \/ Data Sync apply/);
 });
 
 test("db workbench design doc records direct-driver scope without overclaiming secure connectivity", async () => {

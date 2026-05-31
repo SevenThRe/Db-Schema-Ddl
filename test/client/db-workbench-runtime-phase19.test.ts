@@ -19,27 +19,107 @@ test("runtime classifies supported non-pageable result sets without dropping row
 });
 
 test("result grid gates load more on paging mode and still shows loaded-row evidence", async () => {
-  const resultGrid = await read(
-    "client/src/components/extensions/db-workbench/ResultGridPane.tsx",
+  const singleBatch = await read(
+    "client/src/components/extensions/db-workbench/result-grid-single-batch.tsx",
+  );
+  const singleBatchRuntime = await read(
+    "client/src/components/extensions/db-workbench/result-grid-single-batch-runtime.ts",
+  );
+  const batchModel = await read(
+    "client/src/components/extensions/db-workbench/result-grid-batch-model.ts",
+  );
+  const statusPanels = await read(
+    "client/src/components/extensions/db-workbench/result-grid-status-panels.tsx",
   );
 
-  assert.match(resultGrid, /const canLoadMore = pagingMode === "offset" && hasMore;/);
-  assert.match(resultGrid, /const footerStatusLabel =/);
-  assert.match(resultGrid, /footerStatusLabel\}\. \{unsupportedPagingText\}/);
+  assert.match(singleBatch, /useResultGridSingleBatchRuntime/);
+  assert.match(singleBatchRuntime, /buildResultGridBatchMetrics\(batch, filteredCount\)/);
+  assert.match(batchModel, /const canLoadMore = batch\.pagingMode === "offset" && batch\.hasMore;/);
+  assert.match(batchModel, /const footerStatusLabel =/);
+  assert.match(singleBatch, /<ResultGridFooter/);
+  assert.match(statusPanels, /footerStatusLabel\}\. \{unsupportedPagingText\}/);
 });
 
 test("recent query context is captured and restored per connection", async () => {
   const sessionStore = await read(
     "client/src/components/extensions/db-workbench/workbench-session.ts",
   );
+  const queryRuntime = await read(
+    "client/src/components/extensions/db-workbench/query-execution-runtime.ts",
+  );
+  const queryRunner = await read(
+    "client/src/components/extensions/db-workbench/query-execution-runner.ts",
+  );
+  const queryExecutionController = await read(
+    "client/src/components/extensions/db-workbench/workbench-query-execution-controller.ts",
+  );
   const workbench = await read(
-    "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
+    "client/src/components/extensions/db-workbench/use-workbench-layout-shell-model.ts",
+  );
+  const queryControllers = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-query-controllers.ts",
+  );
+  const sessionEffects = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-session-effects.ts",
+  );
+  const layoutSessionEffects = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-session-effects.ts",
+  );
+  const layoutEffects = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-effects.ts",
+  );
+  const layoutStateActionInput = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-state-action-input.ts",
+  );
+  const sqlWorkspaceContext = await read(
+    "client/src/components/extensions/db-workbench/workbench-sql-workspace-context.ts",
+  );
+  const contextModels = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-context-models.ts",
+  );
+  const layoutContextModels = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-context-models.ts",
+  );
+  const executionRegistry = await read(
+    "client/src/components/extensions/db-workbench/workbench-execution-action-registry.ts",
+  );
+  const stateActionRegistries = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-state-action-registries.ts",
+  );
+  const executionStateActionsHook = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-execution-state-actions.ts",
+  );
+  const restoreRunner = await read(
+    "client/src/components/extensions/db-workbench/workbench-session-restore-runner.ts",
+  );
+  const controllerGraph = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-controller-graph.ts",
   );
 
   assert.match(sessionStore, /const nextRecentQueries = \[trimmedSql, \.\.\.deduped\]\.slice\(0, MAX_RECENT_QUERIES\);/);
-  assert.match(workbench, /const restored = hydrateConnectionSession\(connection\.id, loadedSession\);/);
-  assert.match(workbench, /setRecentQueries\(restored\.recentQueries\);/);
-  assert.match(workbench, /const updatedSession = recordQueryRun\(/);
-  assert.match(workbench, /setRecentQueries\(updatedSession\.recentQueries\);/);
-  assert.match(workbench, /buildSqlLibraryEntries\(savedSnippets, recentQueries, queryHistory\)/);
+  assert.match(workbench, /useWorkbenchLayoutEffects\(\{/);
+  assert.match(layoutEffects, /useWorkbenchLayoutSessionEffects\(\{/);
+  assert.match(layoutSessionEffects, /hydrateSession: hydrateConnectionSession/);
+  assert.match(sessionEffects, /runWorkbenchConnectionRestore\(\{/);
+  assert.match(restoreRunner, /const restored = input\.hydrateSession\(input\.connection\.id\);/);
+  assert.match(restoreRunner, /actions\.setRecentQueries\(restored\.recentQueries\);/);
+  assert.match(workbench, /useWorkbenchLayoutControllerGraph\(\{/);
+  assert.match(controllerGraph, /useWorkbenchLayoutQueryControllers\(\{/);
+  assert.match(queryControllers, /createWorkbenchQueryExecutionController\(\{/);
+  assert.match(queryExecutionController, /runWorkbenchQueryExecution\(\{/);
+  assert.match(controllerGraph, /useWorkbenchStateActionRegistries\(stateActionRegistriesInput\)/);
+  assert.match(stateActionRegistries, /useWorkbenchExecutionStateActions\(input\)/);
+  assert.match(executionStateActionsHook, /createWorkbenchExecutionStateActions\(\{/);
+  assert.match(executionRegistry, /createQueryExecutionStateActions\(\{/);
+  assert.match(queryExecutionController, /applySuccess: input\.queryExecutionActions\.applySuccess/);
+  assert.match(queryRunner, /recordSuccessfulQueryExecution\(/);
+  assert.match(queryRuntime, /recordQueryRun/);
+  assert.match(queryRunner, /applySession\(input\.session\);/);
+  assert.match(layoutStateActionInput, /setRecentQueries: sqlWorkspaceState\.setRecentQueries/);
+  assert.match(queryRunner, /input\.setRecentQueries\(session\.recentQueries\);/);
+  assert.match(controllerGraph, /useWorkbenchLayoutContextModels\(\{/);
+  assert.match(layoutContextModels, /useWorkbenchContextModels\(\{/);
+  assert.match(contextModels, /buildWorkbenchSqlWorkspaceContext\(sqlWorkspace\)/);
+  assert.match(layoutContextModels, /recentQueries: sqlWorkspaceState\.recentQueries/);
+  assert.match(sqlWorkspaceContext, /buildSqlLibraryEntries\(\s*input\.savedSnippets,\s*input\.recentQueries,\s*input\.queryHistory,\s*\)/);
 });

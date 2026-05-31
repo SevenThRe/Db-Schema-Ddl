@@ -77,7 +77,7 @@ test("ship gate fails closed when required packaged or driver evidence is missin
   );
 });
 
-test("desktop preflight targets the current tauri verification seam", () => {
+test("desktop preflight targets the current extension-shell tauri verification seam", () => {
   const result = runDesktopPreflight(process.cwd());
 
   assert.equal(result.ok, true);

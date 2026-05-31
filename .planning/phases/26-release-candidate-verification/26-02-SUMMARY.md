@@ -34,6 +34,7 @@ key-files:
     - script/desktop-packaged-smoke-installer.ps1
     - docs/desktop-smoke.md
     - docs/desktop-packaged-smoke.md
+requirements-completed: [QUAL-02, QUAL-03]
 completed: 2026-04-12T14:50:00+08:00
 ---
 

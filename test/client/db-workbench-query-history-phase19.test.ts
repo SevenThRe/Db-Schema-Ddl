@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
+  buildQueryRunEntryFromResponse,
   loadSessionForConnection,
   recordQueryRun,
 } from "../../client/src/components/extensions/db-workbench/workbench-session.ts";
@@ -54,6 +55,46 @@ test.beforeEach(() => {
 
 test.afterEach(() => {
   Reflect.deleteProperty(globalThis, "window");
+});
+
+test("buildQueryRunEntryFromResponse summarizes multi-statement outcomes", () => {
+  const summary = buildQueryRunEntryFromResponse(
+    "SELECT 1; SELECT broken;",
+    "script",
+    {
+      requestId: "query-1",
+      batches: [
+        {
+          sql: "SELECT 1",
+          columns: [],
+          rows: [],
+          totalRows: 1,
+          returnedRows: 1,
+          hasMore: false,
+          pagingMode: "none",
+          elapsedMs: 3,
+        },
+        {
+          sql: "SELECT broken",
+          columns: [],
+          rows: [],
+          totalRows: null,
+          returnedRows: 0,
+          hasMore: false,
+          pagingMode: "none",
+          elapsedMs: 2,
+          error: "unknown column broken",
+        },
+      ],
+    },
+  );
+
+  assert.equal(summary.status, "partial");
+  assert.equal(summary.statementCount, 2);
+  assert.equal(summary.returnedRows, 1);
+  assert.equal(summary.elapsedMs, 5);
+  assert.equal(summary.failedStatementIndex, 1);
+  assert.equal(summary.errorMessage, "unknown column broken");
 });
 
 test("recordQueryRun keeps per-run history while deduping recent query text", () => {
@@ -113,10 +154,62 @@ test("sql library prefers run history entries over legacy recent queries when hi
 
 test("workbench layout wires run history persistence into SQL library state", async () => {
   const workbench = await read(
-    "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
+    "client/src/components/extensions/db-workbench/use-workbench-layout-shell-model.ts",
+  );
+  const sqlWorkspaceContext = await read(
+    "client/src/components/extensions/db-workbench/workbench-sql-workspace-context.ts",
+  );
+  const contextModels = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-context-models.ts",
+  );
+  const layoutContextModels = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-context-models.ts",
+  );
+  const queryRuntime = await read(
+    "client/src/components/extensions/db-workbench/query-execution-runtime.ts",
+  );
+  const queryRunner = await read(
+    "client/src/components/extensions/db-workbench/query-execution-runner.ts",
+  );
+  const queryExecutionController = await read(
+    "client/src/components/extensions/db-workbench/workbench-query-execution-controller.ts",
+  );
+  const queryControllers = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-query-controllers.ts",
+  );
+  const executionRegistry = await read(
+    "client/src/components/extensions/db-workbench/workbench-execution-action-registry.ts",
+  );
+  const stateActionRegistries = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-state-action-registries.ts",
+  );
+  const executionStateActionsHook = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-execution-state-actions.ts",
+  );
+  const layoutStateActionInput = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-state-action-input.ts",
+  );
+  const controllerGraph = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-controller-graph.ts",
   );
 
-  assert.match(workbench, /recordQueryRun/);
-  assert.match(workbench, /setQueryHistory\(updatedSession\.queryHistory\)/);
-  assert.match(workbench, /buildSqlLibraryEntries\(savedSnippets, recentQueries, queryHistory\)/);
+  assert.match(workbench, /useWorkbenchLayoutControllerGraph\(\{/);
+  assert.match(controllerGraph, /useWorkbenchLayoutQueryControllers\(\{/);
+  assert.match(queryControllers, /createWorkbenchQueryExecutionController\(\{/);
+  assert.match(queryExecutionController, /runWorkbenchQueryExecution\(\{/);
+  assert.match(controllerGraph, /useWorkbenchStateActionRegistries\(stateActionRegistriesInput\)/);
+  assert.match(stateActionRegistries, /useWorkbenchExecutionStateActions\(input\)/);
+  assert.match(executionStateActionsHook, /createWorkbenchExecutionStateActions\(\{/);
+  assert.match(executionRegistry, /createQueryExecutionStateActions\(\{/);
+  assert.match(queryExecutionController, /applySuccess: input\.queryExecutionActions\.applySuccess/);
+  assert.match(queryRunner, /recordSuccessfulQueryExecution\(/);
+  assert.match(queryRunner, /applySession\(input\.session\);/);
+  assert.match(queryRuntime, /recordQueryRun/);
+  assert.match(layoutStateActionInput, /setQueryHistory: sqlWorkspaceState\.setQueryHistory/);
+  assert.match(queryRunner, /input\.setQueryHistory\(session\.queryHistory\);/);
+  assert.match(controllerGraph, /useWorkbenchLayoutContextModels\(\{/);
+  assert.match(layoutContextModels, /useWorkbenchContextModels\(\{/);
+  assert.match(contextModels, /buildWorkbenchSqlWorkspaceContext\(sqlWorkspace\)/);
+  assert.match(layoutContextModels, /queryHistory: sqlWorkspaceState\.queryHistory/);
+  assert.match(sqlWorkspaceContext, /buildSqlLibraryEntries\(\s*input\.savedSnippets,\s*input\.recentQueries,\s*input\.queryHistory,\s*\)/);
 });

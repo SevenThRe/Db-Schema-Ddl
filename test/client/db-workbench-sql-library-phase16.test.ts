@@ -95,9 +95,33 @@ test("workbench layout replaces raw snippet/history selects with the SQL library
   const workbench = await read(
     "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
   );
+  const operatorChrome = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchOperatorChrome.tsx",
+  );
+  const workspaceBody = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchWorkspaceBody.tsx",
+  );
+  const workspaceBodyPropsBuilder = await read(
+    "client/src/components/extensions/db-workbench/workbench-workspace-body-props.ts",
+  );
+  const dialogStack = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchDialogStack.tsx",
+  );
+  const dialogInputBuilder = await read(
+    "client/src/components/extensions/db-workbench/workbench-dialog-stack-input.ts",
+  );
 
-  assert.match(workbench, /SQL library/);
-  assert.match(workbench, /<SqlLibraryDialog/);
+  assert.match(operatorChrome, /SQL library/);
+  assert.match(workbench, /<WorkbenchWorkspaceBody \{\.\.\.workspaceBodyProps\} \/>/);
+  assert.match(workspaceBody, /<WorkbenchSqlToolStrip \{\.\.\.sqlToolStrip\} \/>/);
+  assert.match(
+    workspaceBodyPropsBuilder,
+    /connectionLabel: \(input\.connection\.name \|\| input\.connection\.database\)\.trim\(\)/,
+  );
+  assert.doesNotMatch(workbench, /sqlToolStrip=\{\{/);
+  assert.match(workbench, /<WorkbenchDialogStack \{\.\.\.dialogStackProps\} \/>/);
+  assert.match(dialogInputBuilder, /sqlLibrary: input\.sqlLibrary,/);
+  assert.match(dialogStack, /<SqlLibraryDialog \{\.\.\.sqlLibrary\} \/>/);
   assert.doesNotMatch(workbench, /workbench-recent-sql-select/);
   assert.doesNotMatch(workbench, /workbench-snippet-select/);
 });

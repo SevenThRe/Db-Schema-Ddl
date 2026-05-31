@@ -1,0 +1,45 @@
+name: dbtools-db-lab
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: dbtools-lab-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: dbtools_root
+      MYSQL_DATABASE: dbtools_lab
+      MYSQL_USER: dbtools_writable
+      MYSQL_PASSWORD: dbtools_writable
+    ports:
+      - "${DBTOOLS_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - dbtools-mysql-data:/var/lib/mysql
+      - ./test/db-lab/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -udbtools_writable -pdbtools_writable --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    image: postgres:16
+    container_name: dbtools-lab-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dbtools_lab
+      POSTGRES_USER: dbtools_writable
+      POSTGRES_PASSWORD: dbtools_writable
+    ports:
+      - "${DBTOOLS_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - dbtools-postgres-data:/var/lib/postgresql/data
+      - ./test/db-lab/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbtools_writable -d dbtools_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dbtools-mysql-data:
+  dbtools-postgres-data:

@@ -1,9 +1,14 @@
 import type {
+  DbDataApplyExecuteRequest,
   DbDataApplyExecuteResponse,
+  DbDataApplySelection,
   DbDataApplyJobDetailResponse,
   DbDataApplyJobStatus,
   DbDataDiffActionCounts,
+  DbDataDiffPreviewResponse,
+  DbDataApplyPreviewResponse,
 } from "@shared/schema";
+import { formatWorkbenchError } from "./workbench-errors";
 
 export type DataApplyNotification = {
   title: string;
@@ -23,6 +28,59 @@ function countAppliedRowActions(counts: DbDataDiffActionCounts): number {
 
 export function isDataApplyJobActive(status: DbDataApplyJobStatus | null | undefined): boolean {
   return status === "running" || status === "pending";
+}
+
+export function getDataApplyJobPollDelayMs(
+  status: DbDataApplyJobStatus | null | undefined,
+): number | null {
+  return isDataApplyJobActive(status) ? 1500 : null;
+}
+
+export function getDataApplyJobRetryDelayMs(): number {
+  return 3000;
+}
+
+export function validateDataApplyExecutionReadiness(input: {
+  diffPreview: DbDataDiffPreviewResponse | null;
+  applyPreview: DbDataApplyPreviewResponse | null;
+  selections: DbDataApplySelection[];
+}): string | null {
+  if (!input.diffPreview || !input.applyPreview) {
+    return "Run compare preview and apply preview before execute.";
+  }
+  if (input.selections.length === 0) {
+    return "No row actions are selected for apply execution.";
+  }
+  return null;
+}
+
+export function buildDataApplyExecuteRequest(input: {
+  diffPreview: DbDataDiffPreviewResponse;
+  applyPreview: DbDataApplyPreviewResponse;
+  sourceConnectionId: string;
+  targetConnectionId: string;
+  selections: DbDataApplySelection[];
+  deleteWarningThreshold: number;
+  confirmUnsafeDelete: boolean;
+  targetDatabaseConfirmation: string;
+}): DbDataApplyExecuteRequest {
+  const targetDatabaseConfirmation = input.targetDatabaseConfirmation.trim();
+
+  return {
+    compareId: input.diffPreview.compareId,
+    sourceConnectionId: input.sourceConnectionId,
+    targetConnectionId: input.targetConnectionId,
+    targetSnapshotHash: input.diffPreview.targetSnapshotHash,
+    currentTargetSnapshotHash: input.applyPreview.currentTargetSnapshotHash,
+    selections: input.selections,
+    deleteWarningThreshold: input.deleteWarningThreshold,
+    confirmUnsafeDelete: input.confirmUnsafeDelete,
+    targetDatabaseConfirmation: targetDatabaseConfirmation || undefined,
+  };
+}
+
+export function formatDataApplyExecuteError(error: unknown): string {
+  return formatWorkbenchError(error, "Failed to execute apply operation.");
 }
 
 export function buildDataApplyNotification(

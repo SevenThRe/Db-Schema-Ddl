@@ -1,0 +1,26 @@
+{
+  "artifactVersion": "v1",
+  "runId": "workbench-live-prereq-mysql-2026-05-31T06-29-59-210Z",
+  "generatedAt": "2026-05-31T06:29:59.210Z",
+  "driver": "mysql",
+  "checks": [
+    {
+      "id": "connection-input",
+      "status": "failed",
+      "note": "Live verification prereq probe requires --connection-id, --connection-name, or --connection-string."
+    },
+    {
+      "id": "tcp-connectivity",
+      "status": "skipped",
+      "note": "TCP reachability probe was skipped because the target host or port could not be resolved ahead of app runtime."
+    }
+  ],
+  "summary": {
+    "passedCount": 0,
+    "failedCount": 1,
+    "warningCount": 0,
+    "skippedCount": 1,
+    "overallStatus": "failed"
+  },
+  "notes": []
+}

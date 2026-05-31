@@ -2,11 +2,15 @@
 
 Phase 26 introduced the Tauri-native verification seam. Phase 32 closes the release-exit gap by making one checklist the canonical publish-or-block decision input.
 
+Use `docs/db-workbench-operator-journey.md` as the journey anchor for this release flow. The gate protects one modern operator path through the extension shell, not a disconnected list of legacy surfaces.
+
 The release candidate gate is product-aware:
 
 - `Connection Center` is a `Primary Support` surface
 - `SQL Daily Driver` is the main `Primary` surface
-- `Data Sync / Job Center` remain `Preview` and do not silently inherit `Primary` claims
+- compatibility-only schema browse / diff paths are not part of the primary publish claim
+- `Data Sync` remains `Preview`
+- `Job Center` is a shipped audit/support surface, not a second primary route
 
 The canonical maintainer sequence is now:
 
@@ -15,6 +19,10 @@ The canonical maintainer sequence is now:
 3. live verification per driver
 4. ship gate
 5. review the generated release-exit checklist
+
+That sequence should always be interpreted through the canonical operator journey:
+
+`Connection Center -> Database Workspace -> inspect/query -> guarded edit/apply -> audit`
 
 ## 1. Preflight
 
@@ -39,7 +47,35 @@ This launches the current packaged Tauri executable, captures real checkpoints, 
 
 Packaged smoke is the anchor artifact for the current installer candidate. Other evidence is treated as stale when it predates this packaged smoke run.
 
-## 3. Live DB Verification
+## 3. Optional Live Prereq Probe
+
+If you are using a bootstrap connection string or are unsure whether the target host and port are even reachable from the verification machine, run the prereq probe first:
+
+```powershell
+npm run verify:desktop:live:prereq -- --driver=mysql --connection-string="mysql://root:secret@127.0.0.1:3306/app"
+```
+
+or:
+
+```powershell
+npm run verify:desktop:live:prereq -- --driver=postgres --connection-string="postgres://app:secret@127.0.0.1:5432/workbench"
+```
+
+This prereq mode:
+
+- resolves the bootstrap connection using the same importer-style parsing rules accepted by Connection Center
+- probes TCP reachability when host and port can be resolved ahead of app runtime
+- emits prereq Markdown/JSON artifacts under `artifacts/release-verification/`
+- does **not** count as live release evidence for the ship gate
+
+Exit behavior:
+
+- returns non-zero when the prereq result is truly `failed` such as parse failure or TCP reachability failure
+- stays zero for advisory-only `warning` results such as saved-connection selectors that cannot be fully inspected outside app runtime
+
+If you only provide `--connection-id` or `--connection-name`, the prereq probe stays advisory and warns that saved-connection reachability cannot be fully checked before the app runtime starts.
+
+## 4. Live DB Verification
 
 Run once per driver against a connection that the packaged candidate is supposed to support.
 
@@ -83,7 +119,7 @@ Every live artifact must cover the same required flow set:
 
 The live runner records these flows from the real app runtime. The docs should not be updated to a manual `--flow=` shape unless the script itself changes to match.
 
-## 4. Late Hardening Proof
+## 5. Late Hardening Proof
 
 Release exit also requires the current late-hardening verification record:
 
@@ -91,7 +127,7 @@ Release exit also requires the current late-hardening verification record:
 
 That record must exist and remain `status: passed`. If packaged smoke for the current installer is newer than the hardening verification record, the release-exit checklist will classify the hardening proof as stale.
 
-## 5. Ship Gate
+## 6. Ship Gate
 
 ```powershell
 npm run verify:desktop:ship-gate
@@ -115,7 +151,7 @@ The ship gate blocks release when required proof is:
 - failed
 - stale for the current packaged installer candidate
 
-## 6. Release-Exit Checklist Review
+## 7. Release-Exit Checklist Review
 
 Use the generated checklist as the human-readable source of truth:
 
@@ -126,8 +162,9 @@ Use the generated checklist as the human-readable source of truth:
 See:
 
 - `docs/release-exit-checklist.md`
+- `docs/db-workbench-operator-journey.md`
 
-## 7. Primary Surface Gate Matrix
+## 8. Primary Surface Gate Matrix
 
 ### Connection Center (`Primary Support`)
 
@@ -171,12 +208,12 @@ See:
   - inspection reachability
   - release-gate artifact evaluation
 
-## 8. Preview Promotion Rule
+## 9. Preview Promotion Rule
 
-`Data Sync / Job Center` stay `Preview` until the release process gains real runtime proof for:
+`Data Sync` stays `Preview` until the release process gains real runtime proof for:
 
 - compare preview -> apply preview -> execute
-- persisted job reopen and audit review
+- persisted job reopen and audit review for sync-related work
 - blocker handling for readonly, snapshot drift, and unsafe delete confirmation
 
-Until that proof exists, release notes and in-product labeling must keep the preview language explicit.
+Until that proof exists, release notes and in-product labeling must keep the preview language explicit for `Data Sync`.

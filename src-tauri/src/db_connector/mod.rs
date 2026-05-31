@@ -10,6 +10,7 @@ pub mod grid_edit;
 pub mod data_diff;
 pub mod data_apply;
 pub mod object_inspect;
+pub mod sql_copilot;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -805,6 +806,147 @@ pub struct DbDataApplyJobDetailResponse {
   pub started_at: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbSqlCopilotProvider {
+  Ollama,
+  LlamaCppCli,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DbSqlCopilotAvailability {
+  Disabled,
+  NotConfigured,
+  NotFound,
+  Available,
+  Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DbSqlCopilotWarmupState {
+  Idle,
+  Warming,
+  Ready,
+  Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DbSqlCopilotResourceState {
+  Unknown,
+  Ready,
+  Missing,
+  Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotDiscoveredRuntime {
+  pub provider: DbSqlCopilotProvider,
+  pub label: String,
+  pub available: bool,
+  pub configured: bool,
+  pub availability: DbSqlCopilotAvailability,
+  pub resource_state: DbSqlCopilotResourceState,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub executable_path: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub endpoint: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub model_id: Option<String>,
+  #[serde(default)]
+  pub discovered_models: Vec<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotRuntimeStatusRequest {
+  #[serde(default)]
+  pub refresh: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotRuntimeState {
+  pub enabled: bool,
+  pub provider: DbSqlCopilotProvider,
+  pub availability: DbSqlCopilotAvailability,
+  pub warmup_state: DbSqlCopilotWarmupState,
+  pub privacy_mode: String,
+  pub supports_probe: bool,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub configured_model_id: Option<String>,
+  pub status_summary: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub last_latency_ms: Option<u64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub last_probe_at: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub last_error: Option<String>,
+  #[serde(default)]
+  pub discovered_runtimes: Vec<DbSqlCopilotDiscoveredRuntime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotPromptSection {
+  pub title: String,
+  pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotGroundingSummary {
+  pub driver: DbDriver,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub active_schema: Option<String>,
+  pub section_count: u32,
+  pub relation_count: u32,
+  pub memory_pattern_count: u32,
+  pub value_profile_count: u32,
+  pub prompt_char_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotPromptPackage {
+  pub provider: DbSqlCopilotProvider,
+  pub system_prompt: String,
+  pub user_prompt: String,
+  #[serde(default)]
+  pub sections: Vec<DbSqlCopilotPromptSection>,
+  pub prompt_preview: String,
+  pub grounding_summary: DbSqlCopilotGroundingSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotProbeRequest {
+  pub prompt_package: DbSqlCopilotPromptPackage,
+  #[serde(default)]
+  pub warmup_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSqlCopilotProbeResponse {
+  pub provider: DbSqlCopilotProvider,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub model_id: Option<String>,
+  pub output_text: String,
+  pub latency_ms: u64,
+  pub prompt_char_count: u32,
+  pub completion_char_count: u32,
+  pub executed_at: String,
+  pub offline: bool,
+  #[serde(default)]
+  pub warnings: Vec<String>,
 }
 
 /// コネクションプールのドライバーラッパー

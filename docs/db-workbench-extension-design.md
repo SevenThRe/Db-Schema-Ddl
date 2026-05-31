@@ -4,6 +4,13 @@
 
 - 数据差异与同步设计：`docs/db-workbench-data-sync-design.md`
 - 功能清单与覆盖现状：`docs/db-workbench-feature-checklist.md`
+- 当前产品面与退役标准：`docs/db-workbench-surface-inventory.md`
+
+> Current runtime truth:
+> treat runtime code, `docs/db-workbench-feature-checklist.md`, and
+> `docs/db-workbench-surface-inventory.md` as the capability contract.
+> This design note is historical product guidance and still contains ideas that are not yet
+> the shipped runtime baseline.
 
 ## 1. 设计目标
 
@@ -71,15 +78,16 @@
 
 - `Primary`：日常主工作面，默认对外表述的产品能力
 - `Primary Support`：主产品的支撑面，例如连接中心
-- `Secondary`：迁移期保留或辅助路径，不与主工作台平级
+- `Compatibility`：迁移期保留或辅助路径，不与主工作台平级
 - `Preview`：真实可达，但仍需更大范围验证和打磨的高级能力
 
 当前建议：
 
 - `Database Workspace`：`Primary`
 - `Connection Center`：`Primary Support`
-- legacy `Schema / Diff`：`Secondary`
-- `Data Sync / Job Center`：`Preview`
+- legacy `Schema / Diff`：`Compatibility`
+- `Data Sync`：`Preview`
+- `Job Center`：`Shipped`
 
 ## 4. 信息架构
 

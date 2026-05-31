@@ -69,6 +69,19 @@ fn empty_counts() -> DbDataDiffActionCounts {
   }
 }
 
+fn validate_distinct_connection_pair(
+  source_connection_id: &str,
+  target_connection_id: &str,
+) -> Result<(), String> {
+  if source_connection_id.trim().is_empty() || target_connection_id.trim().is_empty() {
+    return Err("source and target connections are required for data sync".to_string());
+  }
+  if source_connection_id == target_connection_id {
+    return Err("source and target connections must be different for data sync".to_string());
+  }
+  Ok(())
+}
+
 fn build_action_counts(selections: &[DbDataApplySelection]) -> DbDataDiffActionCounts {
   let mut counts = empty_counts();
   for selection in selections {
@@ -782,6 +795,10 @@ fn build_apply_plan(
   delete_warning_threshold: Option<u64>,
   execute_confirmations: Option<(bool, Option<&str>)>,
 ) -> Result<PreparedApplyPlan, String> {
+  validate_distinct_connection_pair(
+    request_source_connection_id,
+    request_target_connection_id,
+  )?;
   let compare = storage::get_db_data_compare(app, request_compare_id)?
     .ok_or_else(|| format!("compare artifact not found: {request_compare_id}"))?;
 
@@ -1176,6 +1193,13 @@ mod tests {
     let sql = build_delete_sql(&config, &selection).expect("build delete sql");
     assert!(sql.contains("DELETE FROM \"public\".\"orders\""));
     assert!(sql.contains("\"id\" = 9"));
+  }
+
+  #[test]
+  fn apply_plan_rejects_same_connection_pair() {
+    let error = validate_distinct_connection_pair("same", "same")
+      .expect_err("same connection pair should be rejected");
+    assert!(error.contains("must be different"));
   }
 
   #[test]

@@ -35,6 +35,10 @@ import type {
   DbDataApplyJobDetailResponse,
   DbBackgroundJobListRequest,
   DbBackgroundJobListResponse,
+  DbSqlCopilotRuntimeStatusRequest,
+  DbSqlCopilotRuntimeState,
+  DbSqlCopilotProbeRequest,
+  DbSqlCopilotProbeResponse,
 } from "@shared/schema";
 import type { StatusBarEntryInput } from "@/status-bar/types";
 
@@ -88,6 +92,10 @@ export interface ConnectionsApi {
   executeDataApply(request: DbDataApplyExecuteRequest): Promise<DbDataApplyExecuteResponse>;
   fetchDataApplyJobDetail(request: DbDataApplyJobDetailRequest): Promise<DbDataApplyJobDetailResponse>;
   listBackgroundJobs(request: DbBackgroundJobListRequest): Promise<DbBackgroundJobListResponse>;
+  getSqlCopilotRuntimeState(
+    request?: DbSqlCopilotRuntimeStatusRequest,
+  ): Promise<DbSqlCopilotRuntimeState>;
+  runSqlCopilotProbe(request: DbSqlCopilotProbeRequest): Promise<DbSqlCopilotProbeResponse>;
 }
 
 /** 通知 API */

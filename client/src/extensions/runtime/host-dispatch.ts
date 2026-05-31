@@ -68,6 +68,14 @@ export async function dispatchRuntimeHostCall(
       return await hostApi.connections.fetchDataApplyJobDetail(args[0] as Parameters<HostApi["connections"]["fetchDataApplyJobDetail"]>[0]);
     case "connections.listBackgroundJobs":
       return await hostApi.connections.listBackgroundJobs(args[0] as Parameters<HostApi["connections"]["listBackgroundJobs"]>[0]);
+    case "connections.getSqlCopilotRuntimeState":
+      return await hostApi.connections.getSqlCopilotRuntimeState(
+        args[0] as Parameters<HostApi["connections"]["getSqlCopilotRuntimeState"]>[0],
+      );
+    case "connections.runSqlCopilotProbe":
+      return await hostApi.connections.runSqlCopilotProbe(
+        args[0] as Parameters<HostApi["connections"]["runSqlCopilotProbe"]>[0],
+      );
     default:
       throw new Error(`Unknown runtime host method: ${method}`);
   }

@@ -74,6 +74,8 @@ const noopHostApi: HostApi = {
     executeDataApply: () => Promise.reject(new Error("HostApi not available")),
     fetchDataApplyJobDetail: () => Promise.reject(new Error("HostApi not available")),
     listBackgroundJobs: () => Promise.reject(new Error("HostApi not available")),
+    getSqlCopilotRuntimeState: () => Promise.reject(new Error("HostApi not available")),
+    runSqlCopilotProbe: () => Promise.reject(new Error("HostApi not available")),
   },
   statusBar: {
     set: () => () => {},

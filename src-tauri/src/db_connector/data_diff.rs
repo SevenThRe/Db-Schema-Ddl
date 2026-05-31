@@ -25,6 +25,19 @@ fn epoch_millis() -> i64 {
     .unwrap_or(0)
 }
 
+fn validate_distinct_connection_pair(
+  source_connection_id: &str,
+  target_connection_id: &str,
+) -> Result<(), String> {
+  if source_connection_id.trim().is_empty() || target_connection_id.trim().is_empty() {
+    return Err("source and target connections are required for data sync".to_string());
+  }
+  if source_connection_id == target_connection_id {
+    return Err("source and target connections must be different for data sync".to_string());
+  }
+  Ok(())
+}
+
 fn empty_counts() -> DbDataDiffActionCounts {
   DbDataDiffActionCounts {
     insert: 0,
@@ -585,6 +598,10 @@ pub async fn db_data_diff_preview(
   pool_registry: &DbPoolRegistry,
   request: DbDataDiffPreviewRequest,
 ) -> Result<DbDataDiffPreviewResponse, String> {
+  validate_distinct_connection_pair(
+    &request.source_connection_id,
+    &request.target_connection_id,
+  )?;
   let created_at = Utc::now();
   let expires_at = created_at + Duration::minutes(15);
   let compare_id = format!("cmp-{}", epoch_millis());
@@ -973,5 +990,12 @@ mod tests {
     let error = validate_where_clause(Some("id = 1; DELETE FROM users"))
       .expect_err("multiple statements should fail");
     assert!(error.contains("single SQL expression"));
+  }
+
+  #[test]
+  fn distinct_connection_pair_is_required_for_data_sync() {
+    let error = validate_distinct_connection_pair("conn-a", "conn-a")
+      .expect_err("same connection pair should be rejected");
+    assert!(error.contains("must be different"));
   }
 }

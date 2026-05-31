@@ -134,6 +134,14 @@ function createConnectionsApi(granted: string[]): ConnectionsApi {
       try { requireCap(granted, "db.data.sync"); } catch (e) { return Promise.reject(e); }
       return desktopBridge.db.listBackgroundJobs(request);
     },
+    getSqlCopilotRuntimeState: (request) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.getSqlCopilotRuntimeState(request);
+    },
+    runSqlCopilotProbe: (request) => {
+      try { requireCap(granted, "db.query"); } catch (e) { return Promise.reject(e); }
+      return desktopBridge.db.runSqlCopilotProbe(request);
+    },
   };
 }
 

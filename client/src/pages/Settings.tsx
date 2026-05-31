@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Save, ArrowLeft, FolderOpen, FileText, Code2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import type { DdlSettings } from "@shared/schema";
+import { createDefaultDdlSettings } from "@shared/config";
 import { useTranslation } from "react-i18next";
 import { translateApiError } from "@/lib/api-error";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -197,51 +198,7 @@ export default function Settings() {
   const desktopCapabilities = desktopBridge.getCapabilities();
   const visibleSettingsSections = SETTINGS_SECTIONS;
 
-  const [formData, setFormData] = useState<DdlSettings>({
-    statusBarItems: ["activity", "memory"],
-    mysqlEngine: "InnoDB",
-    mysqlCharset: "utf8mb4",
-    mysqlCollate: "utf8mb4_bin",
-    varcharCharset: "utf8mb4",
-    varcharCollate: "utf8mb4_bin",
-    exportFilenamePrefix: "Crt_",
-    exportFilenameSuffix: "",
-    includeCommentHeader: true,
-    authorName: "ISI",
-    includeSetNames: true,
-    includeDropTable: true,
-    downloadPath: undefined,
-    excelReadPath: undefined,
-    customHeaderTemplate: undefined,
-    useCustomHeader: false,
-    hideSheetsWithoutDefinitions: true,
-    mysqlDataTypeCase: "lower",
-    mysqlBooleanMode: "tinyint(1)",
-    pkMarkers: DEFAULT_PK_MARKERS,
-    maxConsecutiveEmptyRows: 10,
-    uploadRateLimitWindowMs: 60000,
-    uploadRateLimitMaxRequests: 20,
-    parseRateLimitWindowMs: 60000,
-    parseRateLimitMaxRequests: 40,
-    globalProtectRateLimitWindowMs: 60000,
-    globalProtectRateLimitMaxRequests: 240,
-    globalProtectMaxInFlight: 80,
-    prewarmEnabled: true,
-    prewarmMaxConcurrency: 1,
-    prewarmQueueMax: 12,
-    prewarmMaxFileMb: 20,
-    taskManagerMaxQueueLength: 200,
-    taskManagerStalePendingMs: 1800000,
-    nameFixDefaultMode: "copy",
-    nameFixConflictStrategy: "suffix_increment",
-    nameFixReservedWordStrategy: "prefix",
-    nameFixLengthOverflowStrategy: "truncate_hash",
-    nameFixMaxIdentifierLength: 64,
-    nameFixBackupRetentionDays: 30,
-    nameFixMaxBatchConcurrency: 4,
-    allowOverwriteInElectron: true,
-    allowExternalPathWrite: false,
-  });
+  const [formData, setFormData] = useState<DdlSettings>(() => createDefaultDdlSettings());
   const [pkMarkersInput, setPkMarkersInput] = useState(markersToInputValue(DEFAULT_PK_MARKERS));
   const [activeSettingsSection, setActiveSettingsSection] = useState<(typeof SETTINGS_SECTIONS)[number]["id"]>(
     visibleSettingsSections[0]?.id ?? "ddl-options",

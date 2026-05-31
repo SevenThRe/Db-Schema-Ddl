@@ -16,7 +16,7 @@ The source of truth is runtime code first, then `shared/schema.ts`.
 | Capability | Status | Current Reality | Verification |
 |---|---|---|---|
 | Canonical Database Workspace | `Shipped` | One primary workbench route with persistent connection context | `test/client/db-workbench-flow-phase24.test.ts` |
-| Connection center | `Shipped` | Save/test/delete/discover direct MySQL/PostgreSQL connections | `test/client/db-management-phase5-ui.test.tsx`, `test/server/db-connection-service.test.ts` |
+| Connection center | `Shipped` | Primary-support surface for saving, testing, discovering, and recovering direct MySQL/PostgreSQL connections | `test/client/db-management-phase5-ui.test.tsx`, `test/server/db-connection-service.test.ts` |
 | Connection governance basics | `Partial` | Environment, readonly, favorite, group, notes, default schema are present | `test/client/db-workbench-surface-labeling-phase21.test.ts` |
 | Professional large-scale connection governance | `Gap` | Bulk governance / premium-tool-scale catalog workflows are not finished | Planned in `Phase 37` |
 | Live packaged release verification | `Partial` | Verification scripts exist, but live evidence remains blocked externally | `test/server/release-verification-phase26.test.ts`, backlog closure in `Phase 32` |
@@ -27,10 +27,12 @@ The source of truth is runtime code first, then `shared/schema.ts`.
 |---|---|---|---|
 | Query tabs and session restore | `Shipped` | Connection-scoped tabs, drafts, recent queries, and restore | `test/client/db-workbench-session-phase24.test.ts` |
 | Monaco SQL editor | `Shipped` | Statement/script execution, format, explain, cancel, autocomplete | `test/client/db-workbench-flow-phase16.test.tsx`, `test/client/db-workbench-autocomplete-phase16.test.tsx` |
+| Professional SQL semantics | `Partial` | Shared semantic analysis, driver-aware builtins/types/system schemas, FK-aware `JOIN` and `ON` guidance, Monaco hover, semantic diagnostics, and grounded adaptive ranking now exist, but full AST parser coverage and generated assistance are still future work | `test/client/db-workbench-autocomplete-phase16.test.tsx`, `test/client/db-workbench-sql-semantic-context-phase49.test.ts`, `test/client/db-workbench-sql-semantics-phase50.test.ts`, `test/client/db-workbench-sql-memory-phase51.test.ts` |
 | SQL library | `Partial` | Snippets, run history, and recent queries are unified, but full asset organization is not done | `test/client/db-workbench-sql-library-phase16.test.ts`, `test/client/db-workbench-query-history-phase19.test.ts` |
 | Parameter review | `Shipped` | Named placeholder review before execution | `test/client/db-workbench-sql-parameters-phase17.test.ts` |
 | Script review | `Shipped` | Multi-statement execution review path is wired | `test/client/db-workbench-sql-script-review-phase18.test.ts` |
 | Dangerous SQL review | `Shipped` | Runtime-backed dangerous-operation preview and confirmation | `test/client/db-workbench-runtime-phase15.test.tsx`, `test/client/db-workbench-runtime-phase26.test.ts` |
+| Query memory and local AI SQL copilot | `Shipped` | Query memory, safe value grounding, retention controls, adaptive ranking, local runtime discovery, grounded prompt packaging, and reviewable generated SQL drafts with explicit safety-gated acceptance are now reachable locally | `test/client/db-workbench-sql-memory-phase51.test.ts`, `test/client/db-workbench-sql-copilot-grounding-phase52.test.ts`, `test/client/db-workbench-sql-copilot-generation-phase53.test.ts` |
 
 ## Results, Export, and Editing
 
@@ -57,7 +59,7 @@ The source of truth is runtime code first, then `shared/schema.ts`.
 
 | Capability | Status | Current Reality | Verification |
 |---|---|---|---|
-| Schema diff | `Shipped` | Cross-connection schema compare remains reachable | `test/server/db-diff-phase4.test.ts` |
+| Schema diff | `Shipped` | Cross-connection schema compare remains reachable through a compatibility-only surface | `test/server/db-diff-phase4.test.ts` |
 | Data sync compare/apply | `Preview` | Compare/apply pipeline is wired and job-backed, but still explicitly preview-grade | `test/client/db-workbench-data-sync-phase18.test.tsx`, `test/client/db-workbench-data-sync-flow-phase18.test.tsx` |
 | Job center | `Shipped` | Persistent recent-job list/detail and reopen actions | `test/client/job-center-phase27.test.ts`, `test/server/job-center-phase27.test.ts` |
 
@@ -69,6 +71,7 @@ These are still real gaps if the benchmark is “all major desktop DB tools”:
 - `ER diagram canvas`: not shipped
 - `visual schema authoring / migration designer`: not shipped
 - `full SQL asset organization`: only baseline snippet/history support exists
+- `professional SQL AST depth`: semantic baseline, grounded query memory, local runtime infrastructure, and generated-SQL assistance now exist, but a deeper full-parser baseline is still future work
 - `durable row-edit drafts`: not shipped
 - `broad live packaged verification evidence`: partially blocked on external environments
 
@@ -81,14 +84,16 @@ These are still real gaps if the benchmark is “all major desktop DB tools”:
 | SQL asset depth and repeat execution | `v1.9` | `Medium` | SQL snippets/history exist, but full asset organization and operational runbooks are missing | `Phases 29, 35-36` |
 | Connection governance, secure transport, and auth posture | `v1.9` | `Large` | Premium-tool-scale connection cataloging plus SSH/TLS transport and external-secret-friendly auth are not shipped | `Phases 30, 37-39` |
 | Structure visualization and schema design | `v1.9` | `Large` | ER graphing, DDL change design, and full visual schema authoring are still absent | `Phases 40-42` |
+| SQL intelligence and local AI assistance | `v2.1` | `Large` | AST-like semantics, diagnostics, query memory, grounded adaptive ranking, local runtime infrastructure, and reviewable generated SQL assistance are now in place; future work is deeper parser quality and optional model sophistication | `Phases 49-53 (complete)` |
 
 ## Current Priority Direction
 
 The current repo roadmap now points to:
 
-1. finish Phase 28 advanced editing workflows
-2. close live release evidence across Phases 26 and 32 inside `v1.8`
+1. close live release evidence across Phases 26 and 32 inside `v1.8`
+2. treat advanced editing as functionally closed for the scoped release-grade baseline, with only optional manual UAT replay remaining
 3. enter planned `v1.9` with Phases 29-30, then continue by capability block through Phases 33-42
 4. leave extension-platform work in Phases 43-48 outside the DB capability parity track
+5. treat delivered `v2.1` Phases 49-53 as the current SQL-intelligence baseline, with future work focused on deeper parser quality rather than missing generated-assistance fundamentals
 
 This checklist should be updated whenever a capability becomes truly reachable or a gap is closed end-to-end.
