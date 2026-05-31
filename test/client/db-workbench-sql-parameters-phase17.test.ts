@@ -61,6 +61,9 @@ test("workbench execution path pauses for parameter review and resumes through t
   const safetyRunner = await read(
     "client/src/components/extensions/db-workbench/query-safety-runner.ts",
   );
+  const safetyStateActions = await read(
+    "client/src/components/extensions/db-workbench/query-safety-state-actions.ts",
+  );
   const safetyController = await read(
     "client/src/components/extensions/db-workbench/workbench-query-safety-controller.ts",
   );
@@ -102,7 +105,7 @@ test("workbench execution path pauses for parameter review and resumes through t
   assert.match(executionRegistry, /createQuerySafetyStateActions\(\{/);
   assert.match(safetyRunner, /buildPendingSqlParameterReview\(/);
   assert.match(gates, /detectSqlParameters\(input\.sql\)/);
-  assert.match(safetyRunner, /applyParameterReview: input\.setPendingParameterReview/);
+  assert.match(safetyStateActions, /applyParameterReview: input\.setPendingParameterReview/);
   assert.match(queryControllers, /actions: input\.querySafetyStateActions/);
   assert.match(workbench, /<WorkbenchDialogStack \{\.\.\.dialogStackProps\} \/>/);
   assert.match(workbench, /useWorkbenchLayoutRenderProps\(\{/);

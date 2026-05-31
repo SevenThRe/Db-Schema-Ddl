@@ -38,6 +38,9 @@ test("workbench exposes script review flow before multi-statement execution", as
   const safetyRunner = await read(
     "client/src/components/extensions/db-workbench/query-safety-runner.ts",
   );
+  const safetyStateActions = await read(
+    "client/src/components/extensions/db-workbench/query-safety-state-actions.ts",
+  );
   const safetyController = await read(
     "client/src/components/extensions/db-workbench/workbench-query-safety-controller.ts",
   );
@@ -85,7 +88,7 @@ test("workbench exposes script review flow before multi-statement execution", as
   assert.match(executionRegistry, /createQuerySafetyStateActions\(\{/);
   assert.match(safetyRunner, /buildPendingSqlScriptReview\(input\.sql\)/);
   assert.match(gates, /splitSqlStatements\(sql\)/);
-  assert.match(safetyRunner, /applyScriptReview: input\.setPendingScriptReview/);
+  assert.match(safetyStateActions, /applyScriptReview: input\.setPendingScriptReview/);
   assert.match(queryControllers, /actions: input\.querySafetyStateActions/);
   assert.match(workbench, /<WorkbenchDialogStack \{\.\.\.dialogStackProps\} \/>/);
   assert.match(workbench, /useWorkbenchLayoutRenderProps\(\{/);
