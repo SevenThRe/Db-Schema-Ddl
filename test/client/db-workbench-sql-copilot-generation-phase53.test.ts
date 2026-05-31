@@ -13,10 +13,12 @@ import {
   buildSqlCopilotGenerationPromptPackage,
   buildSqlCopilotGenerationSemanticContext,
   deriveSqlCopilotGenerationMode,
-  evaluateSqlCopilotGenerationCases,
   parseSqlCopilotGeneratedDraft,
-  renderSqlCopilotEvaluationArtifactMarkdown,
 } from "../../client/src/components/extensions/db-workbench/sql-copilot-generation.ts";
+import {
+  evaluateSqlCopilotGenerationCases,
+  renderSqlCopilotEvaluationArtifactMarkdown,
+} from "../../client/src/components/extensions/db-workbench/sql-copilot-generation-evaluation.ts";
 import {
   createEmptySqlWorkbenchMemory,
   type SqlWorkbenchMemoryState,

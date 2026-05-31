@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { DbColumnSchema, DbSchemaSnapshot } from "../shared/schema.ts";
+import { buildSqlCopilotGenerationSemanticContext } from "../client/src/components/extensions/db-workbench/sql-copilot-generation.ts";
 import {
-  buildSqlCopilotGenerationSemanticContext,
   evaluateSqlCopilotGenerationCases,
   renderSqlCopilotEvaluationArtifactMarkdown,
   type SqlCopilotEvaluationCase,
-} from "../client/src/components/extensions/db-workbench/sql-copilot-generation.ts";
+} from "../client/src/components/extensions/db-workbench/sql-copilot-generation-evaluation.ts";
 
 function column(name: string, primaryKey = false): DbColumnSchema {
   return {
