@@ -130,7 +130,7 @@ P0 产品承诺边界：
 
 - 当前承诺 direct `MySQL / PostgreSQL` 连接，并已接入 `TLS/SSL` 传输加密（`disable / prefer / require / verify-ca / verify-full` + 根 CA / mTLS 证书路径）
 - 可以承诺环境治理、只读保护、默认 schema、收藏/分组/备注等连接治理能力
-- `TLS/SSL` 已完成端到端接线并通过代码级验证（`cargo check` + ssl-mode 映射单测 + 配置往返测试），但**尚未对真实 TLS 服务器实测**，因此只能写成「已接线、代码级验证、真实握手未验证」
+- `TLS/SSL` 已完成端到端接线：TS 侧 `npm run check` + 配置往返/连接串 `sslmode` 解析单测全绿；Rust 侧用 MinGW gnu 工具链**全量编译通过**（本轮代码零警告），`cargo test --lib` 也能链接出测试 exe，但该 exe 链入 Tauri/webview2 运行时、无头环境启动失败，故 ssl-mode 单测**编译通过但未实际执行**；并且**尚未对真实 TLS 服务器实测**。结论只能写成「已接线、TS 代码级验证、Rust 编译通过、单测与真实握手未执行」
 - 不能把 `SSH 隧道 / 企业认证` 写成已交付产品能力，除非运行时真的完成接线与验证
 
 意义：
