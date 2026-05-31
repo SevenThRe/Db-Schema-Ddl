@@ -42,7 +42,7 @@ test("result grid gates load more on paging mode and still shows loaded-row evid
 
 test("recent query context is captured and restored per connection", async () => {
   const sessionStore = await read(
-    "client/src/components/extensions/db-workbench/workbench-session.ts",
+    "client/src/components/extensions/db-workbench/workbench-session-history.ts",
   );
   const queryRuntime = await read(
     "client/src/components/extensions/db-workbench/query-execution-runtime.ts",
