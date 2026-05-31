@@ -1,4 +1,4 @@
-import type { DbConnectionConfig, DbDriver } from "@shared/schema";
+import type { DbConnectionConfig, DbDriver, DbSslMode } from "@shared/schema";
 
 export const DEFAULT_DB_PORTS: Record<DbDriver, number> = {
   mysql: 3306,
@@ -8,6 +8,47 @@ export const DEFAULT_DB_PORTS: Record<DbDriver, number> = {
 function normalizeOptionalText(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+// Map the various sslmode spellings used by Postgres, MySQL, and JDBC URLs to
+// our driver-neutral DbSslMode. Unknown tokens return undefined (caller keeps
+// the default).
+export function parseSslModeToken(token: string | undefined): DbSslMode | undefined {
+  const value = token?.trim().toLowerCase().replace(/_/g, "-");
+  if (!value) return undefined;
+  switch (value) {
+    case "disable":
+    case "disabled":
+    case "false":
+    case "0":
+    case "off":
+      return "disable";
+    case "prefer":
+    case "preferred":
+    case "allow":
+      return "prefer";
+    case "require":
+    case "required":
+    case "true":
+    case "1":
+    case "on":
+      return "require";
+    case "verify-ca":
+    case "verifyca":
+      return "verify-ca";
+    case "verify-full":
+    case "verify-identity":
+    case "verifyidentity":
+    case "full":
+      return "verify-full";
+    default:
+      return undefined;
+  }
+}
+
+function sslModeFromQuery(source: string): DbSslMode | undefined {
+  const match = source.match(/[?&](?:ssl-?mode)=([^&\s]+)/i);
+  return parseSslModeToken(match?.[1]);
 }
 
 export function autoNameFrom(host: string, port: number, database: string): string {
@@ -59,6 +100,7 @@ export function parseConnectionString(input: string): Partial<DbConnectionConfig
       database: database || "",
       username: queryUser || "",
       password: queryPassword || "",
+      sslMode: sslModeFromQuery(source),
     };
   }
 
@@ -74,6 +116,7 @@ export function parseConnectionString(input: string): Partial<DbConnectionConfig
       database: kv("dbname") || kv("database"),
       username: kv("user") || kv("username"),
       password: kv("password"),
+      sslMode: parseSslModeToken(kv("sslmode")),
     };
   }
 
@@ -96,6 +139,7 @@ export function parseConnectionString(input: string): Partial<DbConnectionConfig
       database: envValue("DB_NAME") || envValue("DB_DATABASE"),
       username: envValue("DB_USER") || envValue("DB_USERNAME"),
       password: envValue("DB_PASSWORD") || envValue("DB_PASS"),
+      sslMode: parseSslModeToken(envValue("DB_SSLMODE") || envValue("DB_SSL_MODE")),
     };
   }
 
