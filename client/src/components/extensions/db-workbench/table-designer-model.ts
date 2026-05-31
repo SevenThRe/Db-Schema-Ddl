@@ -32,10 +32,29 @@ export interface TableDraftColumn {
   autoIncrement?: boolean;
 }
 
+export interface TableDraftIndex {
+  id: string;
+  originalName?: string;
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
+export interface TableDraftForeignKey {
+  id: string;
+  originalName?: string;
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedColumns: string[];
+}
+
 export interface TableDraft {
   name: string;
   comment?: string;
   columns: TableDraftColumn[];
+  indexes?: TableDraftIndex[];
+  foreignKeys?: TableDraftForeignKey[];
 }
 
 export interface TableDesignChange {
@@ -47,6 +66,8 @@ export interface TableDesignChange {
     | "rename-column"
     | "modify-column"
     | "primary-key"
+    | "index"
+    | "foreign-key"
     | "comment";
   sql: string;
 }
@@ -87,6 +108,25 @@ export function tableDraftFromSchema(schema: DbTableSchema): TableDraft {
       primaryKey: column.primaryKey,
       defaultValue: column.defaultValue,
       comment: column.comment,
+    })),
+    // The primary-key index is represented by the columns' primaryKey flags and
+    // handled separately, so it is excluded from the editable index list.
+    indexes: (schema.indexes ?? [])
+      .filter((index) => !index.primary)
+      .map((index) => ({
+        id: nextDraftColumnId(),
+        originalName: index.name,
+        name: index.name,
+        columns: [...index.columns],
+        unique: index.unique,
+      })),
+    foreignKeys: (schema.foreignKeys ?? []).map((fk) => ({
+      id: nextDraftColumnId(),
+      originalName: fk.name,
+      name: fk.name,
+      columns: [...fk.columns],
+      referencedTable: fk.referencedTable,
+      referencedColumns: [...fk.referencedColumns],
     })),
   };
 }
@@ -157,6 +197,53 @@ function columnDefinitionSql(
   return parts.join(" ");
 }
 
+function createIndexSql(
+  index: TableDraftIndex,
+  table: string,
+  driver: DbDriver,
+): string {
+  const columns = index.columns
+    .map((column) => quoteIdentifier(column, driver))
+    .join(", ");
+  const unique = index.unique ? "UNIQUE " : "";
+  return `CREATE ${unique}INDEX ${quoteIdentifier(index.name, driver)} ON ${table} (${columns});`;
+}
+
+function dropIndexSql(
+  name: string,
+  table: string,
+  driver: DbDriver,
+  schemaName?: string,
+): string {
+  if (driver === "mysql") {
+    return `ALTER TABLE ${table} DROP INDEX ${quoteIdentifier(name, driver)};`;
+  }
+  // PostgreSQL indexes are schema-scoped objects, not table-scoped.
+  const qualified = schemaName?.trim()
+    ? `${quoteIdentifier(schemaName.trim(), driver)}.${quoteIdentifier(name, driver)}`
+    : quoteIdentifier(name, driver);
+  return `DROP INDEX ${qualified};`;
+}
+
+function addForeignKeySql(
+  fk: TableDraftForeignKey,
+  table: string,
+  driver: DbDriver,
+): string {
+  const columns = fk.columns.map((column) => quoteIdentifier(column, driver)).join(", ");
+  const referencedColumns = fk.referencedColumns
+    .map((column) => quoteIdentifier(column, driver))
+    .join(", ");
+  const referencedTable = quoteIdentifier(fk.referencedTable, driver);
+  return `ALTER TABLE ${table} ADD CONSTRAINT ${quoteIdentifier(fk.name, driver)} FOREIGN KEY (${columns}) REFERENCES ${referencedTable} (${referencedColumns});`;
+}
+
+function dropForeignKeySql(name: string, table: string, driver: DbDriver): string {
+  return driver === "mysql"
+    ? `ALTER TABLE ${table} DROP FOREIGN KEY ${quoteIdentifier(name, driver)};`
+    : `ALTER TABLE ${table} DROP CONSTRAINT ${quoteIdentifier(name, driver)};`;
+}
+
 // ── CREATE TABLE ───────────────────────────────
 
 export function buildCreateTableDdl(
@@ -177,15 +264,15 @@ export function buildCreateTableDdl(
     lines.push(`  PRIMARY KEY (${pkList})`);
   }
 
-  let ddl = `CREATE TABLE ${table} (\n${lines.join(",\n")}\n)`;
-
+  let createStmt = `CREATE TABLE ${table} (\n${lines.join(",\n")}\n)`;
   if (driver === "mysql" && draft.comment?.trim()) {
-    ddl += ` COMMENT='${escapeSqlStringLiteral(draft.comment.trim())}'`;
+    createStmt += ` COMMENT='${escapeSqlStringLiteral(draft.comment.trim())}'`;
   }
-  ddl += ";";
+  createStmt += ";";
+
+  const statements = [createStmt];
 
   if (driver === "postgres") {
-    const statements = [ddl];
     if (draft.comment?.trim()) {
       statements.push(
         `COMMENT ON TABLE ${table} IS '${escapeSqlStringLiteral(draft.comment.trim())}';`,
@@ -198,10 +285,16 @@ export function buildCreateTableDdl(
         );
       }
     }
-    return statements.join("\n");
   }
 
-  return ddl;
+  for (const index of draft.indexes ?? []) {
+    statements.push(createIndexSql(index, table, driver));
+  }
+  for (const fk of draft.foreignKeys ?? []) {
+    statements.push(addForeignKeySql(fk, table, driver));
+  }
+
+  return statements.join("\n");
 }
 
 // ── ALTER diff ─────────────────────────────────
@@ -390,6 +483,77 @@ export function diffTableDraft(
             ? `COMMENT ON TABLE ${table} IS '${escapeSqlStringLiteral(editedTableComment)}';`
             : `COMMENT ON TABLE ${table} IS NULL;`,
     });
+  }
+
+  // Secondary indexes (the PK index is handled above). Match by originalName; a
+  // changed index is dropped and recreated since most engines cannot alter one
+  // in place.
+  const originalIndexes = (original.indexes ?? []).filter((index) => !index.primary);
+  const originalIndexByName = new Map(originalIndexes.map((index) => [index.name, index]));
+  const referencedIndexes = new Set<string>();
+  for (const index of edited.indexes ?? []) {
+    const source =
+      index.originalName !== undefined
+        ? originalIndexByName.get(index.originalName)
+        : undefined;
+    if (!source) {
+      changes.push({ kind: "index", sql: createIndexSql(index, table, driver) });
+      continue;
+    }
+    referencedIndexes.add(source.name);
+    const changed =
+      source.name !== index.name ||
+      source.unique !== index.unique ||
+      JSON.stringify(source.columns) !== JSON.stringify(index.columns);
+    if (changed) {
+      changes.push({
+        kind: "index",
+        sql: dropIndexSql(source.name, table, driver, schemaName),
+      });
+      changes.push({ kind: "index", sql: createIndexSql(index, table, driver) });
+    }
+  }
+  for (const source of originalIndexes) {
+    if (!referencedIndexes.has(source.name)) {
+      changes.push({
+        kind: "index",
+        sql: dropIndexSql(source.name, table, driver, schemaName),
+      });
+    }
+  }
+
+  // Foreign keys. Match by originalName; a changed FK is dropped and re-added.
+  const originalFks = original.foreignKeys ?? [];
+  const originalFkByName = new Map(originalFks.map((fk) => [fk.name, fk]));
+  const referencedFks = new Set<string>();
+  for (const fk of edited.foreignKeys ?? []) {
+    const source =
+      fk.originalName !== undefined ? originalFkByName.get(fk.originalName) : undefined;
+    if (!source) {
+      changes.push({ kind: "foreign-key", sql: addForeignKeySql(fk, table, driver) });
+      continue;
+    }
+    referencedFks.add(source.name);
+    const changed =
+      source.name !== fk.name ||
+      source.referencedTable !== fk.referencedTable ||
+      JSON.stringify(source.columns) !== JSON.stringify(fk.columns) ||
+      JSON.stringify(source.referencedColumns) !== JSON.stringify(fk.referencedColumns);
+    if (changed) {
+      changes.push({
+        kind: "foreign-key",
+        sql: dropForeignKeySql(source.name, table, driver),
+      });
+      changes.push({ kind: "foreign-key", sql: addForeignKeySql(fk, table, driver) });
+    }
+  }
+  for (const source of originalFks) {
+    if (!referencedFks.has(source.name)) {
+      changes.push({
+        kind: "foreign-key",
+        sql: dropForeignKeySql(source.name, table, driver),
+      });
+    }
   }
 
   return changes;

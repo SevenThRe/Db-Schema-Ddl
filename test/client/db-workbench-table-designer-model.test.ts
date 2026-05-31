@@ -128,6 +128,76 @@ test("diffTableDraft yields no changes when the draft matches the source", () =>
   assert.equal(diffTableDraft(original, draft, "postgres").length, 0);
 });
 
+function ordersSchema() {
+  return {
+    name: "orders",
+    columns: [
+      { name: "id", dataType: "int", nullable: false, primaryKey: true },
+      { name: "user_id", dataType: "int", nullable: false, primaryKey: false },
+      { name: "code", dataType: "varchar(32)", nullable: false, primaryKey: false },
+    ],
+    indexes: [
+      { name: "pk_orders", columns: ["id"], unique: true, primary: true },
+      { name: "uq_code", columns: ["code"], unique: true },
+    ],
+    foreignKeys: [
+      {
+        name: "fk_orders_user",
+        columns: ["user_id"],
+        referencedTable: "users",
+        referencedColumns: ["id"],
+      },
+    ],
+  } as const;
+}
+
+test("buildCreateTableDdl appends CREATE INDEX and FK constraints, excluding the PK index", () => {
+  const draft = tableDraftFromSchema(ordersSchema());
+  const ddl = buildCreateTableDdl(draft, "mysql");
+  assert.match(ddl, /CREATE TABLE `orders`/);
+  assert.match(ddl, /PRIMARY KEY \(`id`\)/);
+  assert.match(ddl, /CREATE UNIQUE INDEX `uq_code` ON `orders` \(`code`\);/);
+  // The primary-key index must not be re-emitted as a secondary index.
+  assert.doesNotMatch(ddl, /INDEX `pk_orders`/);
+  assert.match(
+    ddl,
+    /ALTER TABLE `orders` ADD CONSTRAINT `fk_orders_user` FOREIGN KEY \(`user_id`\) REFERENCES `users` \(`id`\);/,
+  );
+});
+
+test("diffTableDraft adds, drops, and recreates indexes and foreign keys", () => {
+  const original = ordersSchema();
+  const draft = tableDraftFromSchema(original);
+
+  // drop uq_code, add a new index, and change the FK's referenced column
+  draft.indexes = (draft.indexes ?? []).filter((i) => i.originalName !== "uq_code");
+  draft.indexes.push({ id: "ix-new", name: "ix_user", columns: ["user_id"], unique: false });
+  const fk = (draft.foreignKeys ?? [])[0]!;
+  fk.referencedColumns = ["user_id"];
+
+  const script = tableDesignChangesToScript(diffTableDraft(original, draft, "postgres"));
+  assert.match(script, /DROP INDEX "uq_code";/);
+  assert.match(script, /CREATE INDEX "ix_user" ON "orders" \("user_id"\);/);
+  // FK change = drop + re-add (PostgreSQL drops via DROP CONSTRAINT).
+  assert.match(script, /ALTER TABLE "orders" DROP CONSTRAINT "fk_orders_user";/);
+  assert.match(
+    script,
+    /ALTER TABLE "orders" ADD CONSTRAINT "fk_orders_user" FOREIGN KEY \("user_id"\) REFERENCES "users" \("user_id"\);/,
+  );
+
+  // MySQL drops a foreign key with DROP FOREIGN KEY.
+  const myScript = tableDesignChangesToScript(diffTableDraft(original, draft, "mysql"));
+  assert.match(myScript, /ALTER TABLE `orders` DROP FOREIGN KEY `fk_orders_user`;/);
+  assert.match(myScript, /ALTER TABLE `orders` DROP INDEX `uq_code`;/);
+});
+
+test("diffTableDraft reports no index/FK changes when unchanged", () => {
+  const original = ordersSchema();
+  const draft = tableDraftFromSchema(original);
+  assert.equal(diffTableDraft(original, draft, "mysql").length, 0);
+  assert.equal(diffTableDraft(original, draft, "postgres").length, 0);
+});
+
 test("emptyTableDraft starts with no columns and no name", () => {
   const draft: TableDraft = emptyTableDraft();
   assert.equal(draft.name, "");
