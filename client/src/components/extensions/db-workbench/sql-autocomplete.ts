@@ -11,13 +11,15 @@ import {
 import {
   buildColumnItems,
   buildFunctionItems,
-  buildJoinConditionItems,
-  buildJoinTemplateItems,
   buildKeywordItems,
   buildRelationItems,
   buildSchemaItems,
   buildTypeItems,
 } from "./sql-autocomplete-item-builders";
+import {
+  buildJoinConditionItems,
+  buildJoinTemplateItems,
+} from "./sql-autocomplete-join-builders";
 import { sortCompletionItemsWithMemory } from "./sql-autocomplete-memory-ranking";
 
 export { resolveSemanticHoverSymbol } from "./sql-semantic-context";

@@ -36,18 +36,28 @@ test("sql autocomplete facade delegates completion item builders", async () => {
   const itemBuilders = await read(
     "client/src/components/extensions/db-workbench/sql-autocomplete-item-builders.ts",
   );
+  const joinBuilders = await read(
+    "client/src/components/extensions/db-workbench/sql-autocomplete-join-builders.ts",
+  );
 
   assert.match(autocomplete, /from "\.\/sql-autocomplete-item-builders"/);
+  assert.match(autocomplete, /from "\.\/sql-autocomplete-join-builders"/);
   assert.match(autocomplete, /buildKeywordItems/);
   assert.match(autocomplete, /buildJoinTemplateItems/);
   assert.doesNotMatch(autocomplete, /function buildKeywordItems/);
   assert.doesNotMatch(autocomplete, /DRIVER_FUNCTION_ITEMS/);
   assert.doesNotMatch(autocomplete, /JOIN \$\{relation\.name\} via FK/);
 
+  // Catalog and schema-object builders stay in item-builders.
   assert.match(itemBuilders, /export function buildKeywordItems/);
-  assert.match(itemBuilders, /export function buildJoinTemplateItems/);
+  assert.match(itemBuilders, /export function buildColumnItems/);
   assert.match(itemBuilders, /DRIVER_FUNCTION_ITEMS/);
-  assert.match(itemBuilders, /JOIN \$\{relation\.name\} via FK/);
+  assert.doesNotMatch(itemBuilders, /export function buildJoinTemplateItems/);
+
+  // FK-aware JOIN synthesis lives in its own module.
+  assert.match(joinBuilders, /export function buildJoinTemplateItems/);
+  assert.match(joinBuilders, /export function buildJoinConditionItems/);
+  assert.match(joinBuilders, /JOIN \$\{relation\.name\} via FK/);
 });
 
 test("sql autocomplete facade delegates alias and statement analysis", async () => {
