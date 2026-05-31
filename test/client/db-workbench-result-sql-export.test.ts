@@ -1,10 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { DbQueryBatchResult } from "../../shared/schema";
 import {
   buildInsertScript,
+  buildInsertScriptFromBatch,
   escapeExportStringLiteral,
   formatSqlValue,
 } from "../../client/src/components/extensions/db-workbench/result-sql-export";
+
+function batch(partial: Partial<DbQueryBatchResult>): DbQueryBatchResult {
+  return {
+    sql: "SELECT ...",
+    columns: [],
+    rows: [],
+    totalRows: null,
+    returnedRows: 0,
+    hasMore: false,
+    pagingMode: "none",
+    elapsedMs: 0,
+    ...partial,
+  };
+}
 
 test("formatSqlValue renders NULL / boolean / number / string per driver", () => {
   assert.equal(formatSqlValue(null, "mysql"), "NULL");
@@ -63,6 +79,30 @@ test("buildInsertScript supports one-statement-per-row mode and PG quoting", () 
     script,
     `INSERT INTO "app"."orders" ("id", "note") VALUES (1, 'hi');`,
   );
+});
+
+test("buildInsertScriptFromBatch uses edit-source table and underlying column names", () => {
+  const script = buildInsertScriptFromBatch(
+    batch({
+      editSource: { kind: "table-open", tableName: "users", schema: "app" },
+      columns: [
+        { name: "user_id", dataType: "int", sourceColumn: "id" },
+        { name: "Email Address", dataType: "varchar", sourceColumn: "email" },
+      ],
+      rows: [{ values: [1, "a@example.com"] }],
+    }),
+    { driver: "postgres" },
+  );
+  assert.match(script, /INSERT INTO "app"\."users" \("id", "email"\) VALUES/);
+  assert.match(script, /\(1, 'a@example\.com'\)/);
+});
+
+test("buildInsertScriptFromBatch falls back to a generic table for ad-hoc results", () => {
+  const script = buildInsertScriptFromBatch(
+    batch({ columns: [{ name: "n", dataType: "int" }], rows: [{ values: [1] }] }),
+    { driver: "mysql" },
+  );
+  assert.match(script, /INSERT INTO `exported_rows` \(`n`\) VALUES/);
 });
 
 test("buildInsertScript returns empty string when there is nothing to export", () => {

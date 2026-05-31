@@ -1,4 +1,4 @@
-import type { DbDriver } from "@shared/schema";
+import type { DbDriver, DbQueryBatchResult } from "@shared/schema";
 import { quoteIdentifier } from "./table-designer-model";
 
 // Pure "rows -> INSERT script" generation (Navicat's "Export/Copy as SQL").
@@ -91,4 +91,46 @@ export function buildInsertScript(options: BuildInsertScriptOptions): string {
     );
   }
   return statements.join("\n");
+}
+
+export interface BatchInsertExportOptions {
+  driver: DbDriver;
+  /** Used when the batch has no edit source (e.g. ad-hoc SQL). */
+  fallbackTableName?: string;
+  schemaName?: string;
+  multiRow?: boolean;
+  batchSize?: number;
+}
+
+/**
+ * Bridge a fetched result batch (its in-memory rows) to an INSERT script. The
+ * target table prefers the batch's edit source, then an explicit fallback, then
+ * a generic name; target columns prefer each column's underlying sourceColumn
+ * over its result alias. Only the rows present in the batch are exported.
+ */
+export function buildInsertScriptFromBatch(
+  batch: DbQueryBatchResult,
+  options: BatchInsertExportOptions,
+): string {
+  const tableName =
+    batch.editSource?.tableName?.trim() ||
+    options.fallbackTableName?.trim() ||
+    "exported_rows";
+  const schemaName =
+    options.schemaName?.trim() ||
+    batch.editSource?.schema?.trim() ||
+    batch.schema?.trim() ||
+    undefined;
+
+  return buildInsertScript({
+    driver: options.driver,
+    tableName,
+    schemaName,
+    columns: batch.columns.map((column) => ({
+      name: column.sourceColumn?.trim() || column.name,
+    })),
+    rows: batch.rows.map((row) => row.values),
+    multiRow: options.multiRow,
+    batchSize: options.batchSize,
+  });
 }
