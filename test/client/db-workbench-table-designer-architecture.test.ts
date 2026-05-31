@@ -34,6 +34,11 @@ test("table designer panel delegates all DDL generation to the model", async () 
   assert.match(panel, /复制 DDL/);
   assert.match(panel, /onApplyDdl/);
 
+  // Apply gating (read-only / dangerous-confirmation) is delegated to the pure
+  // policy layer, not re-implemented in the component.
+  assert.match(panel, /from "\.\/table-designer-apply"/);
+  assert.match(panel, /planTableDesignApply/);
+
   // The model owns the generation surface.
   assert.match(model, /export function buildCreateTableDdl/);
   assert.match(model, /export function diffTableDraft/);

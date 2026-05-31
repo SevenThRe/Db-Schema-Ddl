@@ -14,6 +14,7 @@ import {
   type TableDraft,
   type TableDraftColumn,
 } from "./table-designer-model";
+import { planTableDesignApply } from "./table-designer-apply";
 
 const COMMON_TYPES: Record<DbDriver, string[]> = {
   mysql: [
@@ -46,12 +47,14 @@ export function TableDesignerPanel({
   driver,
   schemaName,
   sourceSchema,
+  readonly = false,
   onApplyDdl,
   onClose,
 }: {
   driver: DbDriver;
   schemaName?: string;
   sourceSchema?: DbTableSchema | null;
+  readonly?: boolean;
   onApplyDdl?: (sql: string) => void;
   onClose?: () => void;
 }) {
@@ -91,11 +94,16 @@ export function TableDesignerPanel({
       columns: prev.columns.filter((column) => column.id !== id),
     }));
 
+  const applyPlan = useMemo(
+    () => planTableDesignApply({ script: ddl, readonly }),
+    [ddl, readonly],
+  );
   const canApply =
     draft.name.trim().length > 0 &&
     draft.columns.length > 0 &&
-    ddl.trim().length > 0 &&
-    (!isAlter || changeCount > 0);
+    (!isAlter || changeCount > 0) &&
+    applyPlan.allowed &&
+    Boolean(onApplyDdl);
 
   const handleCopy = () => {
     if (!ddl.trim()) return;
@@ -273,6 +281,15 @@ export function TableDesignerPanel({
       </div>
 
       <div className="flex items-center gap-2 border-t border-border px-4 py-2">
+        {applyPlan.blockedReason && draft.columns.length > 0 ? (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            {applyPlan.blockedReason}
+          </p>
+        ) : applyPlan.requiresDangerousConfirmation ? (
+          <p className="text-[11px] text-muted-foreground">
+            含结构破坏性语句，应用时将走危险 SQL 确认。
+          </p>
+        ) : null}
         <div className="flex-1" />
         {onClose ? (
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>
@@ -282,7 +299,7 @@ export function TableDesignerPanel({
         <Button
           size="sm"
           className="h-7 text-xs"
-          disabled={!canApply || !onApplyDdl}
+          disabled={!canApply}
           onClick={() => onApplyDdl?.(ddl)}
         >
           {isAlter ? "应用变更" : "创建表"}
