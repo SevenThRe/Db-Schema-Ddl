@@ -30,6 +30,11 @@ import {
 } from "../client/src/components/extensions/db-workbench/table-operations-model";
 import { buildCsvExport } from "../client/src/components/extensions/db-workbench/result-data-export";
 import { buildTableSqlDump } from "../client/src/components/extensions/db-workbench/table-sql-dump-model";
+import {
+  buildDeleteStatement,
+  buildSelectStatement,
+  buildUpdateStatement,
+} from "../client/src/components/extensions/db-workbench/statement-builder-model";
 import type { DbColumnSchema, DbTableSchema } from "../shared/schema";
 
 const MYSQL_EXE = process.env.MYSQL_EXE;
@@ -271,6 +276,33 @@ try {
     "full-table SQL dump restores idempotently (run twice -> exact rows)",
     dumpedCount === "2",
     `count=${dumpedCount}`,
+  );
+
+  // 10. "Copy as statement" runnable variants: UPDATE + DELETE with real values
+  // execute and change the live data; SELECT template runs.
+  mysql(buildSelectStatement("dumped", ["id", "email"], "mysql", { limit: 10 }), {
+    db: true,
+  });
+  mysql(
+    buildUpdateStatement("dumped", ["email"], ["id"], "mysql", {
+      setValues: ["updated@example.com"],
+      pkValues: [1],
+    }),
+    { db: true },
+  );
+  mysql(buildDeleteStatement("dumped", ["id"], "mysql", { pkValues: [2] }), { db: true });
+  const updatedEmail = mysql(`SELECT email FROM \`dumped\` WHERE id=1;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  const remaining = mysql(`SELECT COUNT(*) FROM \`dumped\`;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  record(
+    "generated SELECT/UPDATE/DELETE statements execute and mutate live data",
+    updatedEmail === "updated@example.com" && remaining === "1",
+    `email=${updatedEmail} remaining=${remaining}`,
   );
 } catch (error) {
   record("live verification", false, String(error instanceof Error ? error.message : error));
