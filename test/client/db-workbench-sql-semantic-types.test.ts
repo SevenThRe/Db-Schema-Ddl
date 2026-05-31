@@ -28,3 +28,23 @@ test("sql semantic contracts live outside the analyzer implementation", async ()
   assert.doesNotMatch(analyzer, /export interface SqlSemanticAnalysis \{/);
   assert.doesNotMatch(analyzer, /export interface SqlSemanticDiagnostic \{/);
 });
+
+test("sql semantic analyzer delegates relation and binding analysis", async () => {
+  const analyzer = await read(
+    "client/src/components/extensions/db-workbench/sql-semantic-context.ts",
+  );
+  const relationAnalysis = await read(
+    "client/src/components/extensions/db-workbench/sql-semantic-relation-analysis.ts",
+  );
+
+  assert.match(analyzer, /from "\.\/sql-semantic-relation-analysis"/);
+  assert.doesNotMatch(analyzer, /function parseStatementCtes/);
+  assert.doesNotMatch(analyzer, /function inferProjectedColumns/);
+  assert.doesNotMatch(analyzer, /function collectVisibleRelationBindings/);
+  assert.doesNotMatch(analyzer, /function resolveMemberAccess/);
+
+  assert.match(relationAnalysis, /export function parseStatementCtes/);
+  assert.match(relationAnalysis, /export function inferProjectedColumns/);
+  assert.match(relationAnalysis, /export function collectVisibleRelationBindings/);
+  assert.match(relationAnalysis, /export function resolveMemberAccess/);
+});

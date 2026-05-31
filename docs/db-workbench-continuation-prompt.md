@@ -8,7 +8,8 @@
 - Excel 2 DDL 已经有核心能力，但 DB Workbench 还不能因为存在 UI/类型/文档就宣称替代 Navicat。
 - 当前机器尚未证明存在可用的本地 MySQL/Postgres 等真实数据库环境。除非跑过 db lab 或真实连接的 Tauri live smoke，否则只能说代码级验证通过，不能说 DB 工具核心已实机验证。
 - DB Workbench 新主线在 `WorkbenchLayout.tsx` 及其拆分出的 runtime/controller/pane 文件，`DbConnectorWorkspace.tsx` 里仍保留 legacy `连接 / Schema / DIFF` 路径。两者共存，不能随手删除 legacy 路径。
-- 最近一轮已开始把臃肿组件拆成更明确的架构边界：SQL Copilot Dialog、SQL Editor Pane、SQL Copilot Runtime Sidebar、Result Grid Single Batch、SQL Autocomplete memory ranking 和 completion item builders。
+- 最近一轮已开始把臃肿组件拆成更明确的架构边界：SQL Copilot Dialog、SQL Editor Pane、SQL Copilot Runtime Sidebar、Result Grid Single Batch、SQL Autocomplete memory ranking、completion item builders、alias resolution，以及 SQL semantic relation/binding analysis。
+- 当前交接点包含未必已提交的工作区改动：`sql-autocomplete.ts` 已收敛为 facade，`sql-autocomplete-alias-resolution.ts` 承接 alias 解析；`sql-semantic-context.ts` 已抽出 `sql-semantic-relation-analysis.ts`，承接 relation/CTE/binding/projected-column/member-access 分析。
 
 ## 下一阶段 Goal
 
@@ -16,13 +17,14 @@
 
 ## 优先任务
 
-1. 继续收敛 `sql-autocomplete.ts`
-   - 已拆出 `sql-autocomplete-memory-ranking.ts` 和 `sql-autocomplete-item-builders.ts`。
-   - 下一步优先拆 SQL 上下文/别名/CTE/statement window 分析到独立模块，保持 facade 只负责组装。
-   - 保持 `buildAutocompleteContext`、`resolveSemanticHoverSymbol` 等对外入口兼容。
+1. 收口并提交当前拆分
+   - 确认 `sql-autocomplete.ts`、`sql-autocomplete-alias-resolution.ts`、`sql-semantic-context.ts`、`sql-semantic-relation-analysis.ts`、相关架构测试都在同一个提交里。
+   - 跑 `npm run check`、SQL 目标测试、`npm run test:db-workbench` 后再提交。
+   - 如果接手时工作区已有更新，先 `git status --short` 确认不要覆盖他人改动。
 
-2. 拆分 `sql-semantic-context.ts`
-   - 这是后续 SQL 智能能力的核心，优先拆成 lexer/token 消费、scope/binding 分析、diagnostics、hover symbol resolution。
+2. 继续拆分 `sql-semantic-context.ts`
+   - 已拆出 relation/CTE/binding/projected-column/member-access 分析。
+   - 下一步优先拆 statement/clause analysis、diagnostics、hover symbol resolution。
    - 不要引入未验证的 SQL parser 语义承诺，先保证现有测试和用户可见行为稳定。
 
 3. 拆分 `sql-memory.ts`
@@ -59,6 +61,15 @@ node D:\Tools\node_modules\npm\bin\npm-cli.js run test:db-workbench
 ```powershell
 node --import=tsx --test test\client\db-workbench-sql-autocomplete-architecture.test.ts test\client\db-workbench-autocomplete-phase16.test.tsx test\client\db-workbench-sql-autocomplete-context.test.ts test\client\db-workbench-sql-memory-phase51.test.ts test\client\db-workbench-sql-semantics-phase50.test.ts test\client\db-workbench-sql-semantic-context-phase49.test.ts
 ```
+
+当前交接前已验证过：
+
+```powershell
+node D:\Tools\node_modules\npm\bin\npm-cli.js run check
+node --import=tsx --test test\client\db-workbench-sql-autocomplete-architecture.test.ts test\client\db-workbench-autocomplete-phase16.test.tsx test\client\db-workbench-sql-autocomplete-context.test.ts test\client\db-workbench-sql-memory-phase51.test.ts test\client\db-workbench-sql-semantics-phase50.test.ts test\client\db-workbench-sql-semantic-context-phase49.test.ts
+```
+
+接手后仍需跑全量 `test:db-workbench`，因为当前最后一次全量回归发生在 semantic relation analysis 拆分前。
 
 触及 DB 后端、host API、desktop bridge、shared schema、Rust command 时，必须同步检查：
 

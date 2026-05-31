@@ -49,3 +49,25 @@ test("sql autocomplete facade delegates completion item builders", async () => {
   assert.match(itemBuilders, /DRIVER_FUNCTION_ITEMS/);
   assert.match(itemBuilders, /JOIN \$\{relation\.name\} via FK/);
 });
+
+test("sql autocomplete facade delegates alias and statement analysis", async () => {
+  const autocomplete = await read(
+    "client/src/components/extensions/db-workbench/sql-autocomplete.ts",
+  );
+  const aliasResolution = await read(
+    "client/src/components/extensions/db-workbench/sql-autocomplete-alias-resolution.ts",
+  );
+
+  assert.match(autocomplete, /from "\.\/sql-autocomplete-alias-resolution"/);
+  assert.match(autocomplete, /analyzeSqlContext/);
+  assert.doesNotMatch(autocomplete, /from "\.\/sql-lexer"/);
+  assert.doesNotMatch(autocomplete, /function parseStatementCtes/);
+  assert.doesNotMatch(autocomplete, /function inferProjectedColumns/);
+  assert.doesNotMatch(autocomplete, /function collectVisibleRelationBindings/);
+  assert.doesNotMatch(autocomplete, /CURSOR_ALIAS_PATTERN/);
+
+  assert.match(aliasResolution, /export function resolveTableAlias/);
+  assert.match(aliasResolution, /export function resolveAutocompleteAliasRelation/);
+  assert.match(aliasResolution, /resolveStatementWindow/);
+  assert.match(aliasResolution, /CURSOR_ALIAS_PATTERN/);
+});
