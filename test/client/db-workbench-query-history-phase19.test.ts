@@ -171,6 +171,9 @@ test("workbench layout wires run history persistence into SQL library state", as
   const queryRunner = await read(
     "client/src/components/extensions/db-workbench/query-execution-runner.ts",
   );
+  const queryExecutionStateActions = await read(
+    "client/src/components/extensions/db-workbench/query-execution-state-actions.ts",
+  );
   const queryExecutionController = await read(
     "client/src/components/extensions/db-workbench/workbench-query-execution-controller.ts",
   );
@@ -203,10 +206,10 @@ test("workbench layout wires run history persistence into SQL library state", as
   assert.match(executionRegistry, /createQueryExecutionStateActions\(\{/);
   assert.match(queryExecutionController, /applySuccess: input\.queryExecutionActions\.applySuccess/);
   assert.match(queryRunner, /recordSuccessfulQueryExecution\(/);
-  assert.match(queryRunner, /applySession\(input\.session\);/);
+  assert.match(queryExecutionStateActions, /applySession\(input\.session\);/);
   assert.match(queryRuntime, /recordQueryRun/);
   assert.match(layoutStateActionInput, /setQueryHistory: sqlWorkspaceState\.setQueryHistory/);
-  assert.match(queryRunner, /input\.setQueryHistory\(session\.queryHistory\);/);
+  assert.match(queryExecutionStateActions, /input\.setQueryHistory\(session\.queryHistory\);/);
   assert.match(controllerGraph, /useWorkbenchLayoutContextModels\(\{/);
   assert.match(layoutContextModels, /useWorkbenchContextModels\(\{/);
   assert.match(contextModels, /buildWorkbenchSqlWorkspaceContext\(sqlWorkspace\)/);

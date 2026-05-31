@@ -50,6 +50,9 @@ test("recent query context is captured and restored per connection", async () =>
   const queryRunner = await read(
     "client/src/components/extensions/db-workbench/query-execution-runner.ts",
   );
+  const queryExecutionStateActions = await read(
+    "client/src/components/extensions/db-workbench/query-execution-state-actions.ts",
+  );
   const queryExecutionController = await read(
     "client/src/components/extensions/db-workbench/workbench-query-execution-controller.ts",
   );
@@ -114,9 +117,9 @@ test("recent query context is captured and restored per connection", async () =>
   assert.match(queryExecutionController, /applySuccess: input\.queryExecutionActions\.applySuccess/);
   assert.match(queryRunner, /recordSuccessfulQueryExecution\(/);
   assert.match(queryRuntime, /recordQueryRun/);
-  assert.match(queryRunner, /applySession\(input\.session\);/);
+  assert.match(queryExecutionStateActions, /applySession\(input\.session\);/);
   assert.match(layoutStateActionInput, /setRecentQueries: sqlWorkspaceState\.setRecentQueries/);
-  assert.match(queryRunner, /input\.setRecentQueries\(session\.recentQueries\);/);
+  assert.match(queryExecutionStateActions, /input\.setRecentQueries\(session\.recentQueries\);/);
   assert.match(controllerGraph, /useWorkbenchLayoutContextModels\(\{/);
   assert.match(layoutContextModels, /useWorkbenchContextModels\(\{/);
   assert.match(contextModels, /buildWorkbenchSqlWorkspaceContext\(sqlWorkspace\)/);
