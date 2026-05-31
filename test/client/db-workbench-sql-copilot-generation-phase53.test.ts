@@ -245,6 +245,13 @@ test("phase 53 UI strings for generated draft review remain reachable", () => {
     ),
     "utf8",
   );
+  const dialogMainPanelSource = fs.readFileSync(
+    new URL(
+      "../../client/src/components/extensions/db-workbench/sql-copilot-dialog-main-panel.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
   const generatedDraftReviewSource = fs.readFileSync(
     new URL(
       "../../client/src/components/extensions/db-workbench/SqlCopilotGeneratedDraftReview.tsx",
@@ -311,7 +318,7 @@ test("phase 53 UI strings for generated draft review remain reachable", () => {
 
   assert.match(dialogSource, /<SqlCopilotDialogContent/);
   assert.match(dialogSectionsSource, /<SqlCopilotRuntimeSidebar/);
-  assert.match(dialogSectionsSource, /<SqlCopilotGeneratedDraftReview/);
+  assert.match(dialogMainPanelSource, /<SqlCopilotGeneratedDraftReview/);
   assert.doesNotMatch(dialogSource, /Runtime settings/);
   assert.doesNotMatch(dialogSource, /Discovered runtimes/);
   assert.doesNotMatch(dialogSource, /Generated draft review/);
@@ -327,8 +334,8 @@ test("phase 53 UI strings for generated draft review remain reachable", () => {
   assert.match(generatedDraftReviewSource, /hallucination/);
   assert.match(dialogModelSource, /export function formatGenerationMode/);
   assert.match(dialogModelSource, /export function formatRuntimeLabel/);
-  assert.match(dialogSectionsSource, /Generate SQL draft/);
-  assert.match(dialogSectionsSource, /Generated SQL prompt preview/);
+  assert.match(dialogMainPanelSource, /Generate SQL draft/);
+  assert.match(dialogMainPanelSource, /Generated SQL prompt preview/);
   assert.match(layoutSource, /useWorkbenchLayoutControllerGraph\(\{/);
   assert.match(controllerGraphSource, /useWorkbenchLayoutSqlControllers\(\{/);
   assert.match(layoutSource, /useWorkbenchLayoutRenderProps\(\{/);

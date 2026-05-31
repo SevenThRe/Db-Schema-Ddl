@@ -20,6 +20,9 @@ test("sql copilot dialog keeps shell thin and delegates runtime UI to sections",
   const sections = await read(
     "client/src/components/extensions/db-workbench/sql-copilot-dialog-sections.tsx",
   );
+  const mainPanel = await read(
+    "client/src/components/extensions/db-workbench/sql-copilot-dialog-main-panel.tsx",
+  );
   const model = await read(
     "client/src/components/extensions/db-workbench/sql-copilot-dialog-model.ts",
   );
@@ -32,12 +35,20 @@ test("sql copilot dialog keeps shell thin and delegates runtime UI to sections",
   assert.doesNotMatch(dialog, /Latest model output/);
   assert.doesNotMatch(dialog, /SqlCopilotRuntimeSidebar/);
 
+  // The sections file is the dialog shell: header, runtime status bar, sidebar,
+  // and main-panel composition. Prompt-authoring markup lives in the main panel.
   assert.match(sections, /<SqlCopilotRuntimeSidebar/);
-  assert.match(sections, /<SqlCopilotGeneratedDraftReview/);
-  assert.match(sections, /Generate SQL draft/);
-  assert.match(sections, /Generated SQL prompt preview/);
-  assert.match(sections, /Latest model output/);
+  assert.match(sections, /<SqlCopilotMainPanel/);
   assert.match(sections, /offline_local_only/);
+  assert.doesNotMatch(sections, /Generate SQL draft/);
+  assert.doesNotMatch(sections, /Latest model output/);
+
+  // The main panel owns the prompt controls, prompt preview, and model output.
+  assert.match(mainPanel, /export function SqlCopilotMainPanel/);
+  assert.match(mainPanel, /<SqlCopilotGeneratedDraftReview/);
+  assert.match(mainPanel, /Generate SQL draft/);
+  assert.match(mainPanel, /Generated SQL prompt preview/);
+  assert.match(mainPanel, /Latest model output/);
 
   assert.match(model, /isSqlCopilotRuntimeActionDisabled/);
   assert.match(model, /formatSqlCopilotRuntimeStatus/);

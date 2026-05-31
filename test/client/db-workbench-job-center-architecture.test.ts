@@ -29,6 +29,15 @@ test("job center pane delegates display and model logic to focused modules", asy
   const sections = await read(
     "client/src/components/extensions/db-workbench/job-center-sections.tsx",
   );
+  const listSections = await read(
+    "client/src/components/extensions/db-workbench/job-center-list-sections.tsx",
+  );
+  const detailSections = await read(
+    "client/src/components/extensions/db-workbench/job-center-detail-sections.tsx",
+  );
+  const sharedSections = await read(
+    "client/src/components/extensions/db-workbench/job-center-shared-sections.tsx",
+  );
 
   assert.match(pane, /resolveJobCenterSelectedSummary/);
   assert.match(pane, /resolveJobCenterDetail/);
@@ -43,10 +52,23 @@ test("job center pane delegates display and model logic to focused modules", asy
   assert.match(model, /resolveJobCenterSelectedSummary/);
   assert.match(model, /resolveJobCenterDetail/);
 
-  assert.match(sections, /Recent background DB work/);
-  assert.match(sections, /Reopen sync context/);
-  assert.match(sections, /Loading persisted job detail/);
-  assert.match(sections, /Table results/);
+  // The sections file is now a thin facade over list/detail/shared modules.
+  assert.match(sections, /export \{ JobCenterListPane \} from "\.\/job-center-list-sections"/);
+  assert.match(sections, /export \{ JobCenterDetailPane \} from "\.\/job-center-detail-sections"/);
+
+  // The list pane owns job browsing markup.
+  assert.match(listSections, /Recent background DB work/);
+  assert.match(listSections, /export function JobCenterListPane/);
+
+  // The detail pane owns audit-trail markup.
+  assert.match(detailSections, /Reopen sync context/);
+  assert.match(detailSections, /Loading persisted job detail/);
+  assert.match(detailSections, /Table results/);
+  assert.match(detailSections, /export function JobCenterDetailPane/);
+
+  // Shared leaf primitives live in one place, consumed by both panes.
+  assert.match(sharedSections, /export function JobCenterStatusBadge/);
+  assert.match(sharedSections, /export function JobCenterEmptyState/);
 });
 
 test("job center model preserves selected job and stale detail guards", () => {

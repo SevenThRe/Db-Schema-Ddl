@@ -79,8 +79,11 @@ test("job center is wired into the canonical workbench route and can reopen sync
   const jobCenterPane = await read(
     "client/src/components/extensions/db-workbench/JobCenterPane.tsx",
   );
-  const jobCenterSections = await read(
-    "client/src/components/extensions/db-workbench/job-center-sections.tsx",
+  const jobCenterListSections = await read(
+    "client/src/components/extensions/db-workbench/job-center-list-sections.tsx",
+  );
+  const jobCenterDetailSections = await read(
+    "client/src/components/extensions/db-workbench/job-center-detail-sections.tsx",
   );
   const secondaryPanePropsBuilder = await read(
     "client/src/components/extensions/db-workbench/workbench-secondary-pane-props.ts",
@@ -133,6 +136,6 @@ test("job center is wired into the canonical workbench route and can reopen sync
   assert.match(jobCenterRunner, /input\.setResultTab\("sync"\);/);
   assert.match(jobCenterPane, /<JobCenterListPane/);
   assert.match(jobCenterPane, /<JobCenterDetailPane/);
-  assert.match(jobCenterSections, /Recent background DB work/);
-  assert.match(jobCenterSections, /Reopen sync context/);
+  assert.match(jobCenterListSections, /Recent background DB work/);
+  assert.match(jobCenterDetailSections, /Reopen sync context/);
 });
