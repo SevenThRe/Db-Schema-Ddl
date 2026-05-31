@@ -19,7 +19,11 @@
     - `sql-autocomplete-item-builders.ts` 抽出 `sql-autocomplete-join-builders.ts`（FK-aware JOIN 模板/条件合成）。
     - `sql-copilot-grounding.ts` 拆成 `sql-copilot-grounding-relations.ts`（relation 装配，叶子）+ `sql-copilot-prompt-sections.ts`（prompt section 渲染 + value-hint 隐私守卫）+ orchestrator facade。
     - `sql-copilot-generation.ts` 抽出 `sql-copilot-generation-evaluation.ts`（离线评估 harness，与运行时 parse/build 路径解耦）。
-  - 下一批候选（尚未拆，且属 DB 执行相邻，拆前必须同步检查 shared schema / host-api / desktop-bridge / Rust command）：`data-apply-runner.ts`、`query-safety-runner.ts`、`query-execution-runner.ts`。
+  - DB 执行相邻 runner 拆分（均为行为保持的代码级重构，state-action 工厂与 async 操作解耦，安全闸门逐字保留；这些 runner 只经注入回调 + *-runtime 间接触达后端，未改 host-api / desktop-bridge / Rust 合约）：
+    - `data-apply-runner.ts` → `data-apply-state-actions.ts`（保留 stale-artifact / unsafe-delete / prod 确认闸门）。
+    - `query-safety-runner.ts` → `query-safety-state-actions.ts`（保留参数闸门 / 危险 SQL 确认 / 脚本 review）。
+    - `query-execution-runner.ts` → `query-execution-state-actions.ts`（保留 ignore/finalize 守卫、取消处理、session fan-out）。
+  - 这些拆分仍是代码级验证（全量 `test:db-workbench` 165 文件通过）；真实 DB 执行路径仍需在有 DB 的机器上跑 live smoke 验证。
 
 ## 下一阶段 Goal
 
