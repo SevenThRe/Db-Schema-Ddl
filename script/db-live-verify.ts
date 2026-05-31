@@ -29,6 +29,7 @@ import {
   buildTruncateTableSql,
 } from "../client/src/components/extensions/db-workbench/table-operations-model";
 import { buildCsvExport } from "../client/src/components/extensions/db-workbench/result-data-export";
+import { buildTableSqlDump } from "../client/src/components/extensions/db-workbench/table-sql-dump-model";
 import type { DbColumnSchema, DbTableSchema } from "../shared/schema";
 
 const MYSQL_EXE = process.env.MYSQL_EXE;
@@ -238,6 +239,38 @@ try {
     "CSV export -> import round trip preserves data live",
     rtCount === "2" && recovered === 'comma, and "quote"',
     `count=${rtCount} recovered=${JSON.stringify(recovered)}`,
+  );
+
+  // 9. Full-table SQL dump is an idempotent restore script: running it twice
+  // leaves exactly the dumped rows (DROP + CREATE + INSERT).
+  mysql(`DROP TABLE IF EXISTS \`dumped\`;`, { db: true });
+  const dumpSchema: DbTableSchema = {
+    name: "dumped",
+    columns: [
+      { name: "id", dataType: "int", nullable: false, primaryKey: true },
+      { name: "email", dataType: "varchar(255)", nullable: false, primaryKey: false },
+    ],
+  };
+  const dumpRows: (string | number | null)[][] = [
+    [1, "a@example.com"],
+    [2, "b@example.com"],
+  ];
+  const dumpSql = buildTableSqlDump(dumpSchema, dumpRows, { driver: "mysql" });
+  const runDump = () => {
+    for (const stmt of dumpSql.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+      mysql(`${stmt.replace(/;$/, "")};`, { db: true });
+    }
+  };
+  runDump();
+  runDump(); // idempotent restore
+  const dumpedCount = mysql(`SELECT COUNT(*) FROM \`dumped\`;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  record(
+    "full-table SQL dump restores idempotently (run twice -> exact rows)",
+    dumpedCount === "2",
+    `count=${dumpedCount}`,
   );
 } catch (error) {
   record("live verification", false, String(error instanceof Error ? error.message : error));
