@@ -106,6 +106,17 @@ export function buildWorkbenchLayoutDialogStackProps({
         onConfirm: input.handleDangerConfirm,
         onCancel: input.handleDangerCancel,
       },
+      tableDesigner: input.tableDesigner
+        ? {
+            open: input.tableDesigner.open,
+            driver: input.connection.driver,
+            schemaName: input.runtimeSchema ?? undefined,
+            readonly: input.connection.readonly ?? false,
+            sourceSchema: input.tableDesigner.sourceSchema,
+            onApplyDdl: input.tableDesigner.onApplyDdl,
+            onClose: input.tableDesigner.onClose,
+          }
+        : undefined,
     }),
   );
 }

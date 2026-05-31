@@ -22,5 +22,6 @@ export function buildWorkbenchLayoutRenderPropInput(
     connection: input.connection,
     connections: input.backendQueries.connections,
     sidebarMode: input.sidebarMode,
+    tableDesigner: input.tableDesigner,
   };
 }

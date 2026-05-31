@@ -10,6 +10,8 @@ export interface WorkbenchOperatorChromeProps {
   driverLabel: string;
   workbenchContextLabel: string;
   onManageConnections: () => void;
+  /** Opens the visual table designer for a new table; hidden when absent. */
+  onOpenTableDesigner?: () => void;
 }
 
 export interface WorkbenchSqlToolStripProps {
@@ -84,6 +86,7 @@ export function WorkbenchOperatorChrome({
   driverLabel,
   workbenchContextLabel,
   onManageConnections,
+  onOpenTableDesigner,
 }: WorkbenchOperatorChromeProps) {
   return (
     <>
@@ -126,15 +129,28 @@ export function WorkbenchOperatorChrome({
             </p>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 text-xs"
-            onClick={onManageConnections}
-          >
-            Connection Center
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {onOpenTableDesigner ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={onOpenTableDesigner}
+              >
+                新建表
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onManageConnections}
+            >
+              Connection Center
+            </Button>
+          </div>
         </div>
       </div>
     </>

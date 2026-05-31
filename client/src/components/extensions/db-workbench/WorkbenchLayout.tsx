@@ -54,6 +54,7 @@ export function WorkbenchLayout({
     operatorChromeProps,
     workspaceBodyProps,
     dialogStackProps,
+    onOpenTableDesigner,
   } = useWorkbenchLayoutShellModel({
     connection,
     hostApi,
@@ -67,6 +68,7 @@ export function WorkbenchLayout({
       <div className="flex h-full flex-col overflow-hidden">
         <WorkbenchOperatorChrome
           {...operatorChromeProps}
+          onOpenTableDesigner={onOpenTableDesigner}
         />
 
         <WorkbenchWorkspaceBody {...workspaceBodyProps} />

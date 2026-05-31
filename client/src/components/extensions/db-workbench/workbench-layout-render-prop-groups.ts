@@ -1,4 +1,4 @@
-import type { DbConnectionConfig } from "@shared/schema";
+import type { DbConnectionConfig, DbTableSchema } from "@shared/schema";
 import type { useWorkbenchBackendQueries } from "./use-workbench-backend-queries";
 import type { useWorkbenchExecutionWorkspaceState } from "./use-workbench-execution-workspace-state";
 import type { useWorkbenchLayoutContextModels } from "./use-workbench-layout-context-models";
@@ -41,4 +41,11 @@ export interface WorkbenchLayoutRenderPropGroups {
   sqlControllers: WorkbenchSqlControllers;
   workflowControllers: WorkbenchWorkflowControllers;
   runtimeControllers: WorkbenchRuntimeControllers;
+  /** Optional visual-table-designer wiring, supplied by WorkbenchLayout. */
+  tableDesigner?: {
+    open: boolean;
+    sourceSchema: DbTableSchema | null;
+    onApplyDdl: (sql: string) => void;
+    onClose: () => void;
+  };
 }

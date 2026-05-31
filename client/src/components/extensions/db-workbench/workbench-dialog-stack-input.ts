@@ -32,6 +32,7 @@ export interface BuildWorkbenchDialogStackInputInput {
   sqlScriptReview: SqlScriptReviewInput;
   saveSnippet: SaveSnippetInput;
   dangerousSql: DangerousSqlInput;
+  tableDesigner?: BuildWorkbenchDialogStackPropsInput["tableDesigner"];
 }
 
 export function buildWorkbenchDialogStackInput(
@@ -58,5 +59,6 @@ export function buildWorkbenchDialogStackInput(
       sqlPreview: input.activeSql,
     },
     dangerousSql: input.dangerousSql,
+    tableDesigner: input.tableDesigner,
   };
 }

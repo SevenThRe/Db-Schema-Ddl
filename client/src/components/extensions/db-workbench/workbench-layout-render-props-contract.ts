@@ -1,4 +1,4 @@
-import type { DbConnectionConfig } from "@shared/schema";
+import type { DbConnectionConfig, DbTableSchema } from "@shared/schema";
 import type { buildWorkbenchLayoutRenderPropActionInput } from "./workbench-layout-render-prop-action-input";
 import type { buildWorkbenchLayoutRenderPropExecutionInput } from "./workbench-layout-render-prop-execution-input";
 import type { buildWorkbenchLayoutRenderPropResultInput } from "./workbench-layout-render-prop-result-input";
@@ -13,6 +13,17 @@ type WorkbenchLayoutRenderPropBaseInput = {
   connection: DbConnectionConfig;
   connections: DbConnectionConfig[];
   sidebarMode: WorkbenchWorkspaceBodyProps["sidebarMode"];
+  /**
+   * Optional visual-table-designer wiring. When present the dialog stack renders
+   * the designer; driver / schema / readonly are derived from the active
+   * connection by the dialog-props assembler.
+   */
+  tableDesigner?: {
+    open: boolean;
+    sourceSchema: DbTableSchema | null;
+    onApplyDdl: (sql: string) => void;
+    onClose: () => void;
+  };
 };
 
 export type BuildWorkbenchLayoutRenderPropsInput =

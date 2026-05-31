@@ -34,6 +34,34 @@ test("table designer is mounted into the workbench dialog stack", async () => {
   assert.match(dialog, /onApplyDdl=\{onApplyDdl\}/);
 });
 
+test("table designer is wired end-to-end from a toolbar trigger to the execution pipeline", async () => {
+  const shellModel = await read(
+    "client/src/components/extensions/db-workbench/use-workbench-layout-shell-model.ts",
+  );
+  const layout = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchLayout.tsx",
+  );
+  const chrome = await read(
+    "client/src/components/extensions/db-workbench/WorkbenchOperatorChrome.tsx",
+  );
+
+  // Shell model owns designer state, supplies the dialog wiring, and binds apply
+  // to the real script-execution pipeline (dangerous-SQL confirmation included).
+  assert.match(shellModel, /runApplyTableDesign/);
+  assert.match(shellModel, /executeScript: queryControllers\.handleExecuteScript/);
+  assert.match(shellModel, /notify: hostApi\.notifications\.show/);
+  assert.match(shellModel, /refreshSchema: backendQueries\.refetchSchema/);
+  assert.match(shellModel, /tableDesigner: \{/);
+  assert.match(shellModel, /onOpenTableDesigner: openTableDesignerForNewTable/);
+
+  // Layout exposes the trigger into the operator chrome.
+  assert.match(layout, /onOpenTableDesigner=\{onOpenTableDesigner\}/);
+
+  // The chrome renders a reachable "new table" trigger when supplied.
+  assert.match(chrome, /onOpenTableDesigner\?: \(\) => void/);
+  assert.match(chrome, /新建表/);
+});
+
 test("table designer apply orchestration delegates to the pure policy + runner", async () => {
   const runner = await read(
     "client/src/components/extensions/db-workbench/table-designer-runner.ts",
