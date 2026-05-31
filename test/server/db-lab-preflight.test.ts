@@ -82,6 +82,57 @@ test("db lab preflight fails closed for invalid custom ports", async () => {
   );
 });
 
+test("db lab preflight reports BLOCKED with external-DB guidance when no runtime and no endpoint", async () => {
+  const result = await runDbLabPreflight(process.cwd(), {}, {
+    hasDockerCompose: () => false,
+    canConnect: async () => false,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.state, "blocked");
+  // The operator must not be told to run db-lab:up when Docker is absent; the
+  // remediation must point at installing Docker or targeting an external DB.
+  assert.ok(result.remediation.some((line) => /Docker/.test(line)));
+  assert.ok(
+    result.remediation.some((line) => /connection-string|DBTOOLS_MYSQL_PORT/.test(line)),
+  );
+  assert.ok(result.remediation.some((line) => /UNPROVEN/.test(line)));
+});
+
+test("db lab preflight reports READY TO BOOTSTRAP when runtime exists but endpoints are down", async () => {
+  const result = await runDbLabPreflight(process.cwd(), {}, {
+    hasDockerCompose: () => true,
+    canConnect: async () => false,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.state, "ready-to-bootstrap");
+  assert.ok(result.remediation.some((line) => /db-lab:up/.test(line)));
+});
+
+test("db lab preflight reports REACHABLE when runtime and both endpoints answer", async () => {
+  const result = await runDbLabPreflight(process.cwd(), {}, {
+    hasDockerCompose: () => true,
+    canConnect: async () => true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.state, "reachable");
+  assert.ok(result.remediation.some((line) => /endpoints answer/.test(line)));
+});
+
+test("db lab preflight treats a live external endpoint without docker as bootstrappable", async () => {
+  const result = await runDbLabPreflight(process.cwd(), {}, {
+    hasDockerCompose: () => false,
+    canConnect: async () => true,
+  });
+
+  assert.equal(result.state, "ready-to-bootstrap");
+  assert.ok(
+    result.remediation.some((line) => /endpoint is already listening/.test(line)),
+  );
+});
+
 test("db lab package scripts route live verification through lab mode", () => {
   const packageJson = fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8");
 

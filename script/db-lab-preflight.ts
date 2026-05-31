@@ -20,8 +20,26 @@ export interface DbLabCheck {
   detail?: string;
 }
 
+/**
+ * Classifies the overall preflight outcome so error reporting can give the
+ * operator the correct next step instead of always suggesting `db-lab:up`:
+ * - `reachable`: both lab endpoints answer; live verification can run now.
+ * - `ready-to-bootstrap`: the lab can be started (or an external endpoint is
+ *   already listening) — a concrete bootstrap path exists on this machine.
+ * - `blocked`: no container runtime AND no reachable DB endpoint, so neither
+ *   the bundled lab nor an external DB can be verified here.
+ */
+export type DbLabPreflightState = "reachable" | "ready-to-bootstrap" | "blocked";
+
+export interface DbLabPreflightProbes {
+  hasDockerCompose?: () => boolean;
+  canConnect?: (host: string, port: number) => Promise<boolean>;
+}
+
 export interface DbLabPreflightResult {
   ok: boolean;
+  state: DbLabPreflightState;
+  remediation: string[];
   checks: DbLabCheck[];
   commands: {
     up: string;
@@ -147,14 +165,71 @@ function repoFileCheck(cwd: string, relativePath: string): DbLabCheck {
   };
 }
 
+function classifyPreflight(input: {
+  ok: boolean;
+  hasDockerCompose: boolean;
+  anyEndpointReachable: boolean;
+  hardFailures: DbLabCheck[];
+}): { state: DbLabPreflightState; remediation: string[] } {
+  const remediation: string[] = [];
+
+  // Hard failures that are not the container runtime itself (e.g. a missing lab
+  // file or an invalid custom port) must always be surfaced as concrete fixes.
+  const otherFailures = input.hardFailures.filter(
+    (failure) => failure.id !== "container-compose-runtime",
+  );
+  const appendOtherFailures = () => {
+    for (const failure of otherFailures) {
+      remediation.push(`Resolve ${failure.id}: ${failure.detail ?? failure.message}`);
+    }
+  };
+
+  if (input.ok) {
+    remediation.push(
+      "Both lab endpoints answer. Run the prereq commands, then the live verification commands below.",
+    );
+    return { state: "reachable", remediation };
+  }
+
+  if (!input.hasDockerCompose && !input.anyEndpointReachable) {
+    remediation.push(
+      "Docker Compose was not found, so `npm run db-lab:up` cannot start the bundled lab on this machine.",
+      "Either install Docker Desktop (or the docker compose plugin) to use the bundled lab,",
+      "or point verification at an already-running database instead of the bundled lab:",
+      "  - set DBTOOLS_MYSQL_PORT / DBTOOLS_POSTGRES_PORT to an existing local instance, or",
+      "  - pass --connection-string=... directly to verify:desktop:live(:prereq).",
+      "Until a real endpoint answers, only code-level verification is possible; live DB verification stays UNPROVEN.",
+    );
+    appendOtherFailures();
+    return { state: "blocked", remediation };
+  }
+
+  if (!input.hasDockerCompose && input.anyEndpointReachable) {
+    remediation.push(
+      "Docker Compose is unavailable, but a database endpoint is already listening.",
+      "Run verification directly against it using the prereq/live commands below (adjust the connection string if it is not the bundled lab).",
+    );
+  } else {
+    remediation.push(
+      "Container runtime is available but the lab is not fully reachable yet.",
+      "Start the lab with `npm run db-lab:up`, wait for the containers to become healthy, then re-run this preflight.",
+    );
+  }
+  appendOtherFailures();
+  return { state: "ready-to-bootstrap", remediation };
+}
+
 export async function runDbLabPreflight(
   cwd = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
+  probes: DbLabPreflightProbes = {},
 ): Promise<DbLabPreflightResult> {
   const checks: DbLabCheck[] = [];
   const labConfig = resolveDbLabConnections(env);
+  const detectDockerCompose = probes.hasDockerCompose ?? dockerComposeAvailable;
+  const probeConnect = probes.canConnect ?? canConnect;
 
-  const hasDockerCompose = dockerComposeAvailable();
+  const hasDockerCompose = detectDockerCompose();
   checks.push({
     id: "container-compose-runtime",
     status: hasDockerCompose ? "passed" : "failed",
@@ -169,7 +244,7 @@ export async function runDbLabPreflight(
   checks.push(repoFileCheck(cwd, path.join("test", "db-lab", "postgres", "001-dbtools-lab.sql")));
   checks.push(...labConfig.portChecks);
 
-  const mysqlOpen = await canConnect("127.0.0.1", labConfig.mysqlPort);
+  const mysqlOpen = await probeConnect("127.0.0.1", labConfig.mysqlPort);
   checks.push({
     id: "mysql-port",
     status: mysqlOpen ? "passed" : "warning",
@@ -180,7 +255,7 @@ export async function runDbLabPreflight(
       : `127.0.0.1:${labConfig.mysqlPort} is not reachable yet.`,
   });
 
-  const postgresOpen = await canConnect("127.0.0.1", labConfig.postgresPort);
+  const postgresOpen = await probeConnect("127.0.0.1", labConfig.postgresPort);
   checks.push({
     id: "postgres-port",
     status: postgresOpen ? "passed" : "warning",
@@ -192,9 +267,20 @@ export async function runDbLabPreflight(
   });
 
   const hardFailures = checks.filter((check) => check.status === "failed");
+  const ok = hardFailures.length === 0 && mysqlOpen && postgresOpen;
+  const anyEndpointReachable = mysqlOpen || postgresOpen;
+
+  const { state, remediation } = classifyPreflight({
+    ok,
+    hasDockerCompose,
+    anyEndpointReachable,
+    hardFailures,
+  });
 
   return {
-    ok: hardFailures.length === 0 && mysqlOpen && postgresOpen,
+    ok,
+    state,
+    remediation,
     checks,
     commands: {
       up: "npm run db-lab:up",
@@ -218,12 +304,20 @@ function printResult(result: DbLabPreflightResult) {
     console.log(`- ${marker} ${check.id}: ${check.detail ?? check.message}`);
   }
 
-  if (result.ok) {
-    console.log("\nDB lab appears reachable. Next commands:");
-  } else {
-    console.log("\nDB lab is not fully reachable. Bootstrap commands:");
+  const stateLabel =
+    result.state === "reachable"
+      ? "REACHABLE - lab endpoints answer"
+      : result.state === "ready-to-bootstrap"
+        ? "READY TO BOOTSTRAP - a concrete next step exists on this machine"
+        : "BLOCKED - no container runtime and no reachable DB endpoint";
+  console.log(`\nState: ${stateLabel}`);
+
+  console.log("\nRemediation:");
+  for (const line of result.remediation) {
+    console.log(`- ${line}`);
   }
 
+  console.log("\nCommands:");
   console.log(`- ${result.commands.up}`);
   console.log(`- ${result.commands.mysqlPrereq}`);
   console.log(`- ${result.commands.postgresPrereq}`);

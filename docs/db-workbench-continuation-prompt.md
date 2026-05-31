@@ -6,10 +6,15 @@
 
 - 前端是 Vite + React + TypeScript，桌面能力和 DB 后端在 Tauri + Rust。
 - Excel 2 DDL 已经有核心能力，但 DB Workbench 还不能因为存在 UI/类型/文档就宣称替代 Navicat。
-- 当前机器尚未证明存在可用的本地 MySQL/Postgres 等真实数据库环境。除非跑过 db lab 或真实连接的 Tauri live smoke，否则只能说代码级验证通过，不能说 DB 工具核心已实机验证。
+- 当前机器仍未证明存在可用的本地 MySQL/Postgres 等真实数据库环境。`npm run db-lab:preflight -- --advisory` 实测报告 `State: BLOCKED`（无 docker compose、3306/5432 都不可达）。因此本轮只跑过代码级验证（`npm run check` + 全量 `test:db-workbench`），**没有**跑过 db lab 或真实连接的 Tauri live smoke：DB 工具核心仍属“代码级验证通过、真实 DB 验证未完成（UNPROVEN）”。
 - DB Workbench 新主线在 `WorkbenchLayout.tsx` 及其拆分出的 runtime/controller/pane 文件，`DbConnectorWorkspace.tsx` 里仍保留 legacy `连接 / Schema / DIFF` 路径。两者共存，不能随手删除 legacy 路径。
-- 最近一轮已开始把臃肿组件拆成更明确的架构边界：SQL Copilot Dialog、SQL Editor Pane、SQL Copilot Runtime Sidebar、Result Grid Single Batch、SQL Autocomplete memory ranking、completion item builders、alias resolution，以及 SQL semantic relation/binding analysis。
-- 当前交接点包含未必已提交的工作区改动：`sql-autocomplete.ts` 已收敛为 facade，`sql-autocomplete-alias-resolution.ts` 承接 alias 解析；`sql-semantic-context.ts` 已抽出 `sql-semantic-relation-analysis.ts`，承接 relation/CTE/binding/projected-column/member-access 分析。
+- 本轮已完成的架构拆分（均带架构边界测试、`npm run check` 与全量 `test:db-workbench` 通过）：
+  - `sql-autocomplete.ts` → facade + `sql-autocomplete-alias-resolution.ts`。
+  - `sql-semantic-context.ts` → facade + `sql-semantic-relation-analysis.ts` + `sql-semantic-statement-analysis.ts` + `sql-semantic-diagnostics.ts` + `sql-semantic-hover.ts`。
+  - `sql-memory.ts` → facade + `sql-memory-types.ts` / `-normalization.ts` / `-codec.ts` / `-retention.ts` / `-recorder.ts`（保持“不记录原始敏感值”隐私边界，有专测）。
+  - `workbench-session.ts` → facade + `workbench-session-types.ts` / `-codec.ts` / `-store.ts` / `-history.ts` / `-memory.ts`（restore 仍保留显式 connection/schema/tab 作用域）。
+  - section 文件审计：拆了 `job-center-sections.tsx`（list/detail/shared）与 `sql-copilot-dialog-sections.tsx`（shell + main-panel）；`sql-memory-dialog-sections.tsx`、`schema-diff-sections.tsx` 判定为内聚单视图，未拆以避免机械碎片化。
+  - db lab preflight 错误报告增强：新增 `state`（reachable / ready-to-bootstrap / blocked）与 `remediation`，并把探针做成可注入以便确定性测试。
 
 ## 下一阶段 Goal
 
@@ -46,6 +51,13 @@
    - 如果本机没有 DB，先完善 db lab preflight 和错误报告。
    - 有 DB 后跑 Tauri + 真实连接 smoke：保存连接、introspect schema、执行 SELECT、危险 SQL 拦截、取消查询、EXPLAIN、结果分页。
    - 未跑通前，所有交付说明都必须写清楚“代码级验证”与“真实 DB 验证”区别。
+
+## 验证状态（代码级 vs 真实 DB）
+
+- **代码级验证（已完成）**：本轮所有拆分与 preflight 改动都跑过 `npm run check` 和全量 `npm run test:db-workbench`（160 个测试文件全绿），并补了对应架构边界测试。
+- **真实 DB 验证（未完成 / UNPROVEN）**：本机 `db-lab:preflight` 报告 `BLOCKED`（无 docker compose、3306/5432 不可达），所以**没有**跑保存连接、introspect schema、SELECT、危险 SQL 拦截、取消查询、EXPLAIN、结果分页等 Tauri 真实连接 smoke。
+- 任何交付说明都必须显式区分这两类，不得把“代码级验证通过”表述为“DB 工具核心已实机验证”。
+- 一旦本机出现可用 DB（装好 Docker 后 `npm run db-lab:up`，或用 `DBTOOLS_*_PORT` / `--connection-string` 指向外部库），先跑 `npm run db-lab:preflight` 确认 `State: reachable`，再按下方 live 命令补真实 DB 验证。
 
 ## 验证要求
 
