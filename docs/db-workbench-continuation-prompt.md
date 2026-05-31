@@ -67,8 +67,15 @@
 - **TLS/SSL 后续开发（本轮新增）**：已端到端接入连接传输加密——`DbConnectionConfig` 增加 `sslMode` + 根 CA / mTLS 证书路径（TS 与 Rust 双侧），sqlx 开启 `tls-rustls`，`introspect.rs` 的 `mysql_opts`/`pg_opts` 统一应用 ssl-mode 与证书，`query.rs::create_pool` 改为复用这两个 builder（test/introspect/runtime 三处一致），连接表单加 `ConnectionSecurityFields`。默认 `prefer`（旧连接自动机会性升级 TLS，向后兼容）。
 - **Rust 编译（已验证）**：本机默认 MSVC 工具链不完整（VS 2026 预览 + BuildTools 2022 都缺 VC++ 头/库：磁盘上没有 `stdarg.h` / `msvcrt.lib`），MSVC 构建走不通。改用本机已装的 MinGW-w64（WinLibs UCRT）+ `rustup` 安装 `stable-x86_64-pc-windows-gnu` 完整工具链后，**整个 crate 全量编译通过**（含本轮 TLS 代码 + sqlx `tls-rustls` + ring + rustls + sqlite3.c），**本轮新增代码零警告**（仅 5 条既有 dead-code/unused-import 警告，与 TLS 无关）。`cargo test --lib` 也**成功链接**出测试可执行文件。
 - **Rust 单测执行（本机无法运行）**：该 lib 测试 exe 会链入整套 Tauri / wry / webview2 运行时,在无头 gnu 环境下启动即 `STATUS_DLL_NOT_FOUND / ENTRYPOINT_NOT_FOUND`——这是 GUI 运行时依赖问题,不是代码问题。新增的 ssl-mode 映射单测已随 crate 编译通过(类型/断言已检查),但因上述原因**未实际跑起来**;需在开发者正常的 MSVC `cargo` / `tauri` 环境里 `cargo test ssl` 跑一次确认绿。
-- **真实 DB 验证（未完成 / UNPROVEN）**：本机 `db-lab:preflight` 报告 `BLOCKED`（无 docker compose、3306/5432 不可达），所以**没有**跑保存连接、introspect schema、SELECT、危险 SQL 拦截、取消查询、EXPLAIN、结果分页，**也没有**对真实 TLS-required 服务器跑过握手 smoke。TLS 只能写成“已接线、TS 侧代码级验证、Rust 编译与真实握手未验证”。
-- 任何交付说明都必须显式区分这几类，不得把“TS 代码级验证通过”表述为“Rust 已编译”或“DB 工具核心已实机验证”。
+- **真实 DB 数据层验证（已完成，本轮新增）**：在本机用便携版 **MariaDB 11.4.5**（`E:\dbtools-db`，端口 3306，`mysql.exe` 直连，**非 GUI**）跑了 `script/db-live-verify.ts`，用项目**真实的 SQL 生成代码**对活引擎做端到端验证，**5/5 通过**：
+  1. `buildCreateTableDdl` 生成的 CREATE TABLE 在真实引擎执行成功；
+  2. 从 `information_schema` introspect 出真实表结构（3 列）；
+  3. `diffTableDraft` 生成的 ALTER（重命名 nickname→display_name + 新增 created_at）执行成功；
+  4. 重新 introspect 确认改动落库（`created_at,display_name,email,id`）；
+  5. `buildInsertScript` 生成的 INSERT（含转义 `Bob's "acct"`）执行成功、行数 = 2。
+  即 **introspect→设计→ALTER→再 introspect 闭环在真实数据库上跑通**。命令：`MYSQL_EXE=...\mysql.exe DB_PORT=3306 node --import=tsx script/db-live-verify.ts`。
+- **仍未验证的真实路径**：(a) 完整 Tauri/GUI 路径——无头机器上 webview2 运行时起不来，无法"点按钮看弹窗"；(b) 实际 Rust `db_connector`（sqlx）对活库的连接/查询——lib 测试 exe 链 webview2 无法启动；(c) 强制 TLS 服务器的握手（本地 MariaDB 走明文）。这些是 GUI/工具链/TLS 服务器环境限制，不是代码缺陷。
+- 任何交付说明都必须显式区分这几类：**数据层 SQL 已对真实 MariaDB 验证通过**；GUI 路径、Rust 连接器实跑、TLS 握手仍需对应环境验证。不得把“TS 代码级验证通过”表述为“Rust 已编译”或“整个 DB 工具已实机验证”。
 - 一旦本机出现可用 DB（装好 Docker 后 `npm run db-lab:up`，或用 `DBTOOLS_*_PORT` / `--connection-string` 指向外部库），先跑 `npm run db-lab:preflight` 确认 `State: reachable`，再按下方 live 命令补真实 DB 验证；TLS 需额外用一个强制 TLS 的服务器（如云数据库或带证书的本地实例）验证 `require` / `verify-full` 真能完成握手与证书校验。
 
 ## 验证要求
