@@ -21,6 +21,7 @@ import {
   type TableDraft,
 } from "../client/src/components/extensions/db-workbench/table-designer-model";
 import { buildInsertScript } from "../client/src/components/extensions/db-workbench/result-sql-export";
+import { buildCsvImportPlan } from "../client/src/components/extensions/db-workbench/csv-import-model";
 import type { DbColumnSchema, DbTableSchema } from "../shared/schema";
 
 const MYSQL_EXE = process.env.MYSQL_EXE;
@@ -146,6 +147,34 @@ try {
   mysql(insertSql, { db: true });
   const count = mysql(`SELECT COUNT(*) FROM \`users\`;`, { db: true, batch: true }).trim();
   record("buildInsertScript executes and rows land", count === "2", `count=${count}`);
+
+  // 6. CSV import: infer types, CREATE + INSERT from CSV, executed live.
+  mysql(`DROP TABLE IF EXISTS \`imported\`;`, { db: true });
+  const importPlan = buildCsvImportPlan(
+    "id,amount,label\n1,9.99,alpha\n2,19.50,\"beta, gamma\"\n3,,delta\n",
+    { driver: "mysql", tableName: "imported", createTable: true },
+  );
+  if (importPlan.createDdl) mysql(importPlan.createDdl, { db: true });
+  mysql(importPlan.insertScript, { db: true });
+  const importedCount = mysql(`SELECT COUNT(*) FROM \`imported\`;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  // The blank amount on row 3 must be NULL, and the int id must be a real number.
+  const nullAmounts = mysql(
+    `SELECT COUNT(*) FROM \`imported\` WHERE amount IS NULL;`,
+    { db: true, batch: true },
+  ).trim();
+  const idType = mysql(
+    `SELECT data_type FROM information_schema.columns
+     WHERE table_schema='${DB}' AND table_name='imported' AND column_name='id';`,
+    { db: false, batch: true },
+  ).trim();
+  record(
+    "buildCsvImportPlan CREATE+INSERT executes with inferred types and NULL blanks",
+    importedCount === "3" && nullAmounts === "1" && idType === "int",
+    `rows=${importedCount} nullAmounts=${nullAmounts} idType=${idType}`,
+  );
 } catch (error) {
   record("live verification", false, String(error instanceof Error ? error.message : error));
 }
