@@ -15,6 +15,11 @@
   - `workbench-session.ts` → facade + `workbench-session-types.ts` / `-codec.ts` / `-store.ts` / `-history.ts` / `-memory.ts`（restore 仍保留显式 connection/schema/tab 作用域）。
   - section 文件审计：拆了 `job-center-sections.tsx`（list/detail/shared）与 `sql-copilot-dialog-sections.tsx`（shell + main-panel）；`sql-memory-dialog-sections.tsx`、`schema-diff-sections.tsx` 判定为内聚单视图，未拆以避免机械碎片化。
   - db lab preflight 错误报告增强：新增 `state`（reachable / ready-to-bootstrap / blocked）与 `remediation`，并把探针做成可注入以便确定性测试。
+  - 追加（同一轮继续的代码级工作）：
+    - `sql-autocomplete-item-builders.ts` 抽出 `sql-autocomplete-join-builders.ts`（FK-aware JOIN 模板/条件合成）。
+    - `sql-copilot-grounding.ts` 拆成 `sql-copilot-grounding-relations.ts`（relation 装配，叶子）+ `sql-copilot-prompt-sections.ts`（prompt section 渲染 + value-hint 隐私守卫）+ orchestrator facade。
+    - `sql-copilot-generation.ts` 抽出 `sql-copilot-generation-evaluation.ts`（离线评估 harness，与运行时 parse/build 路径解耦）。
+  - 下一批候选（尚未拆，且属 DB 执行相邻，拆前必须同步检查 shared schema / host-api / desktop-bridge / Rust command）：`data-apply-runner.ts`、`query-safety-runner.ts`、`query-execution-runner.ts`。
 
 ## 下一阶段 Goal
 
