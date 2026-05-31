@@ -28,6 +28,7 @@ import {
   buildRenameTableSql,
   buildTruncateTableSql,
 } from "../client/src/components/extensions/db-workbench/table-operations-model";
+import { buildCsvExport } from "../client/src/components/extensions/db-workbench/result-data-export";
 import type { DbColumnSchema, DbTableSchema } from "../shared/schema";
 
 const MYSQL_EXE = process.env.MYSQL_EXE;
@@ -207,6 +208,36 @@ try {
     "table ops (duplicate -> rename -> truncate -> drop) execute live",
     opsOk,
     `renamedRowsAfterTruncate=${renamedRows}`,
+  );
+
+  // 8. Export -> import round trip: CSV-export rows, re-import them live, read
+  // back and confirm the tricky value survived intact.
+  mysql(`DROP TABLE IF EXISTS \`roundtrip\`;`, { db: true });
+  const exportColumns = [{ name: "id" }, { name: "label" }];
+  const exportRows: (string | number | null)[][] = [
+    [1, "comma, and \"quote\""],
+    [2, null],
+  ];
+  const csvText = buildCsvExport(exportColumns, exportRows);
+  const roundtripPlan = buildCsvImportPlan(csvText, {
+    driver: "mysql",
+    tableName: "roundtrip",
+    createTable: true,
+  });
+  if (roundtripPlan.createDdl) mysql(roundtripPlan.createDdl, { db: true });
+  mysql(roundtripPlan.insertScript, { db: true });
+  const recovered = mysql(
+    `SELECT label FROM \`roundtrip\` WHERE id=1;`,
+    { db: true, batch: true },
+  ).trim();
+  const rtCount = mysql(`SELECT COUNT(*) FROM \`roundtrip\`;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  record(
+    "CSV export -> import round trip preserves data live",
+    rtCount === "2" && recovered === 'comma, and "quote"',
+    `count=${rtCount} recovered=${JSON.stringify(recovered)}`,
   );
 } catch (error) {
   record("live verification", false, String(error instanceof Error ? error.message : error));
