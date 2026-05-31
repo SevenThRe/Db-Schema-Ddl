@@ -22,6 +22,12 @@ import {
 } from "../client/src/components/extensions/db-workbench/table-designer-model";
 import { buildInsertScript } from "../client/src/components/extensions/db-workbench/result-sql-export";
 import { buildCsvImportPlan } from "../client/src/components/extensions/db-workbench/csv-import-model";
+import {
+  buildDropTableSql,
+  buildDuplicateTableStructureSql,
+  buildRenameTableSql,
+  buildTruncateTableSql,
+} from "../client/src/components/extensions/db-workbench/table-operations-model";
 import type { DbColumnSchema, DbTableSchema } from "../shared/schema";
 
 const MYSQL_EXE = process.env.MYSQL_EXE;
@@ -174,6 +180,33 @@ try {
     "buildCsvImportPlan CREATE+INSERT executes with inferred types and NULL blanks",
     importedCount === "3" && nullAmounts === "1" && idType === "int",
     `rows=${importedCount} nullAmounts=${nullAmounts} idType=${idType}`,
+  );
+
+  // 7. Table operations: duplicate structure -> rename -> truncate -> drop.
+  const tableExists = (name: string) =>
+    mysql(
+      `SELECT COUNT(*) FROM information_schema.tables
+       WHERE table_schema='${DB}' AND table_name='${name}';`,
+      { db: false, batch: true },
+    ).trim();
+
+  mysql(`DROP TABLE IF EXISTS \`imported_copy\`, \`imported_renamed\`;`, { db: true });
+  mysql(buildDuplicateTableStructureSql("imported", "imported_copy", "mysql"), { db: true });
+  mysql(buildRenameTableSql("imported_copy", "imported_renamed", "mysql"), { db: true });
+  mysql(buildTruncateTableSql("imported_renamed", "mysql"), { db: true });
+  const renamedRows = mysql(`SELECT COUNT(*) FROM \`imported_renamed\`;`, {
+    db: true,
+    batch: true,
+  }).trim();
+  mysql(buildDropTableSql("imported_renamed", "mysql", { ifExists: true }), { db: true });
+  const opsOk =
+    tableExists("imported_copy") === "0" && // renamed away
+    tableExists("imported_renamed") === "0" && // dropped
+    renamedRows === "0"; // truncated before drop
+  record(
+    "table ops (duplicate -> rename -> truncate -> drop) execute live",
+    opsOk,
+    `renamedRowsAfterTruncate=${renamedRows}`,
   );
 } catch (error) {
   record("live verification", false, String(error instanceof Error ? error.message : error));
