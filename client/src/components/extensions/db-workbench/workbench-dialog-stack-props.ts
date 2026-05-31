@@ -39,6 +39,8 @@ export interface BuildWorkbenchDialogStackPropsInput {
   };
   saveSnippet: WorkbenchDialogStackProps["saveSnippet"];
   dangerousSql: WorkbenchDialogStackProps["dangerousSql"];
+  /** Optional: present once the layout supplies the visual table designer. */
+  tableDesigner?: WorkbenchDialogStackProps["tableDesigner"];
 }
 
 export function buildWorkbenchDialogStackProps(
@@ -87,5 +89,6 @@ export function buildWorkbenchDialogStackProps(
     },
     saveSnippet: input.saveSnippet,
     dangerousSql: input.dangerousSql,
+    tableDesigner: input.tableDesigner,
   };
 }

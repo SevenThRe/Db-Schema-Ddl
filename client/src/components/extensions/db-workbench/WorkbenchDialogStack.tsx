@@ -14,6 +14,8 @@ import { SqlParametersDialog } from "./SqlParametersDialog";
 import type { SqlParametersDialogProps } from "./SqlParametersDialog";
 import { SqlScriptReviewDialog } from "./SqlScriptReviewDialog";
 import type { SqlScriptReviewDialogProps } from "./SqlScriptReviewDialog";
+import { TableDesignerDialog } from "./TableDesignerDialog";
+import type { TableDesignerDialogProps } from "./TableDesignerDialog";
 
 export interface WorkbenchDialogStackProps {
   gridCommit: GridEditCommitDialogProps;
@@ -24,6 +26,11 @@ export interface WorkbenchDialogStackProps {
   sqlScriptReview: SqlScriptReviewDialogProps;
   saveSnippet: SaveSnippetDialogProps;
   dangerousSql: DangerousSqlDialogProps;
+  /**
+   * Visual table designer. Optional so the controller graph can adopt it
+   * incrementally; when omitted the dialog is simply not rendered.
+   */
+  tableDesigner?: TableDesignerDialogProps;
 }
 
 export function WorkbenchDialogStack({
@@ -35,6 +42,7 @@ export function WorkbenchDialogStack({
   sqlScriptReview,
   saveSnippet,
   dangerousSql,
+  tableDesigner,
 }: WorkbenchDialogStackProps) {
   return (
     <>
@@ -46,6 +54,7 @@ export function WorkbenchDialogStack({
       <SqlScriptReviewDialog {...sqlScriptReview} />
       <SaveSnippetDialog {...saveSnippet} />
       <DangerousSqlDialog {...dangerousSql} />
+      {tableDesigner ? <TableDesignerDialog {...tableDesigner} /> : null}
     </>
   );
 }
